@@ -22,7 +22,13 @@ function loadEnv() {
             const content = fs.readFileSync(envPath, 'utf8');
             content.split('\n').forEach(line => {
                 const [key, value] = line.split('=');
-                if (key && value) env[key.trim()] = value.trim();
+                if (key && value) {
+                    const trimmedKey = key.trim();
+                    const trimmedValue = value.trim();
+                    env[trimmedKey] = trimmedValue;
+                    // Also set on process.env for broker adapters
+                    process.env[trimmedKey] = trimmedValue;
+                }
             });
         }
     } catch (e) {
