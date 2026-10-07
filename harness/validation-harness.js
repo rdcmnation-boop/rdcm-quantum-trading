@@ -99,6 +99,9 @@ class ValidationHarness {
       } catch (error) {
         this.metrics.cyclesFailed++;
         console.error(`❌ Exception in cycle ${i + 1}: ${error.message}`);
+        if (error.message.includes('Assignment to constant') || error.message.includes('constant')) {
+          console.error('CONST REASSIGNMENT ERROR - Full stack:', error.stack);
+        }
       }
     }
 

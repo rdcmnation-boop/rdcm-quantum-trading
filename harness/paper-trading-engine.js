@@ -105,10 +105,12 @@ class PaperTradingEngine {
       };
     } catch (error) {
       console.error(`❌ Paper trading cycle failed: ${error.message}`);
+      console.error('Stack trace:', error.stack);
       return {
         success: false,
         tick: this.tickCount,
-        error: error.message
+        error: error.message,
+        stack: error.stack
       };
     }
   }
