@@ -48,6 +48,7 @@ class Phase4LiveHarness {
     // Phase 4: Live Trading
     this.phase4 = new Phase4Orchestrator({
       initialCapital: this.config.initialCapital,
+      maxPositionSize: this.config.maxPositionSize || 0.10,
       authToken: this.config.brokerToken,
       credentials: {
         username: this.config.brokerUsername,
@@ -141,13 +142,13 @@ class Phase4LiveHarness {
 
           // Phase 3: Analyze decision
           const context = {
-            regime: result.market.regime,
+            regime: result?.market?.regime || 'NORMAL',
             tradeSize: 5000,
-            openPositions: Object.keys(result.portfolio.positions).map(symbol => ({
+            openPositions: result?.portfolio?.positions ? Object.keys(result.portfolio.positions).map(symbol => ({
               symbol,
               quantity: result.portfolio.positions[symbol].quantity,
               avgCost: result.portfolio.positions[symbol].avgCost
-            }))
+            })) : []
           };
 
           const analysis = this.phase3.analyzeDecision(recentDecision, context);
@@ -191,7 +192,7 @@ class Phase4LiveHarness {
     await this.runFinalValidation();
 
     // Generate report
-    const report = this.generateReport();
+    const report = await this.generateReport();
 
     console.log('\n' + '='.repeat(60));
     console.log('✅ PHASE 4 LIVE TRADING HARNESS COMPLETE');
@@ -212,7 +213,7 @@ class Phase4LiveHarness {
     console.log(`   Phase 4: Executions ${this.metrics.decisionsExecuted} | Broker Errors ${this.metrics.brokerErrors}`);
 
     const phase4Health = this.phase4.getHealth();
-    console.log(`   Account: $${phase4Health.capital.current.toFixed(2)} | Positions: ${phase4Health.capital.positions}`);
+    console.log(`   Account: $${phase4Health.capital.current} | Positions: ${phase4Health.capital.positions}`);
   }
 
   /**
@@ -261,12 +262,12 @@ class Phase4LiveHarness {
   /**
    * Generate comprehensive report
    */
-  generateReport() {
+  async generateReport() {
     const duration = this.metrics.endTime - this.metrics.startTime;
     const durationMinutes = duration / 1000 / 60;
 
     const phase4Health = this.phase4.getHealth();
-    const accountStatus = this.phase4.getAccountStatus();
+    const accountStatus = await this.phase4.getAccountStatus();
 
     const report = {
       title: 'RDCMNATION QUANTUM - Phase 4 Live Trading Report',
