@@ -10,6 +10,8 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const unifiedBrain = require('./unified-bot-brain');
 const marketNewsService = require('./market-news-service');
+const securityBot = require('./security-bot');
+const activityLogger = require('./customer-activity-logger');
 
 // Simple .env parser
 function loadEnv() {
@@ -158,6 +160,157 @@ class MarketDataService {
 }
 
 const marketService = new MarketDataService();
+
+// ============= BOT EXECUTION SERVICE =============
+class BotExecutionService {
+    constructor(unifiedBrain, marketService) {
+        this.brain = unifiedBrain;
+        this.market = marketService;
+        this.isRunning = false;
+        this.executionInterval = null;
+        this.trades = [];
+        this.totalProfit = 0;
+    }
+
+    start() {
+        if (this.isRunning) return;
+        this.isRunning = true;
+        console.log('🤖 Bot Execution Service Started');
+
+        // Run trading every 10 seconds
+        this.executionInterval = setInterval(() => {
+            this.executeTradingCycle();
+        }, 10000);
+    }
+
+    stop() {
+        if (this.executionInterval) {
+            clearInterval(this.executionInterval);
+            this.isRunning = false;
+            console.log('⏹️ Bot Execution Service Stopped');
+        }
+    }
+
+    executeTradingCycle() {
+        const symbols = ['AAPL', 'MSFT', 'BTC', 'ETH', 'GOOGL'];
+
+        symbols.forEach(symbol => {
+            const botIds = ['quantum-ai', 'autorule-ai', 'mining-bot', 'bet-brain', 'external-bet-brain'];
+            const signals = [];
+
+            botIds.forEach(botId => {
+                try {
+                    const marketData = this.getMarketData(symbol);
+                    const signal = this.brain.generateSignal(
+                        botId,
+                        symbol,
+                        ['BUY', 'SELL', 'HOLD'][Math.floor(Math.random() * 3)],
+                        0.5 + Math.random() * 0.3,
+                        `Automated trading signal for ${symbol}`
+                    );
+                    signals.push(signal);
+                } catch (e) {
+                    // Silent fail
+                }
+            });
+
+            // Consensus voting
+            if (signals.length > 0) {
+                const buyCount = signals.filter(s => s.type === 'BUY').length;
+                const sellCount = signals.filter(s => s.type === 'SELL').length;
+
+                if (buyCount > signals.length / 2) {
+                    this.executeTrade(symbol, 'BUY', signals);
+                } else if (sellCount > signals.length / 2) {
+                    this.executeTrade(symbol, 'SELL', signals);
+                }
+            }
+        });
+    }
+
+    executeTrade(symbol, type, signals) {
+        const avgConfidence = signals.reduce((sum, s) => sum + s.confidence, 0) / signals.length;
+        const tradeSize = 100 + Math.random() * 400; // $100-500 per trade
+        const priceChange = (Math.random() - 0.5) * 4; // ±2% price movement
+        const profitLoss = type === 'BUY'
+            ? tradeSize * (priceChange / 100)
+            : -tradeSize * (priceChange / 100);
+
+        const trade = {
+            id: `trade-${Date.now()}`,
+            symbol,
+            side: type,
+            size: tradeSize.toFixed(2),
+            confidence: avgConfidence.toFixed(2),
+            profitLoss: profitLoss.toFixed(2),
+            timestamp: new Date().toISOString(),
+            signalCount: signals.length,
+            volatility: Math.random() * 3
+        };
+
+        // ============= SECURITY BOT ANALYSIS =============
+        const securityAnalysis = securityBot.analyzeTradeRisk(trade);
+
+        if (securityAnalysis.blockedTrade) {
+            console.log(`🚫 Trade BLOCKED by Security Bot: ${type} ${symbol} | Reason: ${securityAnalysis.risks.map(r => r.type).join(', ')}`);
+            // Log rejection for customer
+            activityLogger.logTradeRejection(1, trade, securityAnalysis.risks[0].type, securityAnalysis.risks);
+            return;
+        }
+
+        this.trades.push(trade);
+        this.totalProfit += profitLoss;
+
+        // Record trade with security bot
+        securityBot.recordTrade(trade);
+
+        // ============= CUSTOMER ACTIVITY LOGGING =============
+        activityLogger.logTradeExecution(1, trade, signals.map(s => ({ bot: s.source, type: s.type })), avgConfidence);
+
+        // Log security alerts if any
+        if (securityAnalysis.risks.length > 0) {
+            const alert = {
+                timestamp: new Date().toISOString(),
+                tradeId: trade.id,
+                symbol,
+                riskLevel: securityAnalysis.riskLevel,
+                risks: securityAnalysis.risks,
+                action: 'APPROVED_WITH_CAUTION'
+            };
+            activityLogger.logSecurityAlert(1, alert);
+        }
+
+        console.log(`💹 Trade Executed: ${type} ${symbol} | Confidence: ${avgConfidence.toFixed(2)} | P&L: $${profitLoss.toFixed(2)}`);
+    }
+
+    getMarketData(symbol) {
+        if (symbol === 'BTC' || symbol === 'ETH') {
+            const cryptoData = this.market.cryptoPrices[symbol];
+            return {
+                price: cryptoData?.price || 2000,
+                change24h: cryptoData?.change24h || 0,
+                volume: 1000000
+            };
+        }
+        const stockData = this.market.stockPrices[symbol];
+        return {
+            price: stockData?.price || 100,
+            change24h: stockData?.change24h || 0,
+            volume: stockData?.volume || 1000000
+        };
+    }
+
+    getStatus() {
+        return {
+            running: this.isRunning,
+            tradesExecuted: this.trades.length,
+            totalProfit: this.totalProfit.toFixed(2),
+            lastTrades: this.trades.slice(-5)
+        };
+    }
+}
+
+const botExecutor = new BotExecutionService(unifiedBrain, marketService);
 
 // ============= SIMPLE HTTP SERVER =============
 const server = http.createServer((req, res) => {
@@ -522,6 +675,43 @@ const server = http.createServer((req, res) => {
                 return res.end(JSON.stringify({ success: true, bot }));
             }
 
+            // ============= BOT EXECUTION CONTROL ENDPOINTS =============
+            if (pathname === '/api/bots/execution/start' && req.method === 'POST') {
+                botExecutor.start();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    success: true,
+                    message: 'Bot execution started',
+                    status: botExecutor.getStatus()
+                }));
+            }
+
+            if (pathname === '/api/bots/execution/stop' && req.method === 'POST') {
+                botExecutor.stop();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    success: true,
+                    message: 'Bot execution stopped',
+                    status: botExecutor.getStatus()
+                }));
+            }
+
+            if (pathname === '/api/bots/execution/status' && req.method === 'GET') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify(botExecutor.getStatus()));
+            }
+
+            if (pathname === '/api/bots/execution/trades' && req.method === 'GET') {
+                const limit = parseInt(url.searchParams.get('limit')) || 20;
+                const trades = botExecutor.trades.slice(-limit);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    trades: trades,
+                    total: botExecutor.trades.length,
+                    totalProfit: botExecutor.totalProfit.toFixed(2)
+                }));
+            }
+
             // ============= SERVER-SENT EVENTS (REAL-TIME STREAMING) =============
             if (pathname === '/api/stream/brain-updates' && req.method === 'GET') {
                 res.writeHead(200, {
@@ -569,6 +759,154 @@ const server = http.createServer((req, res) => {
                 return;
             }
 
+            // ============= CUSTOMER ACTIVITY LOGGING ENDPOINTS =============
+
+            if (pathname === '/api/customer/activity' && req.method === 'GET') {
+                const token = url.searchParams.get('token');
+                const userId = url.searchParams.get('userId');
+                const limit = parseInt(url.searchParams.get('limit')) || 100;
+
+                if (!userId) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'userId required' }));
+                }
+
+                const activity = activityLogger.getUserActivity(userId, limit);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    userId,
+                    totalActivities: activity.length,
+                    activities: activity
+                }));
+            }
+
+            if (pathname === '/api/customer/activity-summary' && req.method === 'GET') {
+                const userId = url.searchParams.get('userId');
+
+                if (!userId) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'userId required' }));
+                }
+
+                const summary = activityLogger.getUserActivitySummary(userId);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify(summary));
+            }
+
+            if (pathname === '/api/customer/performance' && req.method === 'GET') {
+                const userId = url.searchParams.get('userId');
+                const limit = parseInt(url.searchParams.get('limit')) || 100;
+
+                if (!userId) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'userId required' }));
+                }
+
+                const performance = activityLogger.getTradingPerformance(userId, limit);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify(performance));
+            }
+
+            if (pathname === '/api/customer/audit-trail' && req.method === 'GET') {
+                const userId = url.searchParams.get('userId');
+                const startDate = url.searchParams.get('startDate') || new Date(Date.now() - 30*24*60*60*1000).toISOString();
+                const endDate = url.searchParams.get('endDate') || new Date().toISOString();
+
+                if (!userId) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'userId required' }));
+                }
+
+                const trail = activityLogger.getAuditTrail(userId, startDate, endDate);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    userId,
+                    startDate,
+                    endDate,
+                    totalEvents: trail.length,
+                    events: trail
+                }));
+            }
+
+            // ============= SECURITY BOT ENDPOINTS =============
+
+            if (pathname === '/api/security/status' && req.method === 'GET') {
+                const status = securityBot.getStatus();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify(status));
+            }
+
+            if (pathname === '/api/security/alerts' && req.method === 'GET') {
+                const limit = parseInt(url.searchParams.get('limit')) || 20;
+                const alerts = securityBot.alerts.slice(-limit).reverse();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    totalAlerts: securityBot.alerts.length,
+                    recentAlerts: alerts
+                }));
+            }
+
+            if (pathname === '/api/security/analyze-trade' && req.method === 'POST') {
+                const trade = jsonBody;
+                const analysis = securityBot.analyzeTradeRisk(trade);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    tradeId: trade.id,
+                    riskLevel: analysis.riskLevel,
+                    risks: analysis.risks,
+                    adjustedConfidence: analysis.adjustedConfidence,
+                    blockedTrade: analysis.blockedTrade
+                }));
+            }
+
+            if (pathname === '/api/security/daily-stats' && req.method === 'GET') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    dailyPnL: securityBot.dailyPnL.toFixed(2),
+                    consecutiveLosses: securityBot.consecutiveLosses,
+                    alertsRaised: securityBot.metrics.alertsRaised,
+                    riskEventsBlocked: securityBot.metrics.riskEventsBlocked,
+                    maxDailyLossLimit: securityBot.maxDailyLossLimit,
+                    maxDrawdownPercent: securityBot.maxDrawdownPercent
+                }));
+            }
+
+            // ============= ADMIN ACTIVITY ANALYTICS =============
+
+            if (pathname === '/api/admin/activities' && req.method === 'GET') {
+                const limit = parseInt(url.searchParams.get('limit')) || 1000;
+                const activities = activityLogger.getAllActivities(limit);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    total: activities.length,
+                    activities
+                }));
+            }
+
+            if (pathname === '/api/admin/statistics' && req.method === 'GET') {
+                const stats = activityLogger.getStatistics();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify(stats));
+            }
+
+            if (pathname === '/api/admin/activities-by-type' && req.method === 'GET') {
+                const type = url.searchParams.get('type');
+                const limit = parseInt(url.searchParams.get('limit')) || 500;
+
+                if (!type) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'type parameter required' }));
+                }
+
+                const activities = activityLogger.getActivitiesByType(type, limit);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    type,
+                    total: activities.length,
+                    activities
+                }));
+            }
+
             // 404
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Not found' }));
@@ -612,11 +950,34 @@ server.listen(PORT, () => {
         console.warn('⚠️ Could not register Bet Brain adapter:', error.message);
     }
 
+    // ============= REGISTER SECURITY BOT =============
+    try {
+        unifiedBrain.registerBot({
+            id: securityBot.id,
+            name: securityBot.name,
+            strategy: securityBot.strategy,
+            version: securityBot.version,
+            winRate: 100,
+            tradesExecuted: 0,
+            profit: 0,
+            status: securityBot.status
+        });
+        console.log('✅ Security Bot registered successfully');
+    } catch (error) {
+        console.warn('⚠️ Could not register Security Bot:', error.message);
+    }
+
     console.log('\n📈 Trading System initialized:');
     const metrics = unifiedBrain.getAIMetrics();
-    console.log(`   • Bots Connected: ${metrics.botsConnected}/5`);
+    console.log(`   • Bots Connected: ${metrics.botsConnected}/6`);
     console.log(`   • Market Data Streams: 15 (10 crypto + 5 stocks)`);
     console.log(`   • Learning Rate: ${metrics.learningRate}`);
+    console.log(`   • Security Bot: ${securityBot.status}`);
+
+    // ============= START BOT EXECUTION =============
+    console.log('\n🚀 Starting bot execution engine...');
+    botExecutor.start();
+    console.log('✅ Bots are now trading autonomously');
 });
 
 // Graceful shutdown
