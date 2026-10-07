@@ -70,7 +70,8 @@ try {
         token_expires_at DATETIME,
         is_active INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        UNIQUE(user_id, broker)
     )`);
 
     // Portfolios
@@ -240,10 +241,11 @@ app.post('/api/brokers/robinhood/connect', verifyToken, (req, res) => {
     try {
         // Store connection - in production, exchange code for tokens
         const stmt = db.prepare(
-            `INSERT OR REPLACE INTO broker_connections (user_id, broker, account_id, is_active)
-             VALUES (?, ?, ?, 1)`
+            `INSERT INTO broker_connections (user_id, broker, account_id, is_active)
+             VALUES (?, ?, ?, 1)
+             ON CONFLICT(user_id, broker) DO UPDATE SET is_active = 1, account_id = ?`
         );
-        stmt.run(req.userId, 'robinhood', 'temp-account-id');
+        stmt.run(req.userId, 'robinhood', 'temp-account-id', 'temp-account-id');
         res.json({ success: true, message: 'Robinhood connected' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -259,10 +261,11 @@ app.post('/api/brokers/coinbase/connect', verifyToken, (req, res) => {
 
     try {
         const stmt = db.prepare(
-            `INSERT OR REPLACE INTO broker_connections (user_id, broker, account_id, is_active)
-             VALUES (?, ?, ?, 1)`
+            `INSERT INTO broker_connections (user_id, broker, account_id, is_active)
+             VALUES (?, ?, ?, 1)
+             ON CONFLICT(user_id, broker) DO UPDATE SET is_active = 1, account_id = ?`
         );
-        stmt.run(req.userId, 'coinbase', 'temp-account-id');
+        stmt.run(req.userId, 'coinbase', 'temp-account-id', 'temp-account-id');
         res.json({ success: true, message: 'Coinbase connected' });
     } catch (error) {
         res.status(500).json({ error: error.message });
