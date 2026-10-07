@@ -661,11 +661,32 @@
                 </div>
 
                 <div class="card">
-                    <div class="card-title">🤖 Active Bots</div>
+                    <div class="card-title">🤖 Your Bots</div>
                     <div id="active-bots" style="min-height: 200px;">
-                        <div style="color: #999; text-align: center; padding: 20px;">No active bots</div>
+                        <div style="color: #999; text-align: center; padding: 20px;">No bots created yet</div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Bot Performance Tracking -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-title">📊 Bot Performance Analytics</div>
+                <table class="table" id="bot-performance-table">
+                    <thead>
+                        <tr>
+                            <th>Bot Name</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Trades</th>
+                            <th>Win Rate</th>
+                            <th>Total Profit</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bot-performance-tbody">
+                        <tr><td colspan="7" style="text-align: center; color: #999;">No bots</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -727,6 +748,7 @@
             loadUserData();
             loadDashboard();
             loadBrokerConnections();
+            loadBotPerformance();
             initWebSocket();
         });
 
@@ -957,7 +979,7 @@
             }
         }
 
-        // Create bot
+        // Create bot with enhanced config
         async function createBot() {
             const name = document.getElementById('bot-name').value;
             const bot_type = document.getElementById('bot-type').value;
@@ -974,17 +996,76 @@
                     'Authorization': 'Bearer ' + authToken,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ name, bot_type, config: { capital } })
+                body: JSON.stringify({
+                    name,
+                    bot_type,
+                    config: { capital: parseInt(capital) || 1000 }
+                })
             });
 
             const result = await response.json();
             if (result.success) {
-                showAlert('bot', `✅ Bot created: ${name}`, 'success');
+                showAlert('bot', `✅ ${result.message}`, 'success');
                 document.getElementById('bot-name').value = '';
                 document.getElementById('bot-capital').value = '';
                 loadDashboard();
+                loadBotPerformance();
             } else {
                 showAlert('bot', '❌ Bot creation failed: ' + result.error, 'error');
+            }
+        }
+
+        // Load bot performance analytics
+        async function loadBotPerformance() {
+            try {
+                const response = await fetch('/api/bots', {
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
+                const data = await response.json();
+                const tbody = document.getElementById('bot-performance-tbody');
+
+                if (!data.bots || data.bots.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #999;">No bots</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.bots.map(bot => `
+                    <tr>
+                        <td><strong>${bot.name}</strong></td>
+                        <td>${bot.bot_type}</td>
+                        <td><span class="status-badge" style="background: ${bot.status === 'active' ? 'rgba(76,175,80,0.2)' : 'rgba(255,193,7,0.2)'}; color: ${bot.status === 'active' ? '#4caf50' : '#ffc107'}">${bot.status}</span></td>
+                        <td>${bot.performance?.trades_executed || 0}</td>
+                        <td>${bot.performance?.win_rate || 0}%</td>
+                        <td style="color: ${bot.performance?.total_profit >= 0 ? '#4caf50' : '#e74c3c'}">$${bot.performance?.total_profit?.toFixed(2) || '0.00'}</td>
+                        <td>
+                            <button class="btn btn-secondary" style="width: 60px; padding: 5px; font-size: 10px;" onclick="toggleBot(${bot.id}, '${bot.status === 'active' ? 'inactive' : 'active'}')">
+                                ${bot.status === 'active' ? '⏹️ Stop' : '▶️ Start'}
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading bot performance:', error);
+            }
+        }
+
+        // Toggle bot on/off
+        async function toggleBot(botId, newStatus) {
+            const response = await fetch(`/api/bots/${botId}/toggle`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + authToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status: newStatus })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showAlert('bot', `✅ ${result.message}`, 'success');
+                loadBotPerformance();
+            } else {
+                showAlert('bot', '❌ Failed to update bot', 'error');
             }
         }
 
