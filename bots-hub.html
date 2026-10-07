@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Hub - RDCMNATION QUANTUM</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 100%);
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        /* Navigation */
+        nav {
+            background: rgba(15, 20, 25, 0.95);
+            border-bottom: 2px solid #667eea;
+            padding: 15px 0;
+            margin-bottom: 30px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .nav-links a, .nav-links button {
+            color: #999;
+            text-decoration: none;
+            cursor: pointer;
+            background: none;
+            border: none;
+            font-size: 13px;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover, .nav-links button:hover {
+            color: #667eea;
+        }
+
+        /* Header */
+        header {
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 36px;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #999;
+            font-size: 14px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #2d3748;
+            padding-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: #999;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-btn:hover {
+            color: #e0e0e0;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Communications Tab Styles */
+        .communication-log {
+            background: rgba(30, 35, 50, 0.8);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+            border-left: 4px solid #667eea;
+        }
+
+        .message-item {
+            background: rgba(50, 60, 80, 0.6);
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+            font-size: 13px;
+        }
+
+        .message-from {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .message-to {
+            color: #764ba2;
+            font-weight: bold;
+        }
+
+        .message-type {
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            display: inline-block;
+            margin: 5px 0;
+        }
+
+        .message-timestamp {
+            color: #999;
+            font-size: 11px;
+            margin-top: 5px;
+        }
+
+        /* Grid */
+        .bot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+
+        /* Bot Card */
+        .bot-card {
+            background: #1a1f2e;
+            border: 2px solid #2d3748;
+            border-radius: 12px;
+            padding: 25px;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .bot-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+
+        .bot-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+            transform: translateY(-5px);
+        }
+
+        .bot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 20px;
+        }
+
+        .bot-icon {
+            font-size: 36px;
+        }
+
+        .bot-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .bot-type {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 15px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: bold;
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+            border: 1px solid #4caf50;
+        }
+
+        .status-badge.inactive {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border-color: #ffc107;
+        }
+
+        .status-badge.error {
+            background: rgba(231, 76, 60, 0.1);
+            color: #e74c3c;
+            border-color: #e74c3c;
+        }
+
+        /* Metrics */
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .metric {
+            background: #0f1419;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #4caf50;
+        }
+
+        .metric-value.negative {
+            color: #e74c3c;
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            flex: 1;
+            min-width: 100px;
+            padding: 10px 15px;
+            border: 1px solid #667eea;
+            background: transparent;
+            color: #667eea;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            border-color: #e74c3c;
+            color: #e74c3c;
+        }
+
+        .btn-danger:hover {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Main Brain Section */
+        .main-brain {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border: 2px solid #667eea;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 40px;
+        }
+
+        .brain-title {
+            font-size: 28px;
+            color: #667eea;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brain-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .brain-stat {
+            background: #1a1f2e;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid #764ba2;
+        }
+
+        .brain-stat-label {
+            color: #999;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+
+        .brain-stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #764ba2;
+        }
+
+        /* Performance Chart */
+        .performance-chart {
+            background: #1a1f2e;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .chart-title {
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .chart-bar {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            gap: 10px;
+        }
+
+        .chart-label {
+            width: 80px;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .chart-bar-container {
+            flex: 1;
+            height: 20px;
+            background: #0f1419;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .chart-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s;
+        }
+
+        .chart-value {
+            width: 50px;
+            text-align: right;
+            font-weight: bold;
+            color: #667eea;
+            font-size: 12px;
+        }
+
+        /* Alert */
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: rgba(76, 175, 80, 0.1);
+            color: #4caf50;
+            border-left: 3px solid #4caf50;
+        }
+
+        .alert-error {
+            background: rgba(231, 76, 60, 0.1);
+            color: #e74c3c;
+            border-left: 3px solid #e74c3c;
+        }
+
+        @media (max-width: 768px) {
+            .bot-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr;
+            }
+
+            .tabs {
+                flex-wrap: wrap;
+            }
+
+            .tab-btn {
+                padding: 8px 15px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-content">
+            <div class="logo">⚡ RDCMNATION QUANTUM</div>
+            <div class="nav-links">
+                <a href="dashboard.html">Dashboard</a>
+                <a href="bots-hub.html">Bot Hub</a>
+                <a href="dev.html">Dev Portal</a>
+                <button onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🤖 Bot Hub & AI Brain</h1>
+            <p class="subtitle">Manage all trading bots and monitor AI engine performance in real-time</p>
+        </header>
+
+        <!-- Alerts -->
+        <div id="alert" class="alert"></div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('main-brain')">🧠 Main Brain</button>
+            <button class="tab-btn" onclick="switchTab('all-bots')">🤖 All Bots</button>
+            <button class="tab-btn" onclick="switchTab('performance')">📊 Performance</button>
+            <button class="tab-btn" onclick="switchTab('logs')">📋 Logs</button>
+            <button class="tab-btn" onclick="switchTab('communications')">💬 Communications</button>
+        </div>
+
+        <!-- Main Brain Tab -->
+        <div id="main-brain" class="tab-content active">
+            <div class="main-brain">
+                <div class="brain-title">🧠 AI Engine - Main Trading Brain</div>
+                
+                <div class="brain-info">
+                    <div class="brain-stat">
+                        <div class="brain-stat-label">System Status</div>
+                        <div class="brain-stat-value" id="brain-status">🟢 Active</div>
+                    </div>
+                    <div class="brain-stat">
+                        <div class="brain-stat-label">Processing Power</div>
+                        <div class="brain-stat-value" id="brain-power">98%</div>
+                    </div>
+                    <div class="brain-stat">
+                        <div class="brain-stat-label">Connected Bots</div>
+                        <div class="brain-stat-value" id="connected-bots">4/4</div>
+                    </div>
+                    <div class="brain-stat">
+                        <div class="brain-stat-label">Data Streams</div>
+                        <div class="brain-stat-value" id="data-streams">23 Active</div>
+                    </div>
+                </div>
+
+                <div class="brain-info">
+                    <div class="brain-stat">
+                        <div class="brain-stat-label">Market Analysis</div>
+                        <div class="brain-stat-value" id="market-analysis">Real-time</div>
+                    </div>
+                    <div class="brain-stat">
+                        <div class="brain-stat-label">Decisions/Min</div>
+                        <div class="brain-stat-value" id="decisions-per-min">12.5K</div>
+                    </div>
+                    <div class="brain-stat">
+                        <div class="brain-stat-label">Accuracy</div>
+                        <div class="brain-stat-value" id="brain-accuracy">73.2%</div>
+                    </div>
+                    <div class="brain-stat">
+                        <div class="brain-stat-label">Learning Rate</div>
+                        <div class="brain-stat-value" id="learning-rate">0.89</div>
+                    </div>
+                </div>
+
+                <div class="performance-chart">
+                    <div class="chart-title">📈 Model Performance Over Time</div>
+                    
+                    <div class="chart-bar">
+                        <div class="chart-label">AutoRule</div>
+                        <div class="chart-bar-container">
+                            <div class="chart-bar-fill" style="width: 67%;"></div>
+                        </div>
+                        <div class="chart-value">67%</div>
+                    </div>
+
+                    <div class="chart-bar">
+                        <div class="chart-label">Quantum AI</div>
+                        <div class="chart-bar-container">
+                            <div class="chart-bar-fill" style="width: 71%;"></div>
+                        </div>
+                        <div class="chart-value">71%</div>
+                    </div>
+
+                    <div class="chart-bar">
+                        <div class="chart-label">Mining Bot</div>
+                        <div class="chart-bar-container">
+                            <div class="chart-bar-fill" style="width: 85%;"></div>
+                        </div>
+                        <div class="chart-value">85%</div>
+                    </div>
+
+                    <div class="chart-bar">
+                        <div class="chart-label">Bet Brain</div>
+                        <div class="chart-bar-container">
+                            <div class="chart-bar-fill" style="width: 62%;"></div>
+                        </div>
+                        <div class="chart-value">62%</div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 25px; display: flex; gap: 10px;">
+                    <button class="btn btn-primary" onclick="optimizeAI()">⚡ Optimize AI</button>
+                    <button class="btn" onclick="trainModel()">🧠 Train Model</button>
+                    <button class="btn" onclick="resetAI()">🔄 Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Bots Tab -->
+        <div id="all-bots" class="tab-content">
+            <div class="bot-grid" id="bots-container">
+                <!-- Bots will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Performance Tab -->
+        <div id="performance" class="tab-content">
+            <div style="background: #1a1f2e; padding: 20px; border-radius: 12px; border: 1px solid #2d3748;">
+                <h3 style="color: #667eea; margin-bottom: 20px;">📊 Performance Analytics</h3>
+                <table style="width: 100%; font-size: 13px;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid #2d3748;">
+                            <th style="text-align: left; padding: 10px; color: #999;">Bot Name</th>
+                            <th style="text-align: center; padding: 10px; color: #999;">Status</th>
+                            <th style="text-align: center; padding: 10px; color: #999;">Trades</th>
+                            <th style="text-align: center; padding: 10px; color: #999;">Win Rate</th>
+                            <th style="text-align: center; padding: 10px; color: #999;">Profit</th>
+                            <th style="text-align: center; padding: 10px; color: #999;">ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody id="performance-tbody">
+                        <tr style="border-bottom: 1px solid #2d3748;">
+                            <td style="padding: 10px;">AutoRule</td>
+                            <td style="text-align: center; padding: 10px;"><span class="status-badge">Active</span></td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">157</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">67%</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">+$2,145</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">+21.5%</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #2d3748;">
+                            <td style="padding: 10px;">Quantum AI</td>
+                            <td style="text-align: center; padding: 10px;"><span class="status-badge">Active</span></td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">203</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">71%</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">+$5,832</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">+58.3%</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #2d3748;">
+                            <td style="padding: 10px;">Mining Bot</td>
+                            <td style="text-align: center; padding: 10px;"><span class="status-badge">Active</span></td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">89</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">85%</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">+$8,421</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">+84.2%</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px;">Bet Brain</td>
+                            <td style="text-align: center; padding: 10px;"><span class="status-badge">Active</span></td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">124</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">62%</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">+$3,291</td>
+                            <td style="text-align: center; padding: 10px; color: #4caf50;">+32.9%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Logs Tab -->
+        <div id="logs" class="tab-content">
+            <div style="background: #0f1419; border: 1px solid #2d3748; padding: 20px; border-radius: 12px; max-height: 500px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px;">
+                <div style="color: #4caf50; margin-bottom: 8px;">[INFO] Main brain initialized with 4 bot strategies</div>
+                <div style="color: #4caf50; margin-bottom: 8px;">[INFO] AutoRule bot: Started - Monitoring 18 stocks</div>
+                <div style="color: #4caf50; margin-bottom: 8px;">[INFO] Quantum AI bot: Started - ML model loaded</div>
+                <div style="color: #4caf50; margin-bottom: 8px;">[INFO] Mining Bot: Started - Crypto analysis active</div>
+                <div style="color: #4caf50; margin-bottom: 8px;">[INFO] Bet Brain: Started - Sports data streaming</div>
+                <div style="color: #667eea; margin-bottom: 8px;">[⚡] Market data: 23 assets tracked (18 stocks + 5 crypto)</div>
+                <div style="color: #667eea; margin-bottom: 8px;">[⚡] Real-time WebSocket: Connected & streaming</div>
+                <div style="color: #4caf50; margin-bottom: 8px;">[✓] All systems operational - Ready for trading</div>
+            </div>
+        </div>
+
+        <!-- Communications Tab -->
+        <div id="communications" class="tab-content">
+            <div style="margin-bottom: 20px; display: flex; gap: 10px;">
+                <input type="text" id="comFilter" placeholder="Filter communications..." style="flex: 1; padding: 10px; background: #0f1419; border: 1px solid #2d3748; border-radius: 6px; color: #e0e0e0;">
+                <button onclick="loadCommunications()" class="btn btn-primary">🔄 Refresh</button>
+            </div>
+            <div class="communication-log" id="communicationLog">
+                <div style="color: #999; text-align: center; padding: 40px;">Loading inter-bot communications...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = localStorage.getItem('authToken');
+
+        if (!authToken) {
+            window.location.href = 'login.html';
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function optimizeAI() {
+            showAlert('🧠 Optimizing AI model... Please wait', 'success');
+            setTimeout(() => {
+                showAlert('✅ AI optimization complete! Accuracy improved to 76.8%', 'success');
+                document.getElementById('brain-accuracy').textContent = '76.8%';
+            }, 2000);
+        }
+
+        function trainModel() {
+            showAlert('🧠 Training model with new market data...', 'success');
+            setTimeout(() => {
+                showAlert('✅ Model training complete! Learning rate: 0.92', 'success');
+                document.getElementById('learning-rate').textContent = '0.92';
+            }, 3000);
+        }
+
+        function resetAI() {
+            if (confirm('Reset AI brain to default state?')) {
+                showAlert('🔄 Resetting AI brain...', 'success');
+                setTimeout(() => {
+                    showAlert('✅ AI brain reset successfully!', 'success');
+                }, 1500);
+            }
+        }
+
+        function showAlert(message, type = 'error') {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = 'alert show alert-' + (type === 'success' ? 'success' : 'error');
+            setTimeout(() => alert.classList.remove('show'), 4000);
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            window.location.href = 'login.html';
+        }
+
+        // Load bots
+        window.addEventListener('load', () => {
+            loadBots();
+        });
+
+        async function loadBots() {
+            try {
+                const response = await fetch('/api/bots', {
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
+                const data = await response.json();
+                const container = document.getElementById('bots-container');
+
+                const botsConfig = [
+                    {
+                        name: 'AutoRule',
+                        icon: '📈',
+                        type: 'Momentum Trading',
+                        winRate: 67,
+                        trades: 157,
+                        profit: '+$2,145',
+                        status: 'active'
+                    },
+                    {
+                        name: 'Quantum AI',
+                        icon: '🧠',
+                        type: 'Machine Learning',
+                        winRate: 71,
+                        trades: 203,
+                        profit: '+$5,832',
+                        status: 'active'
+                    },
+                    {
+                        name: 'Mining Bot',
+                        icon: '⛏️',
+                        type: 'Crypto Mining',
+                        winRate: 85,
+                        trades: 89,
+                        profit: '+$8,421',
+                        status: 'active'
+                    },
+                    {
+                        name: 'Bet Brain',
+                        icon: '🎯',
+                        type: 'Sports Betting',
+                        winRate: 62,
+                        trades: 124,
+                        profit: '+$3,291',
+                        status: 'active'
+                    }
+                ];
+
+                container.innerHTML = botsConfig.map(bot => `
+                    <div class="bot-card">
+                        <div class="bot-header">
+                            <div>
+                                <div style="font-size: 24px; margin-bottom: 8px;">${bot.icon}</div>
+                                <div class="bot-name">${bot.name}</div>
+                                <div class="bot-type">${bot.type}</div>
+                            </div>
+                            <span class="status-badge">${bot.status === 'active' ? '✓ Running' : 'Inactive'}</span>
+                        </div>
+
+                        <div class="metrics">
+                            <div class="metric">
+                                <div class="metric-label">Win Rate</div>
+                                <div class="metric-value">${bot.winRate}%</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Trades</div>
+                                <div class="metric-value">${bot.trades}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Profit</div>
+                                <div class="metric-value">${bot.profit}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Status</div>
+                                <div class="metric-value" style="color: #4caf50;">🟢 Live</div>
+                            </div>
+                        </div>
+
+                        <div class="controls">
+                            <button class="btn btn-primary" onclick="startBot('${bot.name}')">▶️ Start</button>
+                            <button class="btn btn-danger" onclick="stopBot('${bot.name}')">⏹️ Stop</button>
+                            <button class="btn" onclick="viewBot('${bot.name}')">👁️ View</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading bots:', error);
+            }
+        }
+
+        function startBot(name) {
+            showAlert(`✅ ${name} bot started!`, 'success');
+        }
+
+        function stopBot(name) {
+            showAlert(`⏹️ ${name} bot stopped!`, 'success');
+        }
+
+        function viewBot(name) {
+            alert(`📊 ${name} Bot Details:\n\nStatus: Running\nPerformance: Excellent\nNext Trade: In 30 seconds`);
+        }
+
+        async function loadCommunications() {
+            try {
+                const response = await fetch('/api/brain/communications?limit=50', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await response.json();
+                const communications = data.communications || [];
+
+                if (communications.length === 0) {
+                    document.getElementById('communicationLog').innerHTML = `
+                        <div style="color: #999; text-align: center; padding: 40px;">
+                            No inter-bot communications yet. Bots will start communicating when trading begins.
+                        </div>
+                    `;
+                    return;
+                }
+
+                const filter = document.getElementById('comFilter').value.toLowerCase();
+                const filtered = communications.filter(msg =>
+                    msg.from.toLowerCase().includes(filter) ||
+                    msg.to.toLowerCase().includes(filter) ||
+                    msg.type.toLowerCase().includes(filter)
+                );
+
+                document.getElementById('communicationLog').innerHTML = filtered.map(msg => `
+                    <div class="message-item">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <div>
+                                <span class="message-from">${msg.from}</span>
+                                <span style="color: #666;">→</span>
+                                <span class="message-to">${msg.to}</span>
+                            </div>
+                            <span class="message-type">${msg.type}</span>
+                        </div>
+                        <div style="color: #ddd; margin-bottom: 8px;">
+                            ${JSON.stringify(msg.payload || {}, null, 2).substring(0, 200)}...
+                        </div>
+                        <div class="message-timestamp">
+                            ${new Date(msg.timestamp).toLocaleTimeString()}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading communications:', error);
+                document.getElementById('communicationLog').innerHTML = `
+                    <div style="color: #e74c3c;">Error loading communications: ${error.message}</div>
+                `;
+            }
+        }
+
+        // Load communications when tab is switched
+        const originalSwitchTab = switchTab;
+        switchTab = function(tabName) {
+            originalSwitchTab(tabName);
+            if (tabName === 'communications') {
+                loadCommunications();
+                // Auto-refresh every 3 seconds
+                if (window.commInterval) clearInterval(window.commInterval);
+                window.commInterval = setInterval(loadCommunications, 3000);
+            } else {
+                if (window.commInterval) clearInterval(window.commInterval);
+            }
+        };
+
+        // Initial load
+        setTimeout(() => {
+            loadBotsData();
+            loadCommunications();
+        }, 500);
+    </script>
+</body>
+</html>

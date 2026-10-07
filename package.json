@@ -4,8 +4,8 @@
   "description": "Complete AI-Powered Trading Platform with Multi-Broker Support",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js",
+    "start": "node app-builtin.js",
+    "dev": "node app-builtin.js",
     "test": "node robinhood-connection-test.js"
   },
   "keywords": [
