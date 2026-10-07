@@ -394,6 +394,8 @@ class PaperTradingEngine {
       console.log(`[updatePortfolioForTrade] Starting portfolio update`);
 
       console.log(`[updatePortfolioForTrade] Destructuring trade object`);
+      console.log(`[updatePortfolioForTrade] Trade object type: ${typeof trade}, Keys: ${Object.keys(trade).join(', ')}`);
+      console.log(`[updatePortfolioForTrade] Trade object frozen: ${Object.isFrozen(trade)}, sealed: ${Object.isSealed(trade)}`);
       const { symbol, side, quantity, price } = trade;
       console.log(`[updatePortfolioForTrade] Destructuring successful: ${symbol} ${side} ${quantity} @ ${price}`);
 
