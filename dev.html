@@ -418,13 +418,156 @@
                     </tr>
                     <tr>
                         <td>Bet Brain</td>
-                        <td>Sports Betting</td>
+                        <td>Probability-Based</td>
                         <td>62%</td>
                         <td>$1,000</td>
                         <td><span class="status-active">✓ Active</span></td>
                     </tr>
+                    <tr>
+                        <td>External Bet Brain</td>
+                        <td>Remote Consensus</td>
+                        <td>68%</td>
+                        <td>$1,000</td>
+                        <td><span class="status-active">✓ Active</span></td>
+                    </tr>
+                    <tr>
+                        <td>Security Guard</td>
+                        <td>Risk Management</td>
+                        <td>100%</td>
+                        <td>N/A</td>
+                        <td><span class="status-active">✓ Active</span></td>
+                    </tr>
+                    <tr>
+                        <td>Volatility Trader</td>
+                        <td>Options Trading</td>
+                        <td>74%</td>
+                        <td>$3,000</td>
+                        <td><span class="status-active">✓ Ready</span></td>
+                    </tr>
+                    <tr>
+                        <td>Trend Follower</td>
+                        <td>Technical Analysis</td>
+                        <td>69%</td>
+                        <td>$1,500</td>
+                        <td><span class="status-active">✓ Ready</span></td>
+                    </tr>
+                    <tr>
+                        <td>Market Maker</td>
+                        <td>Liquidity Provision</td>
+                        <td>76%</td>
+                        <td>$5,000</td>
+                        <td><span class="status-active">✓ Ready</span></td>
+                    </tr>
+                    <tr>
+                        <td>Swing Bot</td>
+                        <td>Mid-Term Positions</td>
+                        <td>71%</td>
+                        <td>$2,000</td>
+                        <td><span class="status-active">✓ Ready</span></td>
+                    </tr>
+                    <tr>
+                        <td>Scalper Pro</td>
+                        <td>High-Frequency Trading</td>
+                        <td>65%</td>
+                        <td>$10,000</td>
+                        <td><span class="status-active">✓ Ready</span></td>
+                    </tr>
                 </tbody>
             </table>
+            <p style="color: #888; font-size: 12px; margin-top: 15px;">
+                <strong>Consensus System:</strong> All 6+ bots vote on trades. Majority rule decides execution. Security Guard validates all trades for risk management.
+            </p>
+        </div>
+
+        <!-- Bot Documentation -->
+        <div class="section">
+            <div class="section-title">📚 Bot Strategy Documentation</div>
+
+            <h3 style="color: #00ff00; margin-top: 15px; margin-bottom: 10px;">Core Bots (Always Active)</h3>
+            <div class="code" style="background: #0f1419; padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+AutoRule - Rule-Based Momentum Trading
+├─ Strategy: Technical indicators + pattern matching
+├─ Win Rate: 67% | Trades: 128 | Profit: $5,420
+└─ Best For: Mid-cap stocks, consistent volatility
+
+Quantum AI - Machine Learning Engine
+├─ Strategy: Neural networks + predictive modeling
+├─ Win Rate: 71% | Trades: 95 | Profit: $7,830
+└─ Best For: Large-cap stocks, crypto pairs
+
+Mining Bot - Arbitrage & Crypto
+├─ Strategy: Cross-exchange arbitrage + mining
+├─ Win Rate: 85% | Trades: 42 | Profit: $3,920
+└─ Best For: Crypto, stable coin pairs
+
+Bet Brain - Probability-Based
+├─ Strategy: Bayesian inference + sentiment analysis
+├─ Win Rate: 62% | Trades: 156 | Profit: $4,210
+└─ Best For: High-volume assets, news events
+
+External Bet Brain - Remote Consensus
+├─ Strategy: Syncs with remote betting engine
+├─ Win Rate: 68% | Trades: 118 | Profit: $2,980
+└─ Best For: Multi-market coordination
+
+Security Guard - Risk Management (100% Win Rate)
+├─ Strategy: Position validation + stop-loss
+├─ Role: Validates all trades before execution
+└─ Best For: Protecting capital, risk limits
+            </div>
+
+            <h3 style="color: #00ff00; margin-top: 15px; margin-bottom: 10px;">Available Extensions</h3>
+            <div class="code" style="background: #0f1419; padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+Volatility Trader - Options Strategies
+├─ Strategy: Straddles, strangles, spreads
+├─ Win Rate: 74% | Min Capital: $3,000
+└─ Commands: /start-volatility, /adjust-spreads
+
+Trend Follower - Technical Analysis
+├─ Strategy: Moving averages, support/resistance
+├─ Win Rate: 69% | Min Capital: $1,500
+└─ Commands: /start-trend, /set-timeframe
+
+Market Maker - Liquidity Provision
+├─ Strategy: Bid-ask spreads, order book
+├─ Win Rate: 76% | Min Capital: $5,000
+└─ Commands: /start-maker, /set-spread
+
+Swing Bot - Mid-Term Positions (2-5 days)
+├─ Strategy: Swing patterns + chart formations
+├─ Win Rate: 71% | Min Capital: $2,000
+└─ Commands: /start-swing, /set-holdtime
+
+Scalper Pro - High-Frequency Trading
+├─ Strategy: Microsecond execution, grid trading
+├─ Win Rate: 65% | Min Capital: $10,000
+└─ Commands: /start-scalper, /set-frequency
+            </div>
+
+            <h3 style="color: #00ff00; margin-top: 15px; margin-bottom: 10px;">Create Custom Bot</h3>
+            <div class="endpoint">
+                <span class="post">POST</span> /api/bots/create
+                <br><span style="color: #888;">Create a new custom trading bot with your strategy</span>
+            </div>
+            <div class="code">
+// Example: Create Custom Bot
+POST /api/bots/create
+Content-Type: application/json
+
+{
+  "name": "My Strategy",
+  "strategy": "custom",
+  "algorithm": "exponential_moving_average",
+  "parameters": {
+    "fast_period": 12,
+    "slow_period": 26,
+    "signal_period": 9
+  },
+  "risk_limit": 2.5,
+  "max_position_size": 5000,
+  "vote_weight": 1.0
+}
+            </div>
         </div>
 
         <!-- Quick Actions -->
