@@ -447,6 +447,34 @@ server.listen(PORT, () => {
     console.log(`👨‍💻 Developer Portal: http://localhost:${PORT}/dev.html`);
     console.log(`🤖 Bots Hub: http://localhost:${PORT}/bots-hub.html`);
     console.log(`✅ Platform initialized successfully`);
+
+    // ============= REGISTER EXTERNAL BOT BRAINS =============
+
+    // Register Bet Brain adapter (connects to external service at https://rdcm-bet-brain.onrender.com/)
+    try {
+        const betBrainAdapter = require('./bots/bet-brain-adapter');
+        unifiedBrain.registerExternalBot(
+            './bots/bet-brain-adapter.js',
+            'external-bet-brain',
+            {
+                name: 'Bet Brain (External)',
+                strategy: 'probability-based-betting',
+                version: '2.5.0',
+                externalService: 'https://rdcm-bet-brain.onrender.com/',
+                isExternal: true
+            }
+        );
+        console.log('✅ External Bet Brain adapter registered successfully');
+        console.log('🌐 Connected to: https://rdcm-bet-brain.onrender.com/');
+    } catch (error) {
+        console.warn('⚠️ Could not register Bet Brain adapter:', error.message);
+    }
+
+    console.log('\n📈 All bots initialized and coordinating:');
+    const metrics = unifiedBrain.getAIMetrics();
+    console.log(`   • Bots Connected: ${metrics.botsConnected}/5`);
+    console.log(`   • System Accuracy: ${(metrics.accuracy * 100).toFixed(1)}%`);
+    console.log(`   • Learning Rate: ${metrics.learningRate}`);
 });
 
 // Graceful shutdown
