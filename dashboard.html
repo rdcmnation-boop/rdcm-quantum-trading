@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RDCMNATION QUANTUM - Trading Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 100%);
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+
+        .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+
+        /* Navigation */
+        nav {
+            background: rgba(15, 20, 25, 0.95);
+            border-bottom: 2px solid #667eea;
+            padding: 15px 0;
+            margin-bottom: 30px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 12px;
+        }
+
+        .btn-logout {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn-logout:hover {
+            background: #c0392b;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #2d3748;
+            padding-bottom: 15px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: #999;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-btn:hover {
+            color: #e0e0e0;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Grid */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        /* Card */
+        .card {
+            background: #1a1f2e;
+            border: 2px solid #2d3748;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            border-color: #667eea;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #2d3748;
+            font-size: 12px;
+        }
+
+        .metric:last-child { border-bottom: none; }
+        .metric-label { color: #999; }
+        .metric-value { font-weight: bold; color: #4caf50; }
+
+        /* Portfolio Summary */
+        .portfolio-header {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #2d3748;
+            background: #0f1419;
+            color: #e0e0e0;
+            border-radius: 6px;
+            font-size: 12px;
+            box-sizing: border-box;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+            width: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #2d3748;
+            color: #e0e0e0;
+        }
+
+        .btn-secondary:hover {
+            background: #3d4758;
+        }
+
+        /* Broker Connection Cards */
+        .broker-card {
+            background: #1a1f2e;
+            border: 2px solid #2d3748;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .broker-card.connected {
+            border-color: #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        .broker-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .broker-name {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .broker-status {
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 15px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: bold;
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+            border: 1px solid #4caf50;
+        }
+
+        .status-badge.inactive {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border-color: #ffc107;
+        }
+
+        /* Table */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-top: 15px;
+        }
+
+        .table th {
+            background: #0f1419;
+            color: #999;
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid #2d3748;
+        }
+
+        .table td {
+            padding: 10px;
+            border-bottom: 1px solid #2d3748;
+        }
+
+        .table tr:hover {
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        /* Alerts */
+        .alert {
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 12px;
+        }
+
+        .alert-success {
+            background: rgba(76, 175, 80, 0.1);
+            color: #4caf50;
+            border-left: 3px solid #4caf50;
+        }
+
+        .alert-error {
+            background: rgba(231, 76, 60, 0.1);
+            color: #e74c3c;
+            border-left: 3px solid #e74c3c;
+        }
+
+        .alert-info {
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+            border-left: 3px solid #667eea;
+        }
+
+        /* Loader */
+        .loader {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #667eea;
+            border-radius: 50%;
+            border-top: 2px solid transparent;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-content {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .portfolio-header { grid-template-columns: repeat(2, 1fr); }
+            .tabs { flex-wrap: wrap; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-content">
+            <div class="logo">⚡ RDCMNATION QUANTUM</div>
+            <div class="user-info">
+                <span id="user-email">Loading...</span>
+                <button class="btn-logout" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="tab-btn" onclick="switchTab('brokers')">🔌 Broker Connections</button>
+            <button class="tab-btn" onclick="switchTab('portfolio')">💰 Portfolio</button>
+            <button class="tab-btn" onclick="switchTab('orders')">📋 Orders</button>
+            <button class="tab-btn" onclick="switchTab('bots')">🤖 AI Bots</button>
+            <button class="tab-btn" onclick="switchTab('settings')">⚙️ Settings</button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active">
+            <h2 style="color: #667eea; margin-bottom: 20px;">📊 Trading Dashboard</h2>
+
+            <!-- Portfolio Summary -->
+            <div class="portfolio-header">
+                <div class="stat-box">
+                    <div class="stat-value" id="portfolio-value">$0.00</div>
+                    <div class="stat-label">Total Portfolio Value</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="cash-available">$0.00</div>
+                    <div class="stat-label">Cash Available</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="buying-power">$0.00</div>
+                    <div class="stat-label">Buying Power</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="unrealized-gain">$0.00</div>
+                    <div class="stat-label">Unrealized Gain</div>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">📈 Recent Orders</div>
+                    <table class="table" id="orders-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Qty</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orders-tbody">
+                            <tr><td colspan="4" style="text-align: center; color: #999;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">🤖 Active Bots</div>
+                    <table class="table" id="bots-table">
+                        <thead>
+                            <tr>
+                                <th>Bot Name</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bots-tbody">
+                            <tr><td colspan="3" style="text-align: center; color: #999;">No bots active</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Real-time Market Data -->
+            <div class="card">
+                <div class="card-title">💹 Live Market Prices</div>
+                <div id="market-prices" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                    <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 11px; color: #999;">AAPL</div>
+                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-aapl">$0.00</div>
+                    </div>
+                    <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 11px; color: #999;">TSLA</div>
+                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-tsla">$0.00</div>
+                    </div>
+                    <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 11px; color: #999;">BTC</div>
+                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-btc">$0.00</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Brokers Tab -->
+        <div id="brokers" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 20px;">🔌 Connect Your Brokers</h2>
+
+            <div id="alert-brokers"></div>
+
+            <div class="grid-2">
+                <!-- Robinhood -->
+                <div class="broker-card" id="robinhood-card">
+                    <div class="broker-icon">🔴</div>
+                    <div class="broker-name">Robinhood</div>
+                    <div class="broker-status">Connect to buy stocks & crypto</div>
+                    <div class="status-badge inactive" id="robinhood-status">Not Connected</div>
+                    <br><br>
+                    <button class="btn" onclick="connectRobinhood()">
+                        🔗 Connect Robinhood
+                    </button>
+                    <button class="btn btn-secondary" style="margin-top: 10px;" onclick="getSetupGuide('robinhood')">
+                        📖 Setup Guide
+                    </button>
+                    <a href="https://developer.robinhood.com/" target="_blank" class="btn btn-secondary" style="margin-top: 10px; display: block;">
+                        🔑 Get OAuth Credentials
+                    </a>
+                </div>
+
+                <!-- Coinbase -->
+                <div class="broker-card" id="coinbase-card">
+                    <div class="broker-icon">💰</div>
+                    <div class="broker-name">Coinbase</div>
+                    <div class="broker-status">Connect to trade crypto</div>
+                    <div class="status-badge inactive" id="coinbase-status">Not Connected</div>
+                    <br><br>
+                    <button class="btn" onclick="connectCoinbase()">
+                        🔗 Connect Coinbase
+                    </button>
+                    <button class="btn btn-secondary" style="margin-top: 10px;" onclick="getSetupGuide('coinbase')">
+                        📖 Setup Guide
+                    </button>
+                    <a href="https://docs.cdp.coinbase.com/" target="_blank" class="btn btn-secondary" style="margin-top: 10px; display: block;">
+                        🔑 Get API Credentials
+                    </a>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-title">📋 Connected Brokers</div>
+                <table class="table" id="connections-table">
+                    <thead>
+                        <tr>
+                            <th>Broker</th>
+                            <th>Status</th>
+                            <th>Connected Since</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="connections-tbody">
+                        <tr><td colspan="4" style="text-align: center; color: #999;">No brokers connected</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Resources & Links -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-title">🔗 Resources & Documentation</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+                    <a href="https://developer.robinhood.com/" target="_blank" class="btn btn-secondary" style="padding: 10px; font-size: 11px;">
+                        🔴 Robinhood Dev Portal
+                    </a>
+                    <a href="https://docs.cdp.coinbase.com/" target="_blank" class="btn btn-secondary" style="padding: 10px; font-size: 11px;">
+                        💰 Coinbase API
+                    </a>
+                    <a href="https://status.robinhood.com/" target="_blank" class="btn btn-secondary" style="padding: 10px; font-size: 11px;">
+                        📊 Robinhood Status
+                    </a>
+                    <a href="https://www.coinbasestatus.com/" target="_blank" class="btn btn-secondary" style="padding: 10px; font-size: 11px;">
+                        📊 Coinbase Status
+                    </a>
+                    <button class="btn btn-secondary" style="padding: 10px; font-size: 11px;" onclick="downloadGuide()">
+                        📥 Download Setup Guide
+                    </button>
+                    <button class="btn btn-secondary" style="padding: 10px; font-size: 11px;" onclick="contactSupport()">
+                        💬 Contact Support
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Portfolio Tab -->
+        <div id="portfolio" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 20px;">💰 Portfolio Overview</h2>
+
+            <div class="card">
+                <div class="card-title">📊 Holdings</div>
+                <table class="table" id="positions-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Quantity</th>
+                            <th>Avg Price</th>
+                            <th>Current Price</th>
+                            <th>Value</th>
+                            <th>Gain/Loss</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-tbody">
+                        <tr><td colspan="6" style="text-align: center; color: #999;">No positions</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Orders Tab -->
+        <div id="orders" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 20px;">📋 Order History</h2>
+
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">🚀 Place New Order</div>
+                    <div id="alert-order"></div>
+                    <div class="form-group">
+                        <label>Symbol</label>
+                        <input type="text" id="order-symbol" placeholder="AAPL">
+                    </div>
+                    <div class="form-group">
+                        <label>Quantity</label>
+                        <input type="number" id="order-qty" placeholder="1" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Side</label>
+                        <select id="order-side">
+                            <option value="buy">Buy</option>
+                            <option value="sell">Sell</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Type</label>
+                        <select id="order-type">
+                            <option value="market">Market</option>
+                            <option value="limit">Limit</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Price (for Limit)</label>
+                        <input type="number" id="order-price" placeholder="0.00" step="0.01">
+                    </div>
+                    <button class="btn" onclick="placeOrder()">📤 Place Order</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">📜 Recent Orders</div>
+                    <table class="table" id="orders-full-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Qty</th>
+                                <th>Status</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orders-full-tbody">
+                            <tr><td colspan="5" style="text-align: center; color: #999;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bots Tab -->
+        <div id="bots" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 20px;">🤖 AI Trading Bots</h2>
+
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">➕ Create New Bot</div>
+                    <div id="alert-bot"></div>
+                    <div class="form-group">
+                        <label>Bot Name</label>
+                        <input type="text" id="bot-name" placeholder="My Trading Bot">
+                    </div>
+                    <div class="form-group">
+                        <label>Bot Type</label>
+                        <select id="bot-type">
+                            <option value="autorule">AutoRule (Momentum)</option>
+                            <option value="quantum">Quantum AI</option>
+                            <option value="mining">Mining Bot</option>
+                            <option value="betting">Bet Brain</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Initial Capital</label>
+                        <input type="number" id="bot-capital" placeholder="1000" min="100">
+                    </div>
+                    <button class="btn" onclick="createBot()">🚀 Create Bot</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">🤖 Active Bots</div>
+                    <div id="active-bots" style="min-height: 200px;">
+                        <div style="color: #999; text-align: center; padding: 20px;">No active bots</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 20px;">⚙️ Settings</h2>
+
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">👤 Account Information</div>
+                    <div class="metric">
+                        <span class="metric-label">Email:</span>
+                        <span class="metric-value" id="settings-email">-</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Full Name:</span>
+                        <span class="metric-value" id="settings-name">-</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Member Since:</span>
+                        <span class="metric-value" id="settings-joined">-</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">🔔 Notifications</div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" checked> Email alerts
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" checked> SMS alerts
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" checked> Push notifications
+                        </label>
+                    </div>
+                    <button class="btn" onclick="alert('Notifications saved!')">💾 Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = localStorage.getItem('authToken');
+        let ws = null;
+
+        // Check authentication
+        if (!authToken) {
+            window.location.href = 'login.html';
+        }
+
+        // Load user data on page load
+        window.addEventListener('load', () => {
+            loadUserData();
+            loadDashboard();
+            loadBrokerConnections();
+            initWebSocket();
+        });
+
+        // WebSocket for real-time updates
+        function initWebSocket() {
+            ws = new WebSocket('ws://' + window.location.host);
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'market_update') {
+                    updateMarketPrices(data.data);
+                }
+            };
+        }
+
+        // Load user info
+        async function loadUserData() {
+            const response = await fetch('/api/auth/me', {
+                headers: { 'Authorization': 'Bearer ' + authToken }
+            });
+            const user = await response.json();
+            document.getElementById('user-email').textContent = user.email;
+            document.getElementById('settings-email').textContent = user.email;
+            document.getElementById('settings-name').textContent = user.full_name;
+            document.getElementById('settings-joined').textContent = new Date(user.created_at).toLocaleDateString();
+        }
+
+        // Load dashboard
+        async function loadDashboard() {
+            const response = await fetch('/api/dashboard', {
+                headers: { 'Authorization': 'Bearer ' + authToken }
+            });
+            const data = await response.json();
+
+            // Update portfolio stats
+            document.getElementById('portfolio-value').textContent = '$' + (data.portfolio.total_value || 0).toFixed(2);
+            document.getElementById('cash-available').textContent = '$' + (data.portfolio.cash_available || 0).toFixed(2);
+            document.getElementById('buying-power').textContent = '$' + (data.portfolio.buying_power || 0).toFixed(2);
+
+            // Update orders
+            updateOrdersTable(data.recent_orders);
+
+            // Update bots
+            updateBotsTable(data.bots);
+        }
+
+        // Load broker connections
+        async function loadBrokerConnections() {
+            const response = await fetch('/api/brokers/connections', {
+                headers: { 'Authorization': 'Bearer ' + authToken }
+            });
+            const data = await response.json();
+
+            const tbody = document.getElementById('connections-tbody');
+            if (data.connections.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999;">No brokers connected</td></tr>';
+            } else {
+                tbody.innerHTML = data.connections.map(conn => `
+                    <tr>
+                        <td><strong>${conn.broker.toUpperCase()}</strong></td>
+                        <td><span class="status-badge">${conn.is_active ? 'Connected' : 'Disconnected'}</span></td>
+                        <td>${new Date(conn.created_at).toLocaleDateString()}</td>
+                        <td><button class="btn btn-secondary" style="width: 80px; padding: 5px;" onclick="disconnectBroker('${conn.broker}')">Disconnect</button></td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // Update orders table
+        function updateOrdersTable(orders) {
+            const tbody = document.getElementById('orders-tbody');
+            const fullTbody = document.getElementById('orders-full-tbody');
+
+            if (!orders || orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999;">No orders</td></tr>';
+                fullTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999;">No orders</td></tr>';
+            } else {
+                tbody.innerHTML = orders.slice(0, 3).map(o => `
+                    <tr>
+                        <td>${o.symbol}</td>
+                        <td>${o.side}</td>
+                        <td>${o.quantity}</td>
+                        <td><span class="status-badge">${o.status}</span></td>
+                    </tr>
+                `).join('');
+
+                fullTbody.innerHTML = orders.slice(0, 10).map(o => `
+                    <tr>
+                        <td>${o.symbol}</td>
+                        <td>${o.side}</td>
+                        <td>${o.quantity}</td>
+                        <td><span class="status-badge">${o.status}</span></td>
+                        <td>${new Date(o.created_at).toLocaleString()}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // Update bots table
+        function updateBotsTable(bots) {
+            const tbody = document.getElementById('bots-tbody');
+
+            if (!bots || bots.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #999;">No active bots</td></tr>';
+            } else {
+                tbody.innerHTML = bots.map(b => `
+                    <tr>
+                        <td>${b.name}</td>
+                        <td>${b.bot_type}</td>
+                        <td><span class="status-badge" style="background: ${b.status === 'active' ? 'rgba(76,175,80,0.2)' : 'rgba(255,193,7,0.2)'}; color: ${b.status === 'active' ? '#4caf50' : '#ffc107'}">${b.status}</span></td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // Update market prices
+        function updateMarketPrices(prices) {
+            if (prices.AAPL) document.getElementById('price-aapl').textContent = '$' + prices.AAPL;
+            if (prices.TSLA) document.getElementById('price-tsla').textContent = '$' + prices.TSLA;
+            if (prices.BTC) document.getElementById('price-btc').textContent = '$' + prices.BTC;
+        }
+
+        // Switch tabs
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Connect Robinhood
+        async function connectRobinhood() {
+            const code = prompt('Enter your Robinhood OAuth code:\n\n(Get it from: https://developer.robinhood.com)');
+            if (!code) return;
+
+            const response = await fetch('/api/brokers/robinhood/connect', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + authToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ code })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showAlert('brokers', '✅ Robinhood connected successfully!', 'success');
+                document.getElementById('robinhood-card').classList.add('connected');
+                document.getElementById('robinhood-status').textContent = '✓ Connected';
+                loadBrokerConnections();
+            } else {
+                showAlert('brokers', '❌ Connection failed: ' + result.error, 'error');
+            }
+        }
+
+        // Connect Coinbase
+        async function connectCoinbase() {
+            const code = prompt('Enter your Coinbase OAuth code:\n\n(Get it from: https://coinbase.com/api/v1/connect)');
+            if (!code) return;
+
+            const response = await fetch('/api/brokers/coinbase/connect', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + authToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ code })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showAlert('brokers', '✅ Coinbase connected successfully!', 'success');
+                document.getElementById('coinbase-card').classList.add('connected');
+                document.getElementById('coinbase-status').textContent = '✓ Connected';
+                loadBrokerConnections();
+            } else {
+                showAlert('brokers', '❌ Connection failed: ' + result.error, 'error');
+            }
+        }
+
+        // Disconnect broker
+        async function disconnectBroker(broker) {
+            if (!confirm(`Disconnect ${broker}?`)) return;
+
+            const response = await fetch(`/api/brokers/${broker}/disconnect`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + authToken }
+            });
+
+            if (response.ok) {
+                showAlert('brokers', `✅ ${broker} disconnected`, 'success');
+                loadBrokerConnections();
+            }
+        }
+
+        // Place order
+        async function placeOrder() {
+            const symbol = document.getElementById('order-symbol').value.toUpperCase();
+            const quantity = document.getElementById('order-qty').value;
+            const side = document.getElementById('order-side').value;
+            const order_type = document.getElementById('order-type').value;
+            const price = document.getElementById('order-price').value;
+
+            if (!symbol || !quantity) {
+                showAlert('order', '❌ Please fill all fields', 'error');
+                return;
+            }
+
+            const response = await fetch('/api/orders/place', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + authToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ symbol, quantity: parseInt(quantity), side, order_type, price: price || null })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showAlert('order', `✅ Order placed: ${quantity} ${symbol} ${side}`, 'success');
+                document.getElementById('order-symbol').value = '';
+                document.getElementById('order-qty').value = '';
+                loadDashboard();
+            } else {
+                showAlert('order', '❌ Order failed: ' + result.error, 'error');
+            }
+        }
+
+        // Create bot
+        async function createBot() {
+            const name = document.getElementById('bot-name').value;
+            const bot_type = document.getElementById('bot-type').value;
+            const capital = document.getElementById('bot-capital').value;
+
+            if (!name) {
+                showAlert('bot', '❌ Please enter bot name', 'error');
+                return;
+            }
+
+            const response = await fetch('/api/bots/create', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + authToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name, bot_type, config: { capital } })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showAlert('bot', `✅ Bot created: ${name}`, 'success');
+                document.getElementById('bot-name').value = '';
+                document.getElementById('bot-capital').value = '';
+                loadDashboard();
+            } else {
+                showAlert('bot', '❌ Bot creation failed: ' + result.error, 'error');
+            }
+        }
+
+        // Utility functions
+        function showAlert(elementId, message, type) {
+            const alertEl = document.getElementById('alert-' + elementId);
+            if (alertEl) {
+                alertEl.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+                setTimeout(() => alertEl.innerHTML = '', 5000);
+            }
+        }
+
+        function getSetupGuide(broker) {
+            alert(`Setup Guide for ${broker}:\n\n1. Go to developer.${broker}.com\n2. Create OAuth application\n3. Copy credentials to .env\n4. Run connection test\n5. Connect via this dashboard`);
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            window.location.href = 'login.html';
+        }
+
+        // Auto-refresh dashboard every 30 seconds
+        setInterval(loadDashboard, 30000);
+    </script>
+</body>
+</html>

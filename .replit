@@ -1,0 +1,8 @@
+run = "npm install && npm start"
+language = "nodejs"
+
+[env]
+NODE_ENV = "production"
+PORT = "3000"
+JWT_SECRET = "rdcm-quantum-secret-key-change-in-production"
+DB_PATH = "./trading_platform.db"
