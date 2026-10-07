@@ -907,6 +907,87 @@ const server = http.createServer((req, res) => {
                 }));
             }
 
+            // ============= BROKER MANAGEMENT =============
+
+            if (pathname === '/api/brokers/status' && req.method === 'GET') {
+                try {
+                    const robinhoodAdapter = require('./bots/robinhood-adapter');
+                    const coinbaseAdapter = require('./bots/coinbase-adapter');
+                    const brokerManager = require('./bots/broker-manager');
+
+                    brokerManager.registerBroker('robinhood', robinhoodAdapter);
+                    brokerManager.registerBroker('coinbase', coinbaseAdapter);
+
+                    const status = {
+                        activeBrokers: brokerManager.getConnectedBrokers(),
+                        allBrokers: brokerManager.getBrokerStatus(),
+                        recentTrades: brokerManager.getRecentTrades(10)
+                    };
+
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify(status));
+                } catch (error) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: error.message }));
+                }
+            }
+
+            if (pathname === '/api/brokers/robinhood' && req.method === 'GET') {
+                try {
+                    const robinhoodAdapter = require('./bots/robinhood-adapter');
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify(robinhoodAdapter.getStatus()));
+                } catch (error) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: error.message }));
+                }
+            }
+
+            if (pathname === '/api/brokers/coinbase' && req.method === 'GET') {
+                try {
+                    const coinbaseAdapter = require('./bots/coinbase-adapter');
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify(coinbaseAdapter.getStatus()));
+                } catch (error) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: error.message }));
+                }
+            }
+
+            if (pathname === '/api/brokers/trade' && req.method === 'POST') {
+                try {
+                    let body = '';
+                    req.on('data', chunk => body += chunk);
+                    req.on('end', async () => {
+                        const tradeRequest = JSON.parse(body);
+                        const brokerManager = require('./bots/broker-manager');
+                        const robinhoodAdapter = require('./bots/robinhood-adapter');
+                        const coinbaseAdapter = require('./bots/coinbase-adapter');
+
+                        brokerManager.registerBroker('robinhood', robinhoodAdapter);
+                        brokerManager.registerBroker('coinbase', coinbaseAdapter);
+
+                        try {
+                            const result = await brokerManager.executeTrade(
+                                tradeRequest.symbol,
+                                tradeRequest.side,
+                                tradeRequest.quantity,
+                                tradeRequest.broker
+                            );
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify(result));
+                        } catch (error) {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: error.message }));
+                        }
+                    });
+                } catch (error) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: error.message }));
+                }
+                return;
+            }
+
             // 404
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Not found' }));
