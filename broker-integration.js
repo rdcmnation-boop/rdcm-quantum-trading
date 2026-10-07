@@ -3,8 +3,6 @@
  * Handles Robinhood and Coinbase OAuth connections
  */
 
-const axios = require('axios');
-
 class BrokerIntegration {
     constructor() {
         this.brokers = {
@@ -59,20 +57,26 @@ class BrokerIntegration {
         if (!broker) throw new Error(`Broker ${brokerName} not supported`);
 
         try {
-            const response = await axios.post(broker.tokenURL, {
-                grant_type: 'authorization_code',
-                code,
-                client_id: clientId,
-                client_secret: clientSecret,
-                redirect_uri: redirectURI
-            }, { timeout: 10000 });
+            const response = await fetch(broker.tokenURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    grant_type: 'authorization_code',
+                    code,
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    redirect_uri: redirectURI
+                })
+            });
+
+            const data = await response.json();
 
             return {
-                accessToken: response.data.access_token,
-                refreshToken: response.data.refresh_token || null,
-                expiresIn: response.data.expires_in,
-                tokenType: response.data.token_type,
-                scope: response.data.scope
+                accessToken: data.access_token,
+                refreshToken: data.refresh_token || null,
+                expiresIn: data.expires_in,
+                tokenType: data.token_type,
+                scope: data.scope
             };
         } catch (error) {
             console.error(`Error exchanging code for ${brokerName}:`, error.message);
@@ -86,15 +90,14 @@ class BrokerIntegration {
         if (!broker) throw new Error(`Broker ${brokerName} not supported`);
 
         try {
-            const response = await axios.get(`${broker.baseURL}${broker.endpoints.accounts}`, {
+            const response = await fetch(`${broker.baseURL}${broker.endpoints.accounts}`, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Accept': 'application/json'
-                },
-                timeout: 10000
+                }
             });
 
-            return response.data;
+            return await response.json();
         } catch (error) {
             console.error(`Error fetching account info from ${brokerName}:`, error.message);
             throw error;
@@ -107,15 +110,14 @@ class BrokerIntegration {
         if (!broker) throw new Error(`Broker ${brokerName} not supported`);
 
         try {
-            const response = await axios.get(`${broker.baseURL}${broker.endpoints.positions}`, {
+            const response = await fetch(`${broker.baseURL}${broker.endpoints.positions}`, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Accept': 'application/json'
-                },
-                timeout: 10000
+                }
             });
 
-            return response.data;
+            return await response.json();
         } catch (error) {
             console.error(`Error fetching positions from ${brokerName}:`, error.message);
             return { positions: [] };
@@ -147,22 +149,24 @@ class BrokerIntegration {
                 orderData.limit_price = limitPrice;
             }
 
-            const response = await axios.post(
+            const response = await fetch(
                 `${broker.baseURL}${broker.endpoints.orders}`,
-                orderData,
                 {
+                    method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${accessToken}`,
                         'Accept': 'application/json',
                         'Content-Type': 'application/json'
                     },
-                    timeout: 10000
+                    body: JSON.stringify(orderData)
                 }
             );
 
+            const data = await response.json();
+
             return {
-                orderId: response.data.id,
-                status: response.data.status,
+                orderId: data.id,
+                status: data.status,
                 symbol,
                 quantity,
                 side,
@@ -182,23 +186,22 @@ class BrokerIntegration {
 
         try {
             const promises = symbols.map(symbol =>
-                axios.get(`${broker.baseURL}${broker.endpoints.quotes}${symbol}/`, {
+                fetch(`${broker.baseURL}${broker.endpoints.quotes}${symbol}/`, {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`,
                         'Accept': 'application/json'
-                    },
-                    timeout: 10000
-                })
+                    }
+                }).then(r => r.json())
             );
 
             const responses = await Promise.all(promises);
             const prices = {};
 
-            responses.forEach((response, index) => {
+            responses.forEach((data, index) => {
                 prices[symbols[index]] = {
-                    price: response.data.last_price,
-                    ask: response.data.ask_price,
-                    bid: response.data.bid_price,
+                    price: data.last_price,
+                    ask: data.ask_price,
+                    bid: data.bid_price,
                     timestamp: new Date().toISOString()
                 };
             });

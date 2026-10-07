@@ -6,13 +6,22 @@
 require('dotenv').config();
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
 const marketDataService = require('./market-data-service');
 const brokerIntegration = require('./broker-integration');
 const botEngine = require('./bot-engine');
+
+// Simple password hashing using crypto
+function hashPassword(password) {
+    return crypto.createHash('sha256').update(password + process.env.PASSWORD_SALT || 'default-salt').digest('hex');
+}
+
+function verifyPassword(password, hash) {
+    return hashPassword(password) === hash;
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -68,7 +77,7 @@ app.post('/api/auth/register', async (req, res) => {
         if (store.users.find(u => u.email === email)) {
             return res.status(400).json({ error: 'Email already exists' });
         }
-        const password_hash = await bcrypt.hash(password, 10);
+        const password_hash = hashPassword(password);
         const userId = nextUserId++;
         store.users.push({
             id: userId,
@@ -94,7 +103,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-        const valid = await bcrypt.compare(password, user.password_hash);
+        const valid = verifyPassword(password, user.password_hash);
         if (!valid) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -153,6 +162,20 @@ app.get('/api/market/news', async (req, res) => {
         res.json({
             articles: news,
             count: news.length,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/market/formatted-prices', async (req, res) => {
+    try {
+        await marketDataService.getAllMarketData();
+        const formatted = marketDataService.getFormattedPrices();
+        res.json({
+            stocks: formatted.stocks,
+            crypto: formatted.crypto,
             timestamp: new Date().toISOString()
         });
     } catch (error) {

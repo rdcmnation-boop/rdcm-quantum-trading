@@ -3,8 +3,6 @@
  * Pulls real-time prices from CoinGecko and financial APIs
  */
 
-const axios = require('axios');
-
 class MarketDataService {
     constructor() {
         this.stockPrices = {};
@@ -16,42 +14,45 @@ class MarketDataService {
     // Get live crypto prices from CoinGecko (free, no auth needed)
     async getCryptoPrices() {
         try {
-            const response = await axios.get('https://api.coingecko.com/api/v3/simple/price', {
-                params: {
-                    ids: 'bitcoin,ethereum,ripple,cardano,solana',
-                    vs_currencies: 'usd',
-                    include_market_cap: true,
-                    include_24hr_vol: true,
-                    include_24hr_change: true
-                },
+            const params = new URLSearchParams({
+                ids: 'bitcoin,ethereum,ripple,cardano,solana',
+                vs_currencies: 'usd',
+                include_market_cap: true,
+                include_24hr_vol: true,
+                include_24hr_change: true
+            });
+
+            const response = await fetch('https://api.coingecko.com/api/v3/simple/price?' + params.toString(), {
                 timeout: 5000
             });
 
+            const data = await response.json();
+
             this.cryptoPrices = {
                 BTC: {
-                    price: response.data.bitcoin?.usd || 0,
-                    change24h: response.data.bitcoin?.usd_24h_change || 0,
-                    market_cap: response.data.bitcoin?.usd_market_cap || 0
+                    price: data.bitcoin?.usd || 0,
+                    change24h: data.bitcoin?.usd_24h_change || 0,
+                    market_cap: data.bitcoin?.usd_market_cap || 0
                 },
                 ETH: {
-                    price: response.data.ethereum?.usd || 0,
-                    change24h: response.data.ethereum?.usd_24h_change || 0,
-                    market_cap: response.data.ethereum?.usd_market_cap || 0
+                    price: data.ethereum?.usd || 0,
+                    change24h: data.ethereum?.usd_24h_change || 0,
+                    market_cap: data.ethereum?.usd_market_cap || 0
                 },
                 XRP: {
-                    price: response.data.ripple?.usd || 0,
-                    change24h: response.data.ripple?.usd_24h_change || 0,
-                    market_cap: response.data.ripple?.usd_market_cap || 0
+                    price: data.ripple?.usd || 0,
+                    change24h: data.ripple?.usd_24h_change || 0,
+                    market_cap: data.ripple?.usd_market_cap || 0
                 },
                 ADA: {
-                    price: response.data.cardano?.usd || 0,
-                    change24h: response.data.cardano?.usd_24h_change || 0,
-                    market_cap: response.data.cardano?.usd_market_cap || 0
+                    price: data.cardano?.usd || 0,
+                    change24h: data.cardano?.usd_24h_change || 0,
+                    market_cap: data.cardano?.usd_market_cap || 0
                 },
                 SOL: {
-                    price: response.data.solana?.usd || 0,
-                    change24h: response.data.solana?.usd_24h_change || 0,
-                    market_cap: response.data.solana?.usd_market_cap || 0
+                    price: data.solana?.usd || 0,
+                    change24h: data.solana?.usd_24h_change || 0,
+                    market_cap: data.solana?.usd_market_cap || 0
                 }
             };
 
@@ -62,39 +63,108 @@ class MarketDataService {
         }
     }
 
-    // Get live stock prices (mock for now - Alpha Vantage requires API key)
+    // Get live stock prices (realistic market simulation)
     getStockPrices() {
-        // Simulated live stock data with realistic fluctuations
-        const basePrice = { AAPL: 150, TSLA: 200, GOOGL: 140, MSFT: 380, AMZN: 180 };
+        // Extended stock data across multiple sectors
+        const basePrice = {
+            // Tech
+            AAPL: 150, MSFT: 380, GOOGL: 140, NVDA: 875, META: 320, TSLA: 200,
+            // Finance
+            JPM: 195, GS: 380, BAC: 35,
+            // Retail & E-commerce
+            AMZN: 180, WMT: 85, TGT: 75,
+            // Healthcare
+            JNJ: 155, PFE: 28, UNH: 480,
+            // Energy
+            XOM: 115, CVX: 155,
+            // Entertainment
+            DIS: 92, NFLX: 240
+        };
 
         this.stockPrices = {};
-        for (const [symbol, price] of Object.entries(basePrice)) {
-            const change = (Math.random() - 0.5) * 4; // -2% to +2% fluctuation
+        for (const [symbol, baseP] of Object.entries(basePrice)) {
+            // Realistic -5% to +5% daily volatility
+            const volatility = (Math.random() - 0.5) * 10;
+            const priceChange = (volatility / 100) * baseP;
+            const currentPrice = baseP + priceChange;
+
+            // Calculate high/low for the day
+            const dayHigh = currentPrice * (1 + Math.random() * 0.03);
+            const dayLow = currentPrice * (1 - Math.random() * 0.03);
+
+            // Simulate volume
+            const volume = Math.floor(Math.random() * 5000000) + 1000000;
+
             this.stockPrices[symbol] = {
-                price: (price + change).toFixed(2),
-                change24h: (change / price * 100).toFixed(2),
-                high: (price * 1.05).toFixed(2),
-                low: (price * 0.95).toFixed(2)
+                price: currentPrice.toFixed(2),
+                change24h: volatility.toFixed(2),
+                changePercent: (volatility).toFixed(2),
+                high: dayHigh.toFixed(2),
+                low: dayLow.toFixed(2),
+                volume: volume,
+                timestamp: new Date().toISOString()
             };
         }
         return this.stockPrices;
     }
 
+    // Get formatted prices for dashboard display
+    getFormattedPrices() {
+        const stocks = this.stockPrices;
+        const crypto = this.cryptoPrices;
+
+        const formatted = {
+            stocks: {},
+            crypto: {}
+        };
+
+        // Format stocks with indicators
+        for (const [symbol, data] of Object.entries(stocks)) {
+            const change = parseFloat(data.changePercent);
+            formatted.stocks[symbol] = {
+                symbol,
+                price: `$${parseFloat(data.price).toFixed(2)}`,
+                change: change.toFixed(2),
+                indicator: change > 0 ? '📈' : change < 0 ? '📉' : '➡️',
+                high: `$${data.high}`,
+                low: `$${data.low}`,
+                volume: data.volume
+            };
+        }
+
+        // Format crypto with market cap
+        for (const [symbol, data] of Object.entries(crypto)) {
+            const change = parseFloat(data.change24h);
+            formatted.crypto[symbol] = {
+                symbol,
+                price: `$${parseFloat(data.price).toFixed(2)}`,
+                change: change.toFixed(2),
+                indicator: change > 0 ? '🟢' : change < 0 ? '🔴' : '⚪',
+                marketCap: data.market_cap ? `$${(data.market_cap / 1e9).toFixed(2)}B` : 'N/A'
+            };
+        }
+
+        return formatted;
+    }
+
     // Get financial news from free news API
     async getFinancialNews() {
         try {
-            const response = await axios.get('https://newsapi.org/v2/everything', {
-                params: {
-                    q: '(cryptocurrency OR trading OR stock market) AND (Bitcoin OR Ethereum OR stocks)',
-                    sortBy: 'publishedAt',
-                    language: 'en',
-                    pageSize: 10,
-                    apiKey: process.env.NEWS_API_KEY || 'demo'
-                },
+            const params = new URLSearchParams({
+                q: '(cryptocurrency OR trading OR stock market) AND (Bitcoin OR Ethereum OR stocks)',
+                sortBy: 'publishedAt',
+                language: 'en',
+                pageSize: 10,
+                apiKey: process.env.NEWS_API_KEY || 'demo'
+            });
+
+            const response = await fetch('https://newsapi.org/v2/everything?' + params.toString(), {
                 timeout: 5000
             });
 
-            this.newsFeeds = (response.data.articles || []).map(article => ({
+            const data = await response.json();
+
+            this.newsFeeds = (data.articles || []).map(article => ({
                 title: article.title,
                 description: article.description,
                 url: article.url,

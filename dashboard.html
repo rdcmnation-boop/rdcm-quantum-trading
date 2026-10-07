@@ -446,27 +446,10 @@
 
             <!-- Real-time Market Data -->
             <div class="card">
-                <div class="card-title">💹 Live Market Prices</div>
-                <div id="market-prices" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                <div class="card-title">💹 Live Market Prices - Stocks & Crypto</div>
+                <div id="market-prices" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
                     <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 11px; color: #999;">AAPL</div>
-                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-aapl">$150.00</div>
-                        <div style="font-size: 10px; color: #999;" id="change-aapl">+0.00%</div>
-                    </div>
-                    <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 11px; color: #999;">TSLA</div>
-                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-tsla">$200.00</div>
-                        <div style="font-size: 10px; color: #999;" id="change-tsla">+0.00%</div>
-                    </div>
-                    <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 11px; color: #999;">BTC</div>
-                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-btc">$0.00</div>
-                        <div style="font-size: 10px; color: #999;" id="change-btc">+0.00%</div>
-                    </div>
-                    <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 11px; color: #999;">ETH</div>
-                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-eth">$0.00</div>
-                        <div style="font-size: 10px; color: #999;" id="change-eth">+0.00%</div>
+                        <div class="loader" style="margin: 0 auto;"></div>
                     </div>
                 </div>
             </div>
@@ -766,8 +749,11 @@
             loadBrokerConnections();
             loadBotPerformance();
             loadNews();
+            loadFormattedPrices();
             initWebSocket();
 
+            // Refresh prices every 10 seconds
+            setInterval(loadFormattedPrices, 10000);
             // Refresh news every 5 minutes
             setInterval(loadNews, 300000);
         });
@@ -883,29 +869,54 @@
             }
         }
 
-        // Update market prices with live data
-        function updateMarketPrices(prices) {
-            if (prices.stocks) {
-                if (prices.stocks.AAPL) {
-                    document.getElementById('price-aapl').textContent = '$' + parseFloat(prices.stocks.AAPL.price).toFixed(2);
-                    document.getElementById('change-aapl').textContent = parseFloat(prices.stocks.AAPL.change24h).toFixed(2) + '%';
-                }
-                if (prices.stocks.TSLA) {
-                    document.getElementById('price-tsla').textContent = '$' + parseFloat(prices.stocks.TSLA.price).toFixed(2);
-                    document.getElementById('change-tsla').textContent = parseFloat(prices.stocks.TSLA.change24h).toFixed(2) + '%';
-                }
-            }
+        // Load formatted market prices dynamically
+        async function loadFormattedPrices() {
+            try {
+                const response = await fetch('/api/market/formatted-prices');
+                const data = await response.json();
+                const container = document.getElementById('market-prices');
 
-            if (prices.crypto) {
-                if (prices.crypto.BTC) {
-                    document.getElementById('price-btc').textContent = '$' + parseFloat(prices.crypto.BTC.price).toFixed(2);
-                    document.getElementById('change-btc').textContent = parseFloat(prices.crypto.BTC.change24h).toFixed(2) + '%';
+                let html = '';
+
+                // Add stocks
+                if (data.stocks && Object.keys(data.stocks).length > 0) {
+                    const stocks = Object.values(data.stocks);
+                    html += stocks.map(stock => `
+                        <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center; border-left: 3px solid ${parseFloat(stock.change) >= 0 ? '#4caf50' : '#e74c3c'};">
+                            <div style="font-size: 11px; color: #999; font-weight: bold;">${stock.symbol}</div>
+                            <div style="font-size: 14px; color: #667eea; font-weight: bold; margin: 6px 0;">${stock.price}</div>
+                            <div style="font-size: 10px; color: ${parseFloat(stock.change) >= 0 ? '#4caf50' : '#e74c3c'};">
+                                ${stock.indicator} ${stock.change}%
+                            </div>
+                        </div>
+                    `).join('');
                 }
-                if (prices.crypto.ETH) {
-                    document.getElementById('price-eth').textContent = '$' + parseFloat(prices.crypto.ETH.price).toFixed(2);
-                    document.getElementById('change-eth').textContent = parseFloat(prices.crypto.ETH.change24h).toFixed(2) + '%';
+
+                // Add crypto with market cap
+                if (data.crypto && Object.keys(data.crypto).length > 0) {
+                    const cryptos = Object.values(data.crypto);
+                    html += cryptos.map(crypto => `
+                        <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center; border-left: 3px solid ${parseFloat(crypto.change) >= 0 ? '#4caf50' : '#e74c3c'};">
+                            <div style="font-size: 11px; color: #999; font-weight: bold;">${crypto.symbol}</div>
+                            <div style="font-size: 14px; color: #764ba2; font-weight: bold; margin: 6px 0;">${crypto.price}</div>
+                            <div style="font-size: 9px; color: #999; margin-bottom: 4px;">${crypto.marketCap}</div>
+                            <div style="font-size: 10px; color: ${parseFloat(crypto.change) >= 0 ? '#4caf50' : '#e74c3c'};">
+                                ${crypto.indicator} ${crypto.change}%
+                            </div>
+                        </div>
+                    `).join('');
                 }
+
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading formatted prices:', error);
+                document.getElementById('market-prices').innerHTML = '<div style="color: #e74c3c; padding: 20px;">Error loading market data</div>';
             }
+        }
+
+        // Update market prices with live data (WebSocket)
+        function updateMarketPrices(prices) {
+            loadFormattedPrices();
         }
 
         // Load financial news
