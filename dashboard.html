@@ -483,8 +483,8 @@
                     <button class="btn btn-secondary" style="margin-top: 10px;" onclick="getSetupGuide('robinhood')">
                         📖 Setup Guide
                     </button>
-                    <a href="https://developer.robinhood.com/" target="_blank" class="btn btn-secondary" style="margin-top: 10px; display: block;">
-                        🔑 Get OAuth Credentials
+                    <a href="https://api.robinhood.com/docs/" target="_blank" class="btn btn-secondary" style="margin-top: 10px; display: block;">
+                        🔑 Get API Token
                     </a>
                 </div>
 
@@ -528,8 +528,8 @@
             <div class="card" style="margin-top: 20px;">
                 <div class="card-title">🔗 Resources & Documentation</div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
-                    <a href="https://developer.robinhood.com/" target="_blank" class="btn btn-secondary" style="padding: 10px; font-size: 11px;">
-                        🔴 Robinhood Dev Portal
+                    <a href="https://api.robinhood.com/docs/" target="_blank" class="btn btn-secondary" style="padding: 10px; font-size: 11px;">
+                        🔴 Robinhood API
                     </a>
                     <a href="https://docs.cdp.coinbase.com/" target="_blank" class="btn btn-secondary" style="padding: 10px; font-size: 11px;">
                         💰 Coinbase API
@@ -970,8 +970,8 @@
 
         // Connect Robinhood
         async function connectRobinhood() {
-            const code = prompt('Enter your Robinhood OAuth code:\n\n(Get it from: https://developer.robinhood.com)');
-            if (!code) return;
+            const token = prompt('Enter your Robinhood API Token:\n\n(Get it from: https://api.robinhood.com/docs/)');
+            if (!token) return;
 
             const response = await fetch('/api/brokers/robinhood/connect', {
                 method: 'POST',
@@ -979,7 +979,7 @@
                     'Authorization': 'Bearer ' + authToken,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ code })
+                body: JSON.stringify({ code: token })
             });
 
             const result = await response.json();

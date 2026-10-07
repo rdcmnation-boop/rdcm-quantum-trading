@@ -190,7 +190,8 @@ app.get('/api/brokers/info', (req, res) => {
             available: ['robinhood', 'coinbase'],
             robinhood: {
                 name: 'Robinhood',
-                docURL: 'https://developer.robinhood.com/',
+                docURL: 'https://api.robinhood.com/docs/',
+                authMethod: 'Bearer Token',
                 features: ['stocks', 'crypto', 'options']
             },
             coinbase: {
