@@ -75,10 +75,12 @@ const store = {
     users: [],
     portfolios: [],
     orders: [],
-    brokerTokens: {}
+    brokerTokens: {},
+    customBots: [],
+    botStrategies: ['AutoRule (Momentum)', 'Quantum AI (ML)', 'Arbitrage Scanner', 'Volatility Trader']
 };
 
-let nextUserId = 1, nextOrderId = 1;
+let nextUserId = 1, nextOrderId = 1, nextBotId = 1;
 
 // ============= MARKET DATA SERVICE =============
 class MarketDataService {
@@ -447,6 +449,77 @@ const server = http.createServer((req, res) => {
                 const state = unifiedBrain.exportState();
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 return res.end(JSON.stringify(state));
+            }
+
+            // ============= CUSTOM BOT MANAGEMENT ENDPOINTS =============
+            if (pathname === '/api/bots/strategies' && req.method === 'GET') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    strategies: store.botStrategies,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+
+            if (pathname === '/api/bots/create' && req.method === 'POST') {
+                const { userId, botName, strategy, initialCapital } = jsonBody;
+                if (!botName || !strategy || !initialCapital) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Bot name, strategy, and initial capital required' }));
+                }
+                const botId = `custom-bot-${nextBotId++}`;
+                const newBot = {
+                    id: botId,
+                    userId: userId || 1,
+                    name: botName,
+                    strategy: strategy,
+                    capital: initialCapital,
+                    currentValue: initialCapital,
+                    winRate: 0.55,
+                    tradesExecuted: 0,
+                    profitLoss: 0,
+                    status: 'active',
+                    createdAt: new Date().toISOString(),
+                    lastTradeAt: null
+                };
+                store.customBots.push(newBot);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ success: true, bot: newBot }));
+            }
+
+            if (pathname === '/api/bots/list' && req.method === 'GET') {
+                const userId = url.searchParams.get('userId');
+                const bots = userId
+                    ? store.customBots.filter(b => b.userId === parseInt(userId))
+                    : store.customBots;
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    bots: bots,
+                    total: bots.length,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+
+            if (pathname === '/api/bots/get' && req.method === 'GET') {
+                const botId = url.searchParams.get('botId');
+                const bot = store.customBots.find(b => b.id === botId);
+                if (!bot) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Bot not found' }));
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify(bot));
+            }
+
+            if (pathname === '/api/bots/update' && req.method === 'PUT') {
+                const { botId, status } = jsonBody;
+                const bot = store.customBots.find(b => b.id === botId);
+                if (!bot) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Bot not found' }));
+                }
+                if (status) bot.status = status;
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ success: true, bot }));
             }
 
             // ============= SERVER-SENT EVENTS (REAL-TIME STREAMING) =============
