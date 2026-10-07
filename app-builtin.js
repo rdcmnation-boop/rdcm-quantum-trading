@@ -89,9 +89,8 @@ class MarketDataService {
 
     generateStockPrices() {
         const basePrice = {
-            AAPL: 150, MSFT: 380, GOOGL: 140, NVDA: 875, META: 320, TSLA: 200,
-            JPM: 195, GS: 380, BAC: 35, AMZN: 180, WMT: 85, TGT: 75,
-            JNJ: 155, PFE: 28, UNH: 480, XOM: 115, CVX: 155, DIS: 92, NFLX: 240
+            AAPL: 150, MSFT: 380, GOOGL: 140, NVDA: 875, AMZN: 180,
+            TSLA: 200, JPM: 195, GS: 380, XOM: 115, JNJ: 155
         };
 
         const stocks = {};
@@ -116,7 +115,7 @@ class MarketDataService {
             BTC: { price: 42500 + Math.random() * 1000, change24h: 2.5, market_cap: 850000000000 },
             ETH: { price: 2300 + Math.random() * 100, change24h: 1.8, market_cap: 280000000000 },
             XRP: { price: 2.1 + Math.random() * 0.2, change24h: -0.5, market_cap: 110000000000 },
-            ADA: { price: 0.98 + Math.random() * 0.1, change24h: 0.3, market_cap: 35000000000 },
+            DOGE: { price: 0.35 + Math.random() * 0.05, change24h: 1.2, market_cap: 50000000000 },
             SOL: { price: 145 + Math.random() * 10, change24h: 3.2, market_cap: 62000000000 }
         };
     }
@@ -518,32 +517,10 @@ server.listen(PORT, () => {
     console.log(`🤖 Bots Hub: http://localhost:${PORT}/bots-hub.html`);
     console.log(`✅ Platform initialized successfully`);
 
-    // ============= REGISTER EXTERNAL BOT BRAINS =============
-
-    // Register Bet Brain adapter (connects to external service at https://rdcm-bet-brain.onrender.com/)
-    try {
-        const betBrainAdapter = require('./bots/bet-brain-adapter');
-        unifiedBrain.registerExternalBot(
-            './bots/bet-brain-adapter.js',
-            'external-bet-brain',
-            {
-                name: 'Bet Brain (External)',
-                strategy: 'probability-based-betting',
-                version: '2.5.0',
-                externalService: 'https://rdcm-bet-brain.onrender.com/',
-                isExternal: true
-            }
-        );
-        console.log('✅ External Bet Brain adapter registered successfully');
-        console.log('🌐 Connected to: https://rdcm-bet-brain.onrender.com/');
-    } catch (error) {
-        console.warn('⚠️ Could not register Bet Brain adapter:', error.message);
-    }
-
-    console.log('\n📈 All bots initialized and coordinating:');
+    console.log('\n📈 Trading System initialized:');
     const metrics = unifiedBrain.getAIMetrics();
-    console.log(`   • Bots Connected: ${metrics.botsConnected}/5`);
-    console.log(`   • System Accuracy: ${(metrics.accuracy * 100).toFixed(1)}%`);
+    console.log(`   • Bots Connected: ${metrics.botsConnected}/3`);
+    console.log(`   • Market Data Streams: 15 (10 crypto + 10 stocks)`);
     console.log(`   • Learning Rate: ${metrics.learningRate}`);
 });
 
