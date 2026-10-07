@@ -36,7 +36,7 @@ const DB_PATH = process.env.DB_PATH || ':memory:';
 // ============= MIDDLEWARE =============
 
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(__dirname));
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
     next();
