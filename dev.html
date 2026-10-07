@@ -328,14 +328,51 @@
         <div class="section">
             <div class="section-title">📡 API Endpoints</div>
             
-            <h3 style="color: #00ff00; margin-top: 15px; margin-bottom: 10px;">Authentication</h3>
+            <h3 style="color: #00ff00; margin-top: 15px; margin-bottom: 10px;">🔐 Authentication & Security</h3>
             <div class="endpoint">
                 <span class="post">POST</span> /api/auth/register
-                <br><span style="color: #888;">Register new user account</span>
+                <br><span style="color: #888;">Register new user account with email & password</span>
+                <br><span style="color: #666;">Returns: JWT token (valid 7 days)</span>
             </div>
             <div class="endpoint">
                 <span class="post">POST</span> /api/auth/login
                 <br><span style="color: #888;">Authenticate user and get JWT token</span>
+                <br><span style="color: #666;">Returns: JWT token, user info, trading permissions</span>
+            </div>
+            <div class="endpoint">
+                <span class="post">POST</span> /api/auth/verify
+                <br><span style="color: #888;">Verify JWT token validity</span>
+                <br><span style="color: #666;">Headers: Authorization: Bearer {token}</span>
+            </div>
+            <div class="endpoint">
+                <span class="post">POST</span> /api/auth/refresh
+                <br><span style="color: #888;">Refresh expired JWT token</span>
+                <br><span style="color: #666;">Returns: New JWT token</span>
+            </div>
+            <div class="endpoint">
+                <span class="post">POST</span> /api/auth/2fa/enable
+                <br><span style="color: #888;">Enable two-factor authentication</span>
+                <br><span style="color: #666;">Security: Authenticator app (TOTP)</span>
+            </div>
+            <div class="endpoint">
+                <span class="post">POST</span> /api/auth/2fa/verify
+                <br><span style="color: #888;">Verify 2FA code during login</span>
+                <br><span style="color: #666;">Required: 6-digit code from authenticator</span>
+            </div>
+            <div class="endpoint">
+                <span class="post">POST</span> /api/auth/password/change
+                <br><span style="color: #888;">Change user password securely</span>
+                <br><span style="color: #666;">Requires: Current password + new password (12+ chars)</span>
+            </div>
+            <div class="endpoint">
+                <span class="post">POST</span> /api/auth/api-keys/generate
+                <br><span style="color: #888;">Generate secure API keys for dev access</span>
+                <br><span style="color: #666;">Returns: Public key + Private key (one-time)</span>
+            </div>
+            <div class="endpoint">
+                <span class="post">POST</span> /api/auth/session/revoke
+                <br><span style="color: #888;">Revoke all active sessions</span>
+                <br><span style="color: #666;">Logs out user from all devices</span>
             </div>
 
             <h3 style="color: #00ff00; margin-top: 15px; margin-bottom: 10px;">Market Data</h3>
@@ -378,6 +415,96 @@
             <div class="endpoint">
                 <span class="post">POST</span> /api/brokers/coinbase/connect
                 <br><span style="color: #888;">Connect Coinbase account via OAuth</span>
+            </div>
+        </div>
+
+        <!-- Login Security Guide -->
+        <div class="section">
+            <div class="section-title">🔐 Developer Security Guide</div>
+
+            <h3 style="color: #00ff00; margin-top: 15px; margin-bottom: 10px;">5 Core Security Features</h3>
+
+            <div style="background: #0f1419; padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #00ff00;">1. JWT Token Authentication</strong>
+                    <div style="color: #888; margin-top: 5px;">
+                        - Tokens valid for 7 days
+                        - Auto-refresh available
+                        - Signed with SHA-256 algorithm
+                        - Header: Authorization: Bearer {token}
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #00ff00;">2. Two-Factor Authentication (2FA)</strong>
+                    <div style="color: #888; margin-top: 5px;">
+                        - TOTP (Time-based One-Time Password)
+                        - Authenticator app support (Google Auth, Authy)
+                        - Required for high-risk operations
+                        - Backup codes provided
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #00ff00;">3. Secure Password Policy</strong>
+                    <div style="color: #888; margin-top: 5px;">
+                        - Minimum 12 characters required
+                        - Salt + hashing (bcrypt)
+                        - Password reset via email verification
+                        - Change password anytime
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #00ff00;">4. API Key Management</strong>
+                    <div style="color: #888; margin-top: 5px;">
+                        - Generate unique API keys per client
+                        - Asymmetric encryption (RSA-2048)
+                        - Key rotation supported
+                        - Scoped permissions per key
+                    </div>
+                </div>
+
+                <div>
+                    <strong style="color: #00ff00;">5. Session Management</strong>
+                    <div style="color: #888; margin-top: 5px;">
+                        - Track all active sessions
+                        - Logout from all devices
+                        - Session timeout (30 minutes idle)
+                        - IP-based anomaly detection
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="color: #00ff00; margin-top: 15px; margin-bottom: 10px;">Security Implementation Example</h3>
+            <div class="code">
+// Secure Login Flow
+1. POST /api/auth/register
+   {
+     "email": "dev@example.com",
+     "password": "SecurePass123!"
+   }
+   → Returns JWT token
+
+2. POST /api/auth/2fa/enable
+   → Get QR code for authenticator
+   → Scan with Google Authenticator
+
+3. POST /api/auth/login
+   {
+     "email": "dev@example.com",
+     "password": "SecurePass123!",
+     "totp_code": "123456"
+   }
+   → Returns verified JWT token + session
+
+4. POST /api/auth/api-keys/generate
+   → Generate API key pair
+   → Use for bot API access
+
+5. Use Token in Requests:
+   curl -H "Authorization: Bearer {jwt_token}" \
+        http://localhost:3000/api/bots/status
             </div>
         </div>
 
