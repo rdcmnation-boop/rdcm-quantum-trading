@@ -450,16 +450,32 @@
                 <div id="market-prices" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
                     <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
                         <div style="font-size: 11px; color: #999;">AAPL</div>
-                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-aapl">$0.00</div>
+                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-aapl">$150.00</div>
+                        <div style="font-size: 10px; color: #999;" id="change-aapl">+0.00%</div>
                     </div>
                     <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
                         <div style="font-size: 11px; color: #999;">TSLA</div>
-                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-tsla">$0.00</div>
+                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-tsla">$200.00</div>
+                        <div style="font-size: 10px; color: #999;" id="change-tsla">+0.00%</div>
                     </div>
                     <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
                         <div style="font-size: 11px; color: #999;">BTC</div>
                         <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-btc">$0.00</div>
+                        <div style="font-size: 10px; color: #999;" id="change-btc">+0.00%</div>
                     </div>
+                    <div style="background: #0f1419; padding: 12px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 11px; color: #999;">ETH</div>
+                        <div style="font-size: 16px; color: #667eea; font-weight: bold;" id="price-eth">$0.00</div>
+                        <div style="font-size: 10px; color: #999;" id="change-eth">+0.00%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Financial News Feed -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-title">📰 Market News</div>
+                <div id="news-feed" style="max-height: 400px; overflow-y: auto;">
+                    <div style="color: #999; text-align: center; padding: 20px;">Loading news...</div>
                 </div>
             </div>
         </div>
@@ -749,7 +765,11 @@
             loadDashboard();
             loadBrokerConnections();
             loadBotPerformance();
+            loadNews();
             initWebSocket();
+
+            // Refresh news every 5 minutes
+            setInterval(loadNews, 300000);
         });
 
         // WebSocket for real-time updates
@@ -863,11 +883,67 @@
             }
         }
 
-        // Update market prices
+        // Update market prices with live data
         function updateMarketPrices(prices) {
-            if (prices.AAPL) document.getElementById('price-aapl').textContent = '$' + prices.AAPL;
-            if (prices.TSLA) document.getElementById('price-tsla').textContent = '$' + prices.TSLA;
-            if (prices.BTC) document.getElementById('price-btc').textContent = '$' + prices.BTC;
+            if (prices.stocks) {
+                if (prices.stocks.AAPL) {
+                    document.getElementById('price-aapl').textContent = '$' + parseFloat(prices.stocks.AAPL.price).toFixed(2);
+                    document.getElementById('change-aapl').textContent = parseFloat(prices.stocks.AAPL.change24h).toFixed(2) + '%';
+                }
+                if (prices.stocks.TSLA) {
+                    document.getElementById('price-tsla').textContent = '$' + parseFloat(prices.stocks.TSLA.price).toFixed(2);
+                    document.getElementById('change-tsla').textContent = parseFloat(prices.stocks.TSLA.change24h).toFixed(2) + '%';
+                }
+            }
+
+            if (prices.crypto) {
+                if (prices.crypto.BTC) {
+                    document.getElementById('price-btc').textContent = '$' + parseFloat(prices.crypto.BTC.price).toFixed(2);
+                    document.getElementById('change-btc').textContent = parseFloat(prices.crypto.BTC.change24h).toFixed(2) + '%';
+                }
+                if (prices.crypto.ETH) {
+                    document.getElementById('price-eth').textContent = '$' + parseFloat(prices.crypto.ETH.price).toFixed(2);
+                    document.getElementById('change-eth').textContent = parseFloat(prices.crypto.ETH.change24h).toFixed(2) + '%';
+                }
+            }
+        }
+
+        // Load financial news
+        async function loadNews() {
+            try {
+                const response = await fetch('/api/market/news');
+                const data = await response.json();
+                const feed = document.getElementById('news-feed');
+
+                if (!data.articles || data.articles.length === 0) {
+                    feed.innerHTML = '<div style="color: #999; text-align: center; padding: 20px;">No news available</div>';
+                    return;
+                }
+
+                feed.innerHTML = data.articles.slice(0, 5).map((article, idx) => `
+                    <div style="border-bottom: 1px solid #2d3748; padding: 12px 0;">
+                        <div style="display: flex; gap: 10px; align-items: flex-start;">
+                            <div style="flex: 1;">
+                                <div style="font-size: 12px; font-weight: bold; color: #667eea; margin-bottom: 4px;">
+                                    ${article.source}
+                                </div>
+                                <div style="font-size: 13px; color: #e0e0e0; margin-bottom: 6px; line-height: 1.4;">
+                                    ${article.title}
+                                </div>
+                                <div style="font-size: 11px; color: #999; display: flex; gap: 10px;">
+                                    <span>${new Date(article.publishedAt).toLocaleDateString()}</span>
+                                    <span style="color: ${article.sentiment === 'positive' ? '#4caf50' : article.sentiment === 'negative' ? '#e74c3c' : '#ffc107'}">
+                                        ${article.sentiment.toUpperCase()}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading news:', error);
+                document.getElementById('news-feed').innerHTML = '<div style="color: #e74c3c; padding: 20px;">Error loading news</div>';
+            }
         }
 
         // Switch tabs
