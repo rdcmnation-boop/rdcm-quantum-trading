@@ -393,22 +393,28 @@ class PaperTradingEngine {
     try {
       console.log(`[updatePortfolioForTrade] Starting portfolio update`);
 
-      console.log(`[updatePortfolioForTrade] Destructuring trade object`);
+      console.log(`[updatePortfolioForTrade] Accessing trade properties directly (no destructuring)`);
       console.log(`[updatePortfolioForTrade] Trade object type: ${typeof trade}, Keys: ${Object.keys(trade).join(', ')}`);
       console.log(`[updatePortfolioForTrade] Trade object frozen: ${Object.isFrozen(trade)}, sealed: ${Object.isSealed(trade)}`);
-      const { symbol, side, quantity, price } = trade;
-      console.log(`[updatePortfolioForTrade] Destructuring successful: ${symbol} ${side} ${quantity} @ ${price}`);
+
+      // Access properties directly instead of destructuring to avoid const reassignment issues
+      const tradeSymbol = trade.symbol;
+      const tradeSide = trade.side;
+      const tradeQuantity = trade.quantity;
+      const tradePrice = trade.price;
+
+      console.log(`[updatePortfolioForTrade] Properties accessed: ${tradeSymbol} ${tradeSide} ${tradeQuantity} @ ${tradePrice}`);
 
       console.log(`[updatePortfolioForTrade] Calculating cost`);
-      const cost = quantity * execution.executionPrice;
+      const cost = tradeQuantity * execution.executionPrice;
       console.log(`[updatePortfolioForTrade] Cost calculated: ${cost}`);
 
-      if (side === 'BUY') {
-        console.log(`[updatePortfolioForTrade] Processing BUY trade for ${symbol}`);
+      if (tradeSide === 'BUY') {
+        console.log(`[updatePortfolioForTrade] Processing BUY trade for ${tradeSymbol}`);
 
-        if (!this.portfolio.positions[symbol]) {
-          console.log(`[updatePortfolioForTrade] Creating new position for ${symbol}`);
-          this.portfolio.positions[symbol] = {
+        if (!this.portfolio.positions[tradeSymbol]) {
+          console.log(`[updatePortfolioForTrade] Creating new position for ${tradeSymbol}`);
+          this.portfolio.positions[tradeSymbol] = {
             quantity: 0,
             avgCost: 0,
             currentValue: 0
@@ -416,8 +422,8 @@ class PaperTradingEngine {
           console.log(`[updatePortfolioForTrade] Position created`);
         }
 
-        console.log(`[updatePortfolioForTrade] Getting position reference for ${symbol}`);
-        const pos = this.portfolio.positions[symbol];
+        console.log(`[updatePortfolioForTrade] Getting position reference for ${tradeSymbol}`);
+        const pos = this.portfolio.positions[tradeSymbol];
         console.log(`[updatePortfolioForTrade] Position reference obtained`);
 
         console.log(`[updatePortfolioForTrade] Calculating totalCost`);
@@ -433,39 +439,39 @@ class PaperTradingEngine {
         console.log(`[updatePortfolioForTrade] AvgCost updated: ${pos.avgCost}`);
 
         console.log(`[updatePortfolioForTrade] Updating currentValue`);
-        pos.currentValue = pos.quantity * price;
+        pos.currentValue = pos.quantity * tradePrice;
         console.log(`[updatePortfolioForTrade] CurrentValue updated: ${pos.currentValue}`);
 
         console.log(`[updatePortfolioForTrade] Updating portfolio cash`);
         this.portfolio.cash -= cost;
         console.log(`[updatePortfolioForTrade] Portfolio cash updated. New cash: ${this.portfolio.cash}`);
 
-      } else if (side === 'SELL' && this.portfolio.positions[symbol]) {
-        console.log(`[updatePortfolioForTrade] Processing SELL trade for ${symbol}`);
+      } else if (tradeSide === 'SELL' && this.portfolio.positions[tradeSymbol]) {
+        console.log(`[updatePortfolioForTrade] Processing SELL trade for ${tradeSymbol}`);
 
-        console.log(`[updatePortfolioForTrade] Getting position reference for ${symbol}`);
-        const pos = this.portfolio.positions[symbol];
+        console.log(`[updatePortfolioForTrade] Getting position reference for ${tradeSymbol}`);
+        const pos = this.portfolio.positions[tradeSymbol];
         console.log(`[updatePortfolioForTrade] Position reference obtained. Current quantity: ${pos.quantity}`);
 
         console.log(`[updatePortfolioForTrade] Calculating proceeds`);
-        const proceeds = quantity * execution.executionPrice;
+        const proceeds = tradeQuantity * execution.executionPrice;
         console.log(`[updatePortfolioForTrade] Proceeds: ${proceeds}`);
 
         console.log(`[updatePortfolioForTrade] Calculating gain`);
-        const gain = proceeds - (quantity * pos.avgCost);
+        const gain = proceeds - (tradeQuantity * pos.avgCost);
         console.log(`[updatePortfolioForTrade] Gain: ${gain}`);
 
-        console.log(`[updatePortfolioForTrade] Reducing position quantity from ${pos.quantity} to ${pos.quantity - quantity}`);
-        pos.quantity -= quantity;
+        console.log(`[updatePortfolioForTrade] Reducing position quantity from ${pos.quantity} to ${pos.quantity - tradeQuantity}`);
+        pos.quantity -= tradeQuantity;
         console.log(`[updatePortfolioForTrade] Position quantity reduced`);
 
         console.log(`[updatePortfolioForTrade] Updating currentValue`);
-        pos.currentValue = pos.quantity * price;
+        pos.currentValue = pos.quantity * tradePrice;
         console.log(`[updatePortfolioForTrade] CurrentValue updated: ${pos.currentValue}`);
 
         if (pos.quantity === 0) {
           console.log(`[updatePortfolioForTrade] Position quantity is zero, deleting position`);
-          delete this.portfolio.positions[symbol];
+          delete this.portfolio.positions[tradeSymbol];
           console.log(`[updatePortfolioForTrade] Position deleted`);
         }
 
