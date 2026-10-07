@@ -79,22 +79,40 @@ class PaperTradingEngine {
    */
   async runCycle() {
     this.tickCount++;
+    const cycleStartTime = new Date().toISOString();
 
     try {
+      console.log(`\n[runCycle] ===== CYCLE ${this.tickCount} START (${cycleStartTime}) =====`);
+
       // Step 1: Generate next market bar
+      console.log(`[runCycle] Generating next market bar`);
       const marketBars = this.market.generateNextBar();
+      console.log(`[runCycle] Market bar generated`);
+
+      console.log(`[runCycle] Getting market data`);
       const marketData = this.market.getMarketData();
+      console.log(`[runCycle] Market data obtained for ${this.config.symbols.length} symbols`);
 
       // Step 2: Generate trading signals for each symbol
+      console.log(`[runCycle] Evaluating signals for ${this.config.symbols.length} symbols`);
       for (const symbol of this.config.symbols) {
+        console.log(`[runCycle] Processing symbol: ${symbol}`);
         await this.evaluateSignal(symbol, marketData[symbol]);
+        console.log(`[runCycle] Signal evaluation complete for ${symbol}`);
       }
+      console.log(`[runCycle] All signals evaluated`);
 
       // Step 3: Update portfolio metrics
+      console.log(`[runCycle] Updating portfolio metrics`);
       this.updatePortfolioMetrics(marketData);
+      console.log(`[runCycle] Portfolio metrics updated`);
 
       // Step 4: Check health of all systems
+      console.log(`[runCycle] Checking system health`);
       await this.checkSystemHealth();
+      console.log(`[runCycle] System health check complete`);
+
+      console.log(`[runCycle] ===== CYCLE ${this.tickCount} SUCCESS =====\n`);
 
       return {
         success: true,
@@ -104,13 +122,19 @@ class PaperTradingEngine {
         systemMetrics: this.systemMetrics
       };
     } catch (error) {
-      console.error(`❌ Paper trading cycle failed: ${error.message}`);
-      console.error('Stack trace:', error.stack);
+      console.error(`\n❌ [runCycle] CYCLE ${this.tickCount} FAILED`);
+      console.error(`[runCycle] Error message: ${error.message}`);
+      console.error(`[runCycle] Error type: ${error.constructor.name}`);
+      console.error(`[runCycle] Stack trace:\n${error.stack}`);
+      console.error(`[runCycle] ===== CYCLE ${this.tickCount} FAILURE =====\n`);
+
       return {
         success: false,
         tick: this.tickCount,
         error: error.message,
-        stack: error.stack
+        errorType: error.constructor.name,
+        stack: error.stack,
+        timestamp: new Date().toISOString()
       };
     }
   }
@@ -123,100 +147,126 @@ class PaperTradingEngine {
 
     this.systemMetrics.totalDecisionsEvaluated++;
 
-    // Generate AI council scores (simplified for paper trading)
-    const aiScores = this.generateAIScores(marketData);
+    try {
+      console.log(`[evaluateSignal] Starting evaluation for ${symbol}`);
 
-    // Generate sentiment
-    const sentiment = this.market.generateSentiment()[symbol] || {};
+      // Generate AI council scores (simplified for paper trading)
+      const aiScores = this.generateAIScores(marketData);
+      console.log(`[evaluateSignal] Generated AI scores for ${symbol}`);
 
-    // Step 1: CAPTURE SNAPSHOT
-    const decisionId = `DECISION_${this.tickCount}_${symbol}`;
-    const snapshotResult = await this.snapshots.captureSnapshot({
-      symbol,
-      decisionId,
-      marketData: {
-        current: marketData.price,
-        open: marketData.open,
-        high: marketData.high,
-        low: marketData.low,
-        volume: marketData.volume,
-        bid: marketData.bid,
-        ask: marketData.ask
-      },
-      indicators: marketData.indicators,
-      sentiment: {
-        newsSentiment: sentiment.newsSentiment || 50,
-        socialSentiment: sentiment.socialSentiment || 50
-      },
-      quantumScore: aiScores.consensusScore,
-      confidence: aiScores.confidence
-    });
+      // Generate sentiment
+      const sentiment = this.market.generateSentiment()[symbol] || {};
 
-    // Step 2: VALIDATE WITH RISK ENGINE
-    const tradeRequest = this.buildTradeRequest(symbol, marketData, aiScores);
-    const riskResult = await this.riskEngine.validateTrade(tradeRequest);
-
-    if (!riskResult.allowed) {
-      this.systemMetrics.tradesBlocked++;
-      this.riskViolations.push({
-        timestamp: new Date().toISOString(),
+      // Step 1: CAPTURE SNAPSHOT
+      const decisionId = `DECISION_${this.tickCount}_${symbol}`;
+      console.log(`[evaluateSignal] Capturing snapshot with decisionId: ${decisionId}`);
+      const snapshotResult = await this.snapshots.captureSnapshot({
         symbol,
-        violations: riskResult.violations,
-        decisionId
+        decisionId,
+        marketData: {
+          current: marketData.price,
+          open: marketData.open,
+          high: marketData.high,
+          low: marketData.low,
+          volume: marketData.volume,
+          bid: marketData.bid,
+          ask: marketData.ask
+        },
+        indicators: marketData.indicators,
+        sentiment: {
+          newsSentiment: sentiment.newsSentiment || 50,
+          socialSentiment: sentiment.socialSentiment || 50
+        },
+        quantumScore: aiScores.consensusScore,
+        confidence: aiScores.confidence
       });
-      return; // Trade blocked
-    }
+      console.log(`[evaluateSignal] Snapshot captured successfully`);
 
-    // Step 3: GENERATE DECISION CARD
-    const card = this.explainability.generateDecisionCard({
-      decisionId,
-      symbol,
-      action: aiScores.action,
-      timestamp: new Date().toISOString(),
-      aiScores,
-      riskAssessment: {
-        violations: riskResult.violations
-      },
-      confidence: aiScores.confidence
-    });
+      // Step 2: VALIDATE WITH RISK ENGINE
+      console.log(`[evaluateSignal] Building trade request for ${symbol}`);
+      const tradeRequest = this.buildTradeRequest(symbol, marketData, aiScores);
+      console.log(`[evaluateSignal] Validating trade with risk engine`);
+      const riskResult = await this.riskEngine.validateTrade(tradeRequest);
+      console.log(`[evaluateSignal] Risk validation complete. Allowed: ${riskResult.allowed}`);
 
-    // Step 4: EXECUTE (SHADOW MODE = SAFE)
-    const executionResult = await this.execution.submitOrder({
-      orderId: decisionId,
-      symbol,
-      side: card.action,
-      quantity: Math.abs(aiScores.suggestedQuantity),
-      orderType: 'MARKET',
-      currentMarketPrice: marketData.price
-    });
+      if (!riskResult.allowed) {
+        this.systemMetrics.tradesBlocked++;
+        this.riskViolations.push({
+          timestamp: new Date().toISOString(),
+          symbol,
+          violations: riskResult.violations,
+          decisionId
+        });
+        console.log(`[evaluateSignal] Trade blocked by risk engine for ${symbol}`);
+        return; // Trade blocked
+      }
 
-    if (executionResult.success) {
-      this.systemMetrics.tradesExecuted++;
+      // Step 3: GENERATE DECISION CARD
+      console.log(`[evaluateSignal] Generating decision card for ${symbol}`);
+      const card = this.explainability.generateDecisionCard({
+        decisionId,
+        symbol,
+        action: aiScores.action,
+        timestamp: new Date().toISOString(),
+        aiScores,
+        riskAssessment: {
+          violations: riskResult.violations
+        },
+        confidence: aiScores.confidence
+      });
+      console.log(`[evaluateSignal] Decision card generated with action: ${card.action}`);
 
-      // Record trade
-      const trade = {
-        tradeId: decisionId,
+      // Step 4: EXECUTE (SHADOW MODE = SAFE)
+      console.log(`[evaluateSignal] Submitting order for ${symbol}`);
+      const executionResult = await this.execution.submitOrder({
+        orderId: decisionId,
         symbol,
         side: card.action,
-        quantity: aiScores.suggestedQuantity,
-        price: executionResult.executionPrice,
-        slippage: executionResult.slippage,
-        timestamp: new Date().toISOString(),
-        quantumScore: card.quantumScore,
-        confidence: card.confidence,
-        sentiment: card.sentiment,
-        riskScore: riskResult.score
-      };
-
-      this.trades.push(trade);
-      this.decisions.push({
-        decisionId,
-        ...card,
-        riskAssessment: riskResult
+        quantity: Math.abs(aiScores.suggestedQuantity),
+        orderType: 'MARKET',
+        currentMarketPrice: marketData.price
       });
+      console.log(`[evaluateSignal] Execution submitted. Success: ${executionResult.success}`);
 
-      // Update portfolio (in shadow mode, tracking only)
-      this.updatePortfolioForTrade(trade, executionResult);
+      if (executionResult.success) {
+        this.systemMetrics.tradesExecuted++;
+
+        // Record trade
+        console.log(`[evaluateSignal] Creating trade object for ${symbol}`);
+        const trade = {
+          tradeId: decisionId,
+          symbol,
+          side: card.action,
+          quantity: aiScores.suggestedQuantity,
+          price: executionResult.executionPrice,
+          slippage: executionResult.slippage,
+          timestamp: new Date().toISOString(),
+          quantumScore: card.quantumScore,
+          confidence: card.confidence,
+          sentiment: card.sentiment,
+          riskScore: riskResult.score
+        };
+        console.log(`[evaluateSignal] Trade object created. Pushing to trades array.`);
+
+        this.trades.push(trade);
+        console.log(`[evaluateSignal] Trade pushed (total: ${this.trades.length})`);
+
+        this.decisions.push({
+          decisionId,
+          ...card,
+          riskAssessment: riskResult
+        });
+        console.log(`[evaluateSignal] Decision pushed (total: ${this.decisions.length})`);
+
+        // Update portfolio (in shadow mode, tracking only)
+        console.log(`[evaluateSignal] Updating portfolio for ${symbol}`);
+        this.updatePortfolioForTrade(trade, executionResult);
+        console.log(`[evaluateSignal] Portfolio updated successfully for ${symbol}`);
+      }
+    } catch (error) {
+      console.error(`[evaluateSignal] ERROR in evaluateSignal for ${symbol}: ${error.message}`);
+      console.error(`[evaluateSignal] Stack trace:`, error.stack);
+      throw error;
     }
   }
 
@@ -340,42 +390,101 @@ class PaperTradingEngine {
    * Update portfolio after trade
    */
   updatePortfolioForTrade(trade, execution) {
-    const { symbol, side, quantity, price } = trade;
-    const cost = quantity * execution.executionPrice;
+    try {
+      console.log(`[updatePortfolioForTrade] Starting portfolio update`);
 
-    if (side === 'BUY') {
-      if (!this.portfolio.positions[symbol]) {
-        this.portfolio.positions[symbol] = {
-          quantity: 0,
-          avgCost: 0,
-          currentValue: 0
-        };
+      console.log(`[updatePortfolioForTrade] Destructuring trade object`);
+      const { symbol, side, quantity, price } = trade;
+      console.log(`[updatePortfolioForTrade] Destructuring successful: ${symbol} ${side} ${quantity} @ ${price}`);
+
+      console.log(`[updatePortfolioForTrade] Calculating cost`);
+      const cost = quantity * execution.executionPrice;
+      console.log(`[updatePortfolioForTrade] Cost calculated: ${cost}`);
+
+      if (side === 'BUY') {
+        console.log(`[updatePortfolioForTrade] Processing BUY trade for ${symbol}`);
+
+        if (!this.portfolio.positions[symbol]) {
+          console.log(`[updatePortfolioForTrade] Creating new position for ${symbol}`);
+          this.portfolio.positions[symbol] = {
+            quantity: 0,
+            avgCost: 0,
+            currentValue: 0
+          };
+          console.log(`[updatePortfolioForTrade] Position created`);
+        }
+
+        console.log(`[updatePortfolioForTrade] Getting position reference for ${symbol}`);
+        const pos = this.portfolio.positions[symbol];
+        console.log(`[updatePortfolioForTrade] Position reference obtained`);
+
+        console.log(`[updatePortfolioForTrade] Calculating totalCost`);
+        const totalCost = pos.quantity * pos.avgCost + cost;
+        console.log(`[updatePortfolioForTrade] TotalCost: ${totalCost}`);
+
+        console.log(`[updatePortfolioForTrade] Updating position quantity from ${pos.quantity} to ${pos.quantity + quantity}`);
+        pos.quantity += quantity;
+        console.log(`[updatePortfolioForTrade] Position quantity updated`);
+
+        console.log(`[updatePortfolioForTrade] Calculating avgCost`);
+        pos.avgCost = totalCost / pos.quantity;
+        console.log(`[updatePortfolioForTrade] AvgCost updated: ${pos.avgCost}`);
+
+        console.log(`[updatePortfolioForTrade] Updating currentValue`);
+        pos.currentValue = pos.quantity * price;
+        console.log(`[updatePortfolioForTrade] CurrentValue updated: ${pos.currentValue}`);
+
+        console.log(`[updatePortfolioForTrade] Updating portfolio cash`);
+        this.portfolio.cash -= cost;
+        console.log(`[updatePortfolioForTrade] Portfolio cash updated. New cash: ${this.portfolio.cash}`);
+
+      } else if (side === 'SELL' && this.portfolio.positions[symbol]) {
+        console.log(`[updatePortfolioForTrade] Processing SELL trade for ${symbol}`);
+
+        console.log(`[updatePortfolioForTrade] Getting position reference for ${symbol}`);
+        const pos = this.portfolio.positions[symbol];
+        console.log(`[updatePortfolioForTrade] Position reference obtained. Current quantity: ${pos.quantity}`);
+
+        console.log(`[updatePortfolioForTrade] Calculating proceeds`);
+        const proceeds = quantity * execution.executionPrice;
+        console.log(`[updatePortfolioForTrade] Proceeds: ${proceeds}`);
+
+        console.log(`[updatePortfolioForTrade] Calculating gain`);
+        const gain = proceeds - (quantity * pos.avgCost);
+        console.log(`[updatePortfolioForTrade] Gain: ${gain}`);
+
+        console.log(`[updatePortfolioForTrade] Reducing position quantity from ${pos.quantity} to ${pos.quantity - quantity}`);
+        pos.quantity -= quantity;
+        console.log(`[updatePortfolioForTrade] Position quantity reduced`);
+
+        console.log(`[updatePortfolioForTrade] Updating currentValue`);
+        pos.currentValue = pos.quantity * price;
+        console.log(`[updatePortfolioForTrade] CurrentValue updated: ${pos.currentValue}`);
+
+        if (pos.quantity === 0) {
+          console.log(`[updatePortfolioForTrade] Position quantity is zero, deleting position`);
+          delete this.portfolio.positions[symbol];
+          console.log(`[updatePortfolioForTrade] Position deleted`);
+        }
+
+        console.log(`[updatePortfolioForTrade] Updating portfolio cash`);
+        this.portfolio.cash += proceeds;
+        console.log(`[updatePortfolioForTrade] Portfolio cash updated. New cash: ${this.portfolio.cash}`);
+
+        console.log(`[updatePortfolioForTrade] Updating totalPL`);
+        this.portfolio.totalPL += gain;
+        console.log(`[updatePortfolioForTrade] TotalPL updated: ${this.portfolio.totalPL}`);
       }
 
-      const pos = this.portfolio.positions[symbol];
-      const totalCost = pos.quantity * pos.avgCost + cost;
-      pos.quantity += quantity;
-      pos.avgCost = totalCost / pos.quantity;
-      pos.currentValue = pos.quantity * price;
+      console.log(`[updatePortfolioForTrade] Updating buyingPower`);
+      this.portfolio.buyingPower = this.portfolio.cash;
+      console.log(`[updatePortfolioForTrade] Portfolio update complete. BuyingPower: ${this.portfolio.buyingPower}`);
 
-      this.portfolio.cash -= cost;
-    } else if (side === 'SELL' && this.portfolio.positions[symbol]) {
-      const pos = this.portfolio.positions[symbol];
-      const proceeds = quantity * execution.executionPrice;
-      const gain = proceeds - (quantity * pos.avgCost);
-
-      pos.quantity -= quantity;
-      pos.currentValue = pos.quantity * price;
-
-      if (pos.quantity === 0) {
-        delete this.portfolio.positions[symbol];
-      }
-
-      this.portfolio.cash += proceeds;
-      this.portfolio.totalPL += gain;
+    } catch (error) {
+      console.error(`[updatePortfolioForTrade] ERROR: ${error.message}`);
+      console.error(`[updatePortfolioForTrade] Stack trace:`, error.stack);
+      throw error;
     }
-
-    this.portfolio.buyingPower = this.portfolio.cash;
   }
 
   /**
