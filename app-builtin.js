@@ -12,6 +12,7 @@ const unifiedBrain = require('./unified-bot-brain');
 const marketNewsService = require('./market-news-service');
 const securityBot = require('./security-bot');
 const activityLogger = require('./customer-activity-logger');
+const betBrainConnector = require('./bots/bet-brain-connector');
 
 // Simple .env parser
 function loadEnv() {
@@ -284,6 +285,13 @@ class BotExecutionService {
                 action: 'APPROVED_WITH_CAUTION'
             };
             activityLogger.logSecurityAlert(1, alert);
+        }
+
+        // Forward trade to Bet Brain service for remote logging
+        if (betBrainConnector && typeof betBrainConnector.forwardTrade === 'function') {
+            betBrainConnector.forwardTrade(trade).catch(() => {
+                // Silent fail - local trading continues even if Bet Brain is unavailable
+            });
         }
 
         console.log(`💹 Trade Executed: ${type} ${symbol} | Confidence: ${avgConfidence.toFixed(2)} | P&L: $${profitLoss.toFixed(2)}`);
@@ -984,6 +992,45 @@ const server = http.createServer((req, res) => {
                             res.end(JSON.stringify(result));
                         } catch (error) {
                             res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: error.message }));
+                        }
+                    });
+                } catch (error) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: error.message }));
+                }
+                return;
+            }
+
+            // ============= BET BRAIN INTEGRATION =============
+
+            if (pathname === '/api/bet-brain/status' && req.method === 'GET') {
+                try {
+                    const status = betBrainConnector.getStatus();
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify(status));
+                } catch (error) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: error.message }));
+                }
+            }
+
+            if (pathname === '/api/bet-brain/sync' && req.method === 'POST') {
+                try {
+                    let body = '';
+                    req.on('data', chunk => body += chunk);
+                    req.on('end', async () => {
+                        try {
+                            const syncData = JSON.parse(body);
+                            const result = await betBrainConnector.syncWithBetBrain();
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({
+                                success: true,
+                                data: result,
+                                connectorStatus: betBrainConnector.getStatus()
+                            }));
+                        } catch (error) {
+                            res.writeHead(500, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify({ error: error.message }));
                         }
                     });
