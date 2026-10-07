@@ -445,6 +445,10 @@ app.get('/health', (req, res) => {
     });
 });
 
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
 app.get('/api/dashboard', verifyToken, (req, res) => {
     try {
         const userId = req.userId;
