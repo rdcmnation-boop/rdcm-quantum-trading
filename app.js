@@ -12,6 +12,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const marketDataService = require('./market-data-service');
 const brokerIntegration = require('./broker-integration');
+const botEngine = require('./bot-engine');
 
 const app = express();
 const server = http.createServer(app);
@@ -481,6 +482,122 @@ app.delete('/api/bots/:bot_id', verifyToken, (req, res) => {
         res.json({
             success: true,
             message: `Bot "${bot.name}" deleted`
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============= BOT EXECUTION ENGINE =============
+app.post('/api/bots/:bot_id/start', verifyToken, async (req, res) => {
+    const { bot_id } = req.params;
+    try {
+        const bot = store.bots.find(b => b.id === parseInt(bot_id) && b.user_id === req.userId);
+        if (!bot) {
+            return res.status(404).json({ error: 'Bot not found' });
+        }
+
+        if (bot.status === 'active') {
+            return res.status(400).json({ error: 'Bot is already running' });
+        }
+
+        // Get user portfolio
+        const portfolio = store.portfolios.find(p => p.user_id === req.userId) || {
+            total_value: 0,
+            cash_available: bot.config.capital || 1000,
+            buying_power: bot.config.capital || 1000
+        };
+
+        // Get current market data
+        const marketData = await marketDataService.getAllMarketData();
+
+        // Start bot in engine
+        const result = await botEngine.startBot(bot, portfolio, marketData);
+
+        if (result.error) {
+            return res.status(400).json({ error: result.error });
+        }
+
+        // Update bot status
+        bot.status = 'active';
+        bot.last_active = new Date().toISOString();
+
+        res.json({
+            success: true,
+            message: result.message,
+            bot_id,
+            status: 'active',
+            capital: result.capital
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/bots/:bot_id/stop', verifyToken, (req, res) => {
+    const { bot_id } = req.params;
+    try {
+        const bot = store.bots.find(b => b.id === parseInt(bot_id) && b.user_id === req.userId);
+        if (!bot) {
+            return res.status(404).json({ error: 'Bot not found' });
+        }
+
+        if (bot.status !== 'active') {
+            return res.status(400).json({ error: 'Bot is not running' });
+        }
+
+        // Stop bot in engine
+        const result = botEngine.stopBot(bot_id, req.userId);
+
+        if (result.error) {
+            return res.status(400).json({ error: result.error });
+        }
+
+        // Update bot status and performance
+        bot.status = 'inactive';
+        bot.performance = result.performance;
+
+        res.json({
+            success: true,
+            message: 'Bot stopped',
+            bot_id,
+            performance: result.performance,
+            totalProfit: result.totalProfit
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/bots/:bot_id/status', verifyToken, (req, res) => {
+    const { bot_id } = req.params;
+    try {
+        const bot = store.bots.find(b => b.id === parseInt(bot_id) && b.user_id === req.userId);
+        if (!bot) {
+            return res.status(404).json({ error: 'Bot not found' });
+        }
+
+        const status = botEngine.getBotStatus(bot_id, req.userId);
+
+        res.json({
+            bot_id,
+            name: bot.name,
+            type: bot.bot_type,
+            ...status
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/bots/active', verifyToken, (req, res) => {
+    try {
+        const activeBots = botEngine.getActiveBots();
+        const userBots = activeBots.filter(b => b.key.startsWith(`${req.userId}-`));
+
+        res.json({
+            count: userBots.length,
+            bots: userBots
         });
     } catch (error) {
         res.status(500).json({ error: error.message });

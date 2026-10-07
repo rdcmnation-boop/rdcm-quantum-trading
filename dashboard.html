@@ -1125,23 +1125,52 @@
             }
         }
 
-        // Toggle bot on/off
-        async function toggleBot(botId, newStatus) {
-            const response = await fetch(`/api/bots/${botId}/toggle`, {
+        // Start bot with real trading
+        async function startBotTrading(botId) {
+            const response = await fetch(`/api/bots/${botId}/start`, {
                 method: 'POST',
                 headers: {
                     'Authorization': 'Bearer ' + authToken,
                     'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ status: newStatus })
+                }
             });
 
             const result = await response.json();
             if (result.success) {
-                showAlert('bot', `✅ ${result.message}`, 'success');
+                showAlert('bot', `🤖 ${result.message} - Trading with $${result.capital}`, 'success');
+                loadBotPerformance();
+                // Refresh bot status every 5 seconds while running
+                setInterval(() => loadBotPerformance(), 5000);
+            } else {
+                showAlert('bot', '❌ Failed to start bot: ' + result.error, 'error');
+            }
+        }
+
+        // Stop bot trading
+        async function stopBotTrading(botId) {
+            const response = await fetch(`/api/bots/${botId}/stop`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + authToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showAlert('bot', `⏹️ Bot stopped - Total Profit: $${result.totalProfit.toFixed(2)}`, 'success');
                 loadBotPerformance();
             } else {
-                showAlert('bot', '❌ Failed to update bot', 'error');
+                showAlert('bot', '❌ Failed to stop bot: ' + result.error, 'error');
+            }
+        }
+
+        // Toggle bot on/off (legacy)
+        async function toggleBot(botId, newStatus) {
+            if (newStatus === 'active') {
+                return startBotTrading(botId);
+            } else {
+                return stopBotTrading(botId);
             }
         }
 
