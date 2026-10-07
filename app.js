@@ -1,40 +1,36 @@
 /**
  * RDCMNATION QUANTUM v3.0 - Complete Platform
- * Full-stack Express.js + SQLite application
- *
- * Features:
- * - User authentication & JWT
- * - Robinhood & Coinbase OAuth integration
- * - Real-time WebSocket updates
- * - Trading dashboard
- * - Bot management
- * - Portfolio tracking
- * - Order management
+ * In-memory storage for Render compatibility
  */
 
 require('dotenv').config();
 const express = require('express');
-const Database = require('better-sqlite3');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const axios = require('axios');
 const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
-const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 // ============= CONFIGURATION =============
-
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'quantum-secret-key-change-in-production';
-const DB_PATH = process.env.DB_PATH || ':memory:';
+
+// ============= IN-MEMORY STORAGE =============
+const store = {
+    users: [],
+    brokers: [],
+    portfolios: [],
+    orders: [],
+    bots: [],
+    positions: []
+};
+let nextUserId = 1, nextBotId = 1, nextOrderId = 1;
 
 // ============= MIDDLEWARE =============
-
 app.use(express.json());
 app.use(express.static(__dirname));
 app.use((req, res, next) => {
@@ -42,102 +38,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// ============= DATABASE SETUP =============
-
-const db = new Database(DB_PATH === ':memory:' ? ':memory:' : './trading_platform.db');
-db.pragma('journal_mode = WAL');
-console.log('✅ Database connected');
-
-try {
-    // Users table
-    db.exec(`CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        full_name TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    // Broker connections
-    db.exec(`CREATE TABLE IF NOT EXISTS broker_connections (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        broker TEXT NOT NULL,
-        account_id TEXT,
-        access_token TEXT,
-        refresh_token TEXT,
-        token_expires_at DATETIME,
-        is_active INTEGER DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id),
-        UNIQUE(user_id, broker)
-    )`);
-
-    // Portfolios
-    db.exec(`CREATE TABLE IF NOT EXISTS portfolios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        broker TEXT NOT NULL,
-        total_value REAL,
-        cash_available REAL,
-        buying_power REAL,
-        day_trade_buying_power REAL,
-        last_updated DATETIME,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )`);
-
-    // Positions
-    db.exec(`CREATE TABLE IF NOT EXISTS positions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        broker TEXT NOT NULL,
-        symbol TEXT NOT NULL,
-        quantity REAL,
-        average_price REAL,
-        current_price REAL,
-        unrealized_gain REAL,
-        unrealized_gain_pct REAL,
-        last_updated DATETIME,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )`);
-
-    // Orders
-    db.exec(`CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        broker TEXT NOT NULL,
-        order_id TEXT UNIQUE,
-        symbol TEXT NOT NULL,
-        side TEXT,
-        quantity REAL,
-        price REAL,
-        order_type TEXT,
-        status TEXT,
-        created_at DATETIME,
-        executed_at DATETIME,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )`);
-
-    // Bots
-    db.exec(`CREATE TABLE IF NOT EXISTS bots (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        bot_type TEXT,
-        status TEXT DEFAULT 'inactive',
-        config TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )`);
-
-    console.log('✅ Database tables created');
-} catch (err) {
-    console.error('Database initialization error:', err);
-}
-
 // ============= JWT AUTHENTICATION =============
-
 function generateToken(userId) {
     return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
 }
@@ -145,7 +46,6 @@ function generateToken(userId) {
 function verifyToken(req, res, next) {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'No token provided' });
-
     jwt.verify(token, JWT_SECRET, (err, decoded) => {
         if (err) return res.status(401).json({ error: 'Invalid token' });
         req.userId = decoded.userId;
@@ -154,58 +54,45 @@ function verifyToken(req, res, next) {
 }
 
 // ============= AUTH ROUTES =============
-
 app.post('/api/auth/register', async (req, res) => {
     const { email, password, full_name } = req.body;
-
     if (!email || !password) {
         return res.status(400).json({ error: 'Email and password required' });
     }
-
     try {
-        const password_hash = await bcrypt.hash(password, 10);
-
-        const stmt = db.prepare(
-            `INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)`
-        );
-        const result = stmt.run(email, password_hash, full_name || email);
-
-        const token = generateToken(result.lastInsertRowid);
-        res.json({
-            success: true,
-            userId: result.lastInsertRowid,
-            email,
-            token
-        });
-    } catch (error) {
-        if (error.message.includes('UNIQUE')) {
-            res.status(400).json({ error: 'Email already exists' });
-        } else {
-            res.status(500).json({ error: error.message });
+        if (store.users.find(u => u.email === email)) {
+            return res.status(400).json({ error: 'Email already exists' });
         }
+        const password_hash = await bcrypt.hash(password, 10);
+        const userId = nextUserId++;
+        store.users.push({
+            id: userId,
+            email,
+            password_hash,
+            full_name: full_name || email,
+            created_at: new Date().toISOString()
+        });
+        const token = generateToken(userId);
+        res.json({ success: true, userId, email, token });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
-
     if (!email || !password) {
         return res.status(400).json({ error: 'Email and password required' });
     }
-
     try {
-        const stmt = db.prepare(`SELECT * FROM users WHERE email = ?`);
-        const user = stmt.get(email);
-
+        const user = store.users.find(u => u.email === email);
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-
         const valid = await bcrypt.compare(password, user.password_hash);
         if (!valid) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-
         const token = generateToken(user.id);
         res.json({
             success: true,
@@ -221,31 +108,31 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', verifyToken, (req, res) => {
     try {
-        const stmt = db.prepare(`SELECT id, email, full_name, created_at FROM users WHERE id = ?`);
-        const user = stmt.get(req.userId);
-        res.json(user || {});
+        const user = store.users.find(u => u.id === req.userId);
+        if (!user) return res.status(401).json({ error: 'User not found' });
+        res.json({ id: user.id, email: user.email, full_name: user.full_name, created_at: user.created_at });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// ============= BROKER CONNECTION ROUTES =============
-
+// ============= BROKER ROUTES =============
 app.post('/api/brokers/robinhood/connect', verifyToken, (req, res) => {
     const { code } = req.body;
-
-    if (!code) {
-        return res.status(400).json({ error: 'Authorization code required' });
-    }
-
+    if (!code) return res.status(400).json({ error: 'Authorization code required' });
     try {
-        // Store connection - in production, exchange code for tokens
-        const stmt = db.prepare(
-            `INSERT INTO broker_connections (user_id, broker, account_id, is_active)
-             VALUES (?, ?, ?, 1)
-             ON CONFLICT(user_id, broker) DO UPDATE SET is_active = 1, account_id = ?`
-        );
-        stmt.run(req.userId, 'robinhood', 'temp-account-id', 'temp-account-id');
+        const existing = store.brokers.find(b => b.user_id === req.userId && b.broker === 'robinhood');
+        if (existing) {
+            existing.is_active = 1;
+        } else {
+            store.brokers.push({
+                user_id: req.userId,
+                broker: 'robinhood',
+                account_id: 'temp-account-id',
+                is_active: 1,
+                created_at: new Date().toISOString()
+            });
+        }
         res.json({ success: true, message: 'Robinhood connected' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -254,18 +141,20 @@ app.post('/api/brokers/robinhood/connect', verifyToken, (req, res) => {
 
 app.post('/api/brokers/coinbase/connect', verifyToken, (req, res) => {
     const { code } = req.body;
-
-    if (!code) {
-        return res.status(400).json({ error: 'Authorization code required' });
-    }
-
+    if (!code) return res.status(400).json({ error: 'Authorization code required' });
     try {
-        const stmt = db.prepare(
-            `INSERT INTO broker_connections (user_id, broker, account_id, is_active)
-             VALUES (?, ?, ?, 1)
-             ON CONFLICT(user_id, broker) DO UPDATE SET is_active = 1, account_id = ?`
-        );
-        stmt.run(req.userId, 'coinbase', 'temp-account-id', 'temp-account-id');
+        const existing = store.brokers.find(b => b.user_id === req.userId && b.broker === 'coinbase');
+        if (existing) {
+            existing.is_active = 1;
+        } else {
+            store.brokers.push({
+                user_id: req.userId,
+                broker: 'coinbase',
+                account_id: 'temp-account-id',
+                is_active: 1,
+                created_at: new Date().toISOString()
+            });
+        }
         res.json({ success: true, message: 'Coinbase connected' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -274,12 +163,8 @@ app.post('/api/brokers/coinbase/connect', verifyToken, (req, res) => {
 
 app.get('/api/brokers/connections', verifyToken, (req, res) => {
     try {
-        const stmt = db.prepare(
-            `SELECT broker, account_id, is_active, created_at FROM broker_connections
-             WHERE user_id = ? ORDER BY created_at DESC`
-        );
-        const rows = stmt.all(req.userId);
-        res.json({ connections: rows || [] });
+        const connections = store.brokers.filter(b => b.user_id === req.userId);
+        res.json({ connections });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -287,12 +172,9 @@ app.get('/api/brokers/connections', verifyToken, (req, res) => {
 
 app.delete('/api/brokers/:broker/disconnect', verifyToken, (req, res) => {
     const { broker } = req.params;
-
     try {
-        const stmt = db.prepare(
-            `UPDATE broker_connections SET is_active = 0 WHERE user_id = ? AND broker = ?`
-        );
-        stmt.run(req.userId, broker);
+        const connection = store.brokers.find(b => b.user_id === req.userId && b.broker === broker);
+        if (connection) connection.is_active = 0;
         res.json({ success: true, message: `${broker} disconnected` });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -300,14 +182,11 @@ app.delete('/api/brokers/:broker/disconnect', verifyToken, (req, res) => {
 });
 
 // ============= PORTFOLIO ROUTES =============
-
 app.get('/api/portfolio/summary', verifyToken, (req, res) => {
     try {
-        const stmt = db.prepare(
-            `SELECT * FROM portfolios WHERE user_id = ? ORDER BY last_updated DESC LIMIT 1`
-        );
-        const portfolio = stmt.get(req.userId);
-        res.json(portfolio || { total_value: 0, cash_available: 0, buying_power: 0 });
+        const portfolio = store.portfolios.find(p => p.user_id === req.userId) || 
+            { total_value: 0, cash_available: 0, buying_power: 0 };
+        res.json(portfolio);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -315,44 +194,34 @@ app.get('/api/portfolio/summary', verifyToken, (req, res) => {
 
 app.get('/api/portfolio/positions', verifyToken, (req, res) => {
     try {
-        const stmt = db.prepare(
-            `SELECT * FROM positions WHERE user_id = ? ORDER BY symbol`
-        );
-        const rows = stmt.all(req.userId);
-        res.json({ positions: rows || [] });
+        const positions = store.positions.filter(p => p.user_id === req.userId);
+        res.json({ positions });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
 // ============= ORDERS ROUTES =============
-
 app.post('/api/orders/place', verifyToken, (req, res) => {
     const { symbol, quantity, price, side, order_type, broker } = req.body;
-
     if (!symbol || !quantity || !side) {
         return res.status(400).json({ error: 'Symbol, quantity, and side required' });
     }
-
     try {
         const order_id = `ORDER-${Date.now()}`;
-
-        const stmt = db.prepare(
-            `INSERT INTO orders (user_id, broker, order_id, symbol, side, quantity, price, order_type, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
-        );
-        stmt.run(
-            req.userId,
-            broker || 'robinhood',
+        store.orders.push({
+            id: nextOrderId++,
+            user_id: req.userId,
+            broker: broker || 'robinhood',
             order_id,
             symbol,
             side,
             quantity,
-            price || null,
-            order_type || 'market',
-            'pending'
-        );
-
+            price: price || null,
+            order_type: order_type || 'market',
+            status: 'pending',
+            created_at: new Date().toISOString()
+        });
         res.json({
             success: true,
             order_id,
@@ -369,26 +238,18 @@ app.post('/api/orders/place', verifyToken, (req, res) => {
 app.get('/api/orders', verifyToken, (req, res) => {
     try {
         const limit = req.query.limit || 50;
-
-        const stmt = db.prepare(
-            `SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
-        );
-        const rows = stmt.all(req.userId, limit);
-        res.json({ orders: rows || [] });
+        const orders = store.orders.filter(o => o.user_id === req.userId).slice(-limit);
+        res.json({ orders });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
 // ============= BOT ROUTES =============
-
 app.get('/api/bots', verifyToken, (req, res) => {
     try {
-        const stmt = db.prepare(
-            `SELECT * FROM bots WHERE user_id = ? ORDER BY created_at DESC`
-        );
-        const rows = stmt.all(req.userId);
-        res.json({ bots: rows || [] });
+        const bots = store.bots.filter(b => b.user_id === req.userId);
+        res.json({ bots });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -396,21 +257,23 @@ app.get('/api/bots', verifyToken, (req, res) => {
 
 app.post('/api/bots/create', verifyToken, (req, res) => {
     const { name, bot_type, config } = req.body;
-
     if (!name || !bot_type) {
         return res.status(400).json({ error: 'Name and bot_type required' });
     }
-
     try {
-        const stmt = db.prepare(
-            `INSERT INTO bots (user_id, name, bot_type, config, status)
-             VALUES (?, ?, ?, ?, 'inactive')`
-        );
-        const result = stmt.run(req.userId, name, bot_type, JSON.stringify(config || {}));
-
+        const bot_id = nextBotId++;
+        store.bots.push({
+            id: bot_id,
+            user_id: req.userId,
+            name,
+            bot_type,
+            status: 'inactive',
+            config: config || {},
+            created_at: new Date().toISOString()
+        });
         res.json({
             success: true,
-            bot_id: result.lastInsertRowid,
+            bot_id,
             name,
             bot_type,
             status: 'inactive'
@@ -423,12 +286,9 @@ app.post('/api/bots/create', verifyToken, (req, res) => {
 app.post('/api/bots/:bot_id/toggle', verifyToken, (req, res) => {
     const { bot_id } = req.params;
     const { status } = req.body;
-
     try {
-        const stmt = db.prepare(
-            `UPDATE bots SET status = ? WHERE id = ? AND user_id = ?`
-        );
-        stmt.run(status || 'active', bot_id, req.userId);
+        const bot = store.bots.find(b => b.id === parseInt(bot_id) && b.user_id === req.userId);
+        if (bot) bot.status = status || 'active';
         res.json({ success: true, bot_id, status: status || 'active' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -436,7 +296,6 @@ app.post('/api/bots/:bot_id/toggle', verifyToken, (req, res) => {
 });
 
 // ============= HEALTH CHECK =============
-
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -445,35 +304,18 @@ app.get('/health', (req, res) => {
     });
 });
 
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
 app.get('/api/dashboard', verifyToken, (req, res) => {
     try {
         const userId = req.userId;
-
-        const portfolioStmt = db.prepare(
-            `SELECT * FROM portfolios WHERE user_id = ? ORDER BY last_updated DESC LIMIT 1`
-        );
-        const portfolio = portfolioStmt.get(userId) || {};
-
-        const positionsStmt = db.prepare(
-            `SELECT * FROM positions WHERE user_id = ?`
-        );
-        const positions = positionsStmt.all(userId) || [];
-
-        const ordersStmt = db.prepare(
-            `SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10`
-        );
-        const orders = ordersStmt.all(userId) || [];
-
-        const botsStmt = db.prepare(
-            `SELECT * FROM bots WHERE user_id = ?`
-        );
-        const bots = botsStmt.all(userId) || [];
-
-        const brokersStmt = db.prepare(
-            `SELECT * FROM broker_connections WHERE user_id = ? AND is_active = 1`
-        );
-        const brokers = brokersStmt.all(userId) || [];
-
+        const portfolio = store.portfolios.find(p => p.user_id === userId) || {};
+        const positions = store.positions.filter(p => p.user_id === userId);
+        const orders = store.orders.filter(o => o.user_id === userId).slice(-10);
+        const bots = store.bots.filter(b => b.user_id === userId);
+        const brokers = store.brokers.filter(b => b.user_id === userId && b.is_active === 1);
         res.json({
             portfolio,
             positions,
@@ -486,16 +328,13 @@ app.get('/api/dashboard', verifyToken, (req, res) => {
     }
 });
 
-// ============= WEBSOCKET REAL-TIME UPDATES =============
-
+// ============= WEBSOCKET UPDATES =============
 wss.on('connection', (ws) => {
     console.log('WebSocket client connected');
-
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
             if (data.type === 'subscribe') {
-                // Subscribe to real-time updates
                 ws.send(JSON.stringify({
                     type: 'subscribed',
                     channel: data.channel
@@ -505,13 +344,11 @@ wss.on('connection', (ws) => {
             console.error('WebSocket error:', e.message);
         }
     });
-
     ws.on('close', () => {
         console.log('WebSocket client disconnected');
     });
 });
 
-// Simulate real-time updates every 5 seconds
 setInterval(() => {
     wss.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
@@ -529,7 +366,6 @@ setInterval(() => {
 }, 5000);
 
 // ============= ERROR HANDLING =============
-
 app.use((err, req, res, next) => {
     console.error('Error:', err);
     res.status(500).json({ error: err.message || 'Internal server error' });
@@ -540,7 +376,6 @@ app.use((req, res) => {
 });
 
 // ============= START SERVER =============
-
 server.listen(PORT, () => {
     console.log(`
 ╔══════════════════════════════════════════════════════════╗
@@ -550,7 +385,7 @@ server.listen(PORT, () => {
 ║  🌐 Server: http://localhost:${PORT}
 ║  📊 Dashboard: http://localhost:${PORT}/dashboard.html
 ║  🔐 Auth: JWT Token-based
-║  💾 Database: ${DB_PATH === ':memory:' ? 'In-Memory SQLite' : DB_PATH}
+║  💾 Database: In-Memory Storage
 ║  🔌 WebSocket: Real-time updates enabled
 ║                                                          ║
 ║  Features:                                              ║
