@@ -234,8 +234,17 @@ class RiskEngine {
   /**
    * Update risk metrics for an account
    * Called after every trade to track cumulative risk
+   * Flexible: works with (accountId, metrics) or just (metrics)
    */
-  updateRiskMetrics(accountId, metrics) {
+  updateRiskMetrics(accountIdOrMetrics, metricsArg = null) {
+    let accountId = 'default';
+    let metrics = accountIdOrMetrics;
+
+    if (typeof accountIdOrMetrics === 'string' && metricsArg) {
+      accountId = accountIdOrMetrics;
+      metrics = metricsArg;
+    }
+
     if (!this.riskMetrics[accountId]) {
       this.riskMetrics[accountId] = {};
     }
@@ -254,8 +263,9 @@ class RiskEngine {
   /**
    * Get current risk metrics for account
    */
-  getRiskMetrics(accountId) {
+  getRiskMetrics(accountId = 'default') {
     return this.riskMetrics[accountId] || {
+      dailyPL: 0,
       dailyLoss: 0,
       dailyLossLimit: this.rules.config.maxDailyLoss,
       exposure: 0,
@@ -294,10 +304,10 @@ class RiskEngine {
     let log = this.auditLog;
 
     if (accountId) {
-      log = log.filter(entry => entry.accountId === accountId);
+      log = log.filter(entry => entry && entry.accountId === accountId);
     }
 
-    return log.slice(0, limit);
+    return log.slice(-limit); // Get last N entries (most recent first)
   }
 
   /**
