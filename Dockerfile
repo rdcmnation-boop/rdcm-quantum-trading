@@ -8,8 +8,8 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Install production dependencies only
-COPY package.json package-lock.json ./
-RUN npm ci --only=production
+COPY package.json ./
+RUN npm install --only=production
 
 # Copy application code
 COPY . .
