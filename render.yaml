@@ -3,10 +3,13 @@ services:
     name: rdcm-quantum-trading
     env: node
     plan: free
-    buildCommand: npm install
-    startCommand: node app.js
+    startCommand: node app-builtin.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3000
+      - key: JWT_SECRET
+        value: quantum-secret-key-production
+      - key: PASSWORD_SALT
+        value: quantum-salt-production
