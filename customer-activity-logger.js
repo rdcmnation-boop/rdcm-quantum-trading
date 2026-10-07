@@ -17,7 +17,7 @@ class CustomerActivityLogger {
     logActivity(userId, activityType, details) {
         const activity = {
             id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            userId,
+            userId: String(userId), // Ensure userId is always a string for consistent comparison
             activityType, // 'LOGIN', 'LOGOUT', 'TRADE_EXECUTED', 'TRADE_REJECTED', 'ALERT_RAISED', 'POSITION_CHANGE', 'SETTING_CHANGE'
             details,
             timestamp: new Date().toISOString(),
