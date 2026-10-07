@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - RDCMNATION QUANTUM</title>
+    <title>RDCMNATION QUANTUM - Login</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -11,28 +11,35 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 100%);
             color: #e0e0e0;
+            min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            min-height: 100vh;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 400px;
             padding: 20px;
         }
 
-        .login-card {
-            background: #1a1f2e;
+        .login-container {
+            background: rgba(26, 31, 46, 0.95);
             border: 2px solid #667eea;
-            border-radius: 16px;
-            padding: 40px 30px;
+            border-radius: 20px;
+            padding: 50px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(102, 126, 234, 0.2);
+        }
+
+        .logo-section {
             text-align: center;
+            margin-bottom: 40px;
         }
 
         .logo {
-            font-size: 32px;
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .title {
+            font-size: 28px;
             font-weight: bold;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
@@ -41,107 +48,129 @@
             margin-bottom: 10px;
         }
 
-        .tagline {
-            font-size: 12px;
+        .subtitle {
+            font-size: 14px;
             color: #999;
-            margin-bottom: 30px;
         }
 
         .form-group {
             margin-bottom: 20px;
-            text-align: left;
         }
 
-        .form-group label {
+        label {
             display: block;
             font-size: 12px;
             color: #999;
             margin-bottom: 8px;
             font-weight: bold;
+            text-transform: uppercase;
         }
 
-        .form-group input {
+        input {
             width: 100%;
-            padding: 12px;
+            padding: 12px 15px;
             border: 1px solid #2d3748;
             background: #0f1419;
             color: #e0e0e0;
             border-radius: 8px;
-            font-size: 13px;
+            font-size: 14px;
+            transition: all 0.3s;
             box-sizing: border-box;
         }
 
-        .form-group input:focus {
+        input:focus {
             outline: none;
             border-color: #667eea;
-            box-shadow: 0 0 8px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 0 12px rgba(102, 126, 234, 0.3);
+            background: #1a1f2e;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
         }
 
         .btn {
-            width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            flex: 1;
+            padding: 12px 20px;
             border: none;
             border-radius: 8px;
             font-weight: bold;
-            font-size: 13px;
             cursor: pointer;
             transition: all 0.3s;
+            font-size: 14px;
         }
 
-        .btn:hover {
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
         }
 
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
+        .btn-secondary {
+            background: #2d3748;
+            color: #e0e0e0;
+            border: 1px solid #667eea;
         }
 
-        .divider {
-            margin: 20px 0;
-            color: #2d3748;
-            font-size: 12px;
-        }
-
-        .signup-link {
-            font-size: 12px;
-            color: #999;
-            margin-top: 20px;
-        }
-
-        .signup-link a {
+        .btn-secondary:hover {
+            background: #3d4758;
             color: #667eea;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        .signup-link a:hover {
-            text-decoration: underline;
         }
 
         .alert {
-            padding: 12px;
-            border-radius: 8px;
+            padding: 12px 15px;
+            border-radius: 6px;
             margin-bottom: 20px;
-            font-size: 12px;
+            font-size: 13px;
+            display: none;
         }
 
         .alert-error {
             background: rgba(231, 76, 60, 0.1);
             color: #e74c3c;
-            border: 1px solid #e74c3c;
+            border-left: 3px solid #e74c3c;
+            display: none;
+        }
+
+        .alert-error.show {
+            display: block;
         }
 
         .alert-success {
             background: rgba(76, 175, 80, 0.1);
             color: #4caf50;
-            border: 1px solid #4caf50;
+            border-left: 3px solid #4caf50;
+            display: none;
         }
 
-        .loader {
+        .alert-success.show {
+            display: block;
+        }
+
+        .dev-link {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 12px;
+        }
+
+        .dev-link a {
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .dev-link a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .loading {
             display: inline-block;
             width: 12px;
             height: 12px;
@@ -149,214 +178,197 @@
             border-radius: 50%;
             border-top: 2px solid transparent;
             animation: spin 0.8s linear infinite;
-            margin-right: 8px;
         }
 
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
 
-        .features {
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 1px solid #2d3748;
-            font-size: 11px;
-            color: #999;
-            text-align: left;
-        }
+        @media (max-width: 600px) {
+            .login-container {
+                padding: 30px 20px;
+            }
 
-        .feature {
-            display: flex;
-            align-items: center;
-            margin-bottom: 10px;
-        }
+            .title {
+                font-size: 22px;
+            }
 
-        .feature-icon {
-            width: 20px;
-            height: 20px;
-            background: rgba(102, 126, 234, 0.2);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 8px;
-            font-size: 10px;
-            color: #667eea;
+            .form-actions {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="login-card">
-            <div class="logo">⚡ RDCMNATION QUANTUM</div>
-            <div class="tagline">AI-Powered Trading Platform</div>
+    <div class="login-container">
+        <div class="logo-section">
+            <div class="logo">⚡</div>
+            <div class="title">RDCMNATION QUANTUM</div>
+            <div class="subtitle">AI-Powered Trading Platform</div>
+        </div>
 
-            <div id="alert"></div>
+        <div id="alert-error" class="alert alert-error"></div>
+        <div id="alert-success" class="alert alert-success"></div>
 
-            <form id="loginForm" onsubmit="handleLogin(event)">
-                <div class="form-group">
-                    <label for="email">Email Address</label>
-                    <input type="email" id="email" placeholder="you@example.com" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" placeholder="••••••••" required>
-                </div>
-
-                <button type="submit" class="btn" id="loginBtn">
-                    🔐 Sign In
-                </button>
-            </form>
-
-            <div class="divider">or</div>
-
-            <div class="signup-link">
-                Don't have an account? <a href="#" onclick="switchToSignup(event)">Create one now</a>
+        <!-- Login Form -->
+        <form id="login-form" style="display: block;">
+            <div class="form-group">
+                <label for="login-email">Email</label>
+                <input type="email" id="login-email" placeholder="your@email.com" required>
             </div>
 
-            <!-- Signup Form (Hidden) -->
-            <form id="signupForm" style="display: none;" onsubmit="handleSignup(event)">
-                <div class="form-group">
-                    <label for="signup-name">Full Name</label>
-                    <input type="text" id="signup-name" placeholder="John Doe" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="signup-email">Email Address</label>
-                    <input type="email" id="signup-email" placeholder="you@example.com" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="signup-password">Password</label>
-                    <input type="password" id="signup-password" placeholder="••••••••" required>
-                </div>
-
-                <button type="submit" class="btn" id="signupBtn">
-                    🚀 Create Account
-                </button>
-            </form>
-
-            <div class="signup-link" id="backToLogin" style="display: none; margin-top: 20px;">
-                Already have an account? <a href="#" onclick="switchToLogin(event)">Sign in here</a>
+            <div class="form-group">
+                <label for="login-password">Password</label>
+                <input type="password" id="login-password" placeholder="••••••••" required>
             </div>
 
-            <!-- Features List -->
-            <div class="features">
-                <div class="feature">
-                    <div class="feature-icon">✅</div>
-                    <span>4 AI Trading Bots</span>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">✅</div>
-                    <span>67.3% Win Rate</span>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">✅</div>
-                    <span>Robinhood & Coinbase</span>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">✅</div>
-                    <span>Real Money Trading</span>
-                </div>
-                <div class="feature">
-                    <div class="feature-icon">✅</div>
-                    <span>24/7 Support</span>
-                </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">🔓 Login</button>
+                <button type="button" class="btn btn-secondary" onclick="switchToRegister()">📝 Register</button>
             </div>
+        </form>
+
+        <!-- Register Form (Hidden by default) -->
+        <form id="register-form" style="display: none;">
+            <div class="form-group">
+                <label for="register-name">Full Name</label>
+                <input type="text" id="register-name" placeholder="John Doe" required>
+            </div>
+
+            <div class="form-group">
+                <label for="register-email">Email</label>
+                <input type="email" id="register-email" placeholder="your@email.com" required>
+            </div>
+
+            <div class="form-group">
+                <label for="register-password">Password</label>
+                <input type="password" id="register-password" placeholder="••••••••" required>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">✅ Register</button>
+                <button type="button" class="btn btn-secondary" onclick="switchToLogin()">🔓 Back to Login</button>
+            </div>
+        </form>
+
+        <div class="dev-link">
+            <a href="dev.html">👨‍💻 Developer Portal</a>
         </div>
     </div>
 
     <script>
-        function handleLogin(event) {
-            event.preventDefault();
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            const btn = document.getElementById('loginBtn');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
 
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loader"></span>Signing in...';
+        function switchToRegister() {
+            loginForm.style.display = 'none';
+            registerForm.style.display = 'block';
+            clearAlerts();
+        }
 
-            fetch('/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            })
-            .then(res => res.json())
-            .then(data => {
+        function switchToLogin() {
+            registerForm.style.display = 'none';
+            loginForm.style.display = 'block';
+            clearAlerts();
+        }
+
+        function clearAlerts() {
+            document.getElementById('alert-error').classList.remove('show');
+            document.getElementById('alert-success').classList.remove('show');
+        }
+
+        function showAlert(message, type = 'error') {
+            const alertId = type === 'error' ? 'alert-error' : 'alert-success';
+            const alert = document.getElementById(alertId);
+            alert.textContent = message;
+            alert.classList.add('show');
+            setTimeout(() => alert.classList.remove('show'), 5000);
+        }
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const btn = loginForm.querySelector('button[type="submit"]');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="loading"></span> Logging in...';
+
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
                 if (data.success) {
                     localStorage.setItem('authToken', data.token);
-                    window.location.href = 'dashboard.html';
+                    showAlert('✅ Login successful! Redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.href = 'dashboard.html';
+                    }, 1000);
                 } else {
-                    showAlert('❌ ' + data.error, 'error');
+                    showAlert('❌ ' + (data.error || 'Login failed'), 'error');
                     btn.disabled = false;
-                    btn.textContent = '🔐 Sign In';
+                    btn.innerHTML = '🔓 Login';
                 }
-            })
-            .catch(err => {
-                showAlert('❌ Connection error: ' + err.message, 'error');
-                btn.disabled = false;
-                btn.textContent = '🔐 Sign In';
-            });
-        }
+            } catch (error) {
+                showAlert('❌ Connection error: ' + error.message, 'error');
+                loginForm.querySelector('button[type="submit"]').disabled = false;
+                loginForm.querySelector('button[type="submit"]').innerHTML = '🔓 Login';
+            }
+        });
 
-        function handleSignup(event) {
-            event.preventDefault();
-            const full_name = document.getElementById('signup-name').value;
-            const email = document.getElementById('signup-email').value;
-            const password = document.getElementById('signup-password').value;
-            const btn = document.getElementById('signupBtn');
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const full_name = document.getElementById('register-name').value;
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
 
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loader"></span>Creating account...';
+            if (password.length < 6) {
+                showAlert('❌ Password must be at least 6 characters', 'error');
+                return;
+            }
 
-            fetch('/api/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ full_name, email, password })
-            })
-            .then(res => res.json())
-            .then(data => {
+            try {
+                const btn = registerForm.querySelector('button[type="submit"]');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="loading"></span> Creating account...';
+
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, full_name })
+                });
+
+                const data = await response.json();
+
                 if (data.success) {
                     localStorage.setItem('authToken', data.token);
-                    window.location.href = 'dashboard.html';
+                    showAlert('✅ Account created! Redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.href = 'dashboard.html';
+                    }, 1000);
                 } else {
-                    showAlert('❌ ' + data.error, 'error');
+                    showAlert('❌ ' + (data.error || 'Registration failed'), 'error');
                     btn.disabled = false;
-                    btn.textContent = '🚀 Create Account';
+                    btn.innerHTML = '✅ Register';
                 }
-            })
-            .catch(err => {
-                showAlert('❌ Connection error: ' + err.message, 'error');
-                btn.disabled = false;
-                btn.textContent = '🚀 Create Account';
-            });
-        }
+            } catch (error) {
+                showAlert('❌ Connection error: ' + error.message, 'error');
+                registerForm.querySelector('button[type="submit"]').disabled = false;
+                registerForm.querySelector('button[type="submit"]').innerHTML = '✅ Register';
+            }
+        });
 
-        function switchToSignup(event) {
-            event.preventDefault();
-            document.getElementById('loginForm').style.display = 'none';
-            document.getElementById('signupForm').style.display = 'block';
-            document.getElementById('backToLogin').style.display = 'block';
-            document.getElementById('alert').innerHTML = '';
-        }
-
-        function switchToLogin(event) {
-            event.preventDefault();
-            document.getElementById('loginForm').style.display = 'block';
-            document.getElementById('signupForm').style.display = 'none';
-            document.getElementById('backToLogin').style.display = 'none';
-            document.getElementById('alert').innerHTML = '';
-        }
-
-        function showAlert(message, type) {
-            document.getElementById('alert').innerHTML = `<div class="alert alert-${type}">${message}</div>`;
-        }
-
-        // Check if already logged in
-        if (localStorage.getItem('authToken')) {
-            window.location.href = 'dashboard.html';
-        }
+        window.addEventListener('load', () => {
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                window.location.href = 'dashboard.html';
+            }
+        });
     </script>
 </body>
 </html>
