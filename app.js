@@ -376,7 +376,7 @@ app.use((req, res) => {
 });
 
 // ============= START SERVER =============
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
