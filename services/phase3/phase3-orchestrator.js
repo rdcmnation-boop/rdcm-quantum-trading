@@ -12,6 +12,8 @@
 const PerformanceAttributionEngine = require('./performance-attribution-engine');
 const StrategyRouter = require('./strategy-router');
 const CorrelationEngine = require('./correlation-engine');
+const LiquidityEngine = require('./liquidity-engine');
+const DrawdownRecoveryEngine = require('./drawdown-recovery-engine');
 
 class Phase3Orchestrator {
   /**
@@ -28,6 +30,8 @@ class Phase3Orchestrator {
     this.attribution = new PerformanceAttributionEngine(config.attribution);
     this.router = new StrategyRouter(config.router);
     this.correlation = new CorrelationEngine(config.correlation);
+    this.liquidity = new LiquidityEngine(config.liquidity);
+    this.drawdown = new DrawdownRecoveryEngine(config.drawdown);
 
     // Operation statistics
     this.stats = {
@@ -102,13 +106,43 @@ class Phase3Orchestrator {
         this.stats.correlationAlerts += correlationRisk.warnings.length;
       }
 
-      // 3. Calculate overall confidence
+      // 3. Check liquidity (NEW: Phase 3b)
+      const liquidityAssessment = this.liquidity.assessLiquidity(
+        decision.symbol,
+        context.tradeSize || 10000,
+        decision.action,
+        context
+      );
+      analysis.recommendations.liquidity = liquidityAssessment;
+
+      if (!liquidityAssessment.allowed) {
+        analysis.advisories.push({
+          type: 'LIQUIDITY',
+          severity: 'WARNING',
+          message: liquidityAssessment.reason
+        });
+      }
+
+      // 4. Check drawdown status (NEW: Phase 3b)
+      const recoveryRec = this.drawdown.getRecoveryRecommendation();
+      analysis.recommendations.recovery = recoveryRec;
+
+      if (recoveryRec.severity !== 'HEALTHY') {
+        analysis.advisories.push({
+          type: 'DRAWDOWN',
+          severity: 'INFO',
+          message: `Portfolio drawdown: ${recoveryRec.drawdownPercent}% - ${recoveryRec.recommendation.reasoning}`
+        });
+      }
+
+      // 5. Calculate overall confidence
       const strategyConfidence = strategyRec.confidence || 0;
       const correlationConfidence = correlationRisk.riskLevel === 'LOW' ? 100 :
                                    correlationRisk.riskLevel === 'MEDIUM' ? 60 : 30;
-      analysis.confidence = (strategyConfidence + correlationConfidence) / 2;
+      const liquidityConfidence = liquidityAssessment.allowed ? 100 : 30;
+      analysis.confidence = (strategyConfidence + correlationConfidence + liquidityConfidence) / 3;
 
-      // 4. Generate Phase 3 advisory
+      // 6. Generate Phase 3 advisory
       analysis.advisory = this._generateAdvisory(analysis);
 
       return analysis;
@@ -175,7 +209,7 @@ class Phase3Orchestrator {
 
   /**
    * Update price data continuously (called each bar)
-   * @param {Object} priceData - {symbol, open, high, low, close, volume, regime}
+   * @param {Object} priceData - {symbol, open, high, low, close, volume, regime, bid, ask, bidSize, askSize, avgVolume}
    */
   updateMarketData(priceData) {
     try {
@@ -189,8 +223,38 @@ class Phase3Orchestrator {
         volatility: priceData.volatility,
         beta: priceData.beta,
       });
+
+      // Update liquidity engine with bid/ask and order book data
+      if (priceData.bid !== undefined && priceData.ask !== undefined) {
+        this.liquidity.updateMarketData(priceData.symbol, {
+          bid: priceData.bid,
+          ask: priceData.ask,
+          bidSize: priceData.bidSize || 0,
+          askSize: priceData.askSize || 0,
+          lastPrice: priceData.close,
+          volume: priceData.volume || 0,
+          avgVolume: priceData.avgVolume || 0,
+          volatility: priceData.volatility || 0,
+          timestamp: priceData.timestamp
+        });
+      }
     } catch (error) {
       this.logger.error('❌ Market data update error:', error);
+    }
+  }
+
+  /**
+   * Update portfolio value (called after portfolio update)
+   * Feeds into drawdown recovery engine
+   *
+   * @param {number} portfolioValue - Current total portfolio value
+   * @param {Object} context - Trading context
+   */
+  updatePortfolioValue(portfolioValue, context = {}) {
+    try {
+      this.drawdown.updatePortfolioValue(portfolioValue, context);
+    } catch (error) {
+      this.logger.error('❌ Portfolio value update error:', error);
     }
   }
 
@@ -273,6 +337,16 @@ class Phase3Orchestrator {
           status: this.correlation.priceHistory.size > 0 ? 'RUNNING' : 'IDLE',
           symbolsTracked: this.correlation.priceHistory.size,
         },
+        liquidity: {
+          status: this.liquidity.symbolData.size > 0 ? 'RUNNING' : 'IDLE',
+          symbolsTracked: this.liquidity.symbolData.size,
+          checksRun: this.liquidity.stats.checksRun,
+        },
+        drawdown: {
+          status: this.drawdown.current.severity !== 'HEALTHY' ? 'MONITORING' : 'IDLE',
+          severity: this.drawdown.current.severity,
+          drawdownPercent: this.drawdown.current.drawdownPercent,
+        },
       },
       timestamp: Date.now(),
     };
@@ -289,6 +363,16 @@ class Phase3Orchestrator {
       attribution: this.attribution.exportAttributions(),
       strategies: this.router.exportState(),
       correlation: this.correlation.exportState(),
+      liquidity: {
+        stats: this.liquidity.getStats(),
+        status: this.liquidity.getStatus(),
+      },
+      drawdown: {
+        stats: this.drawdown.getStats(),
+        status: this.drawdown.getStatus(),
+        current: this.drawdown.current,
+        trajectory: this.drawdown.getRecoveryTrajectory(),
+      },
     };
   }
 
