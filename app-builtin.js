@@ -9,6 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const unifiedBrain = require('./unified-bot-brain');
+const marketNewsService = require('./market-news-service');
 
 // Simple .env parser
 function loadEnv() {
@@ -257,6 +258,75 @@ const server = http.createServer((req, res) => {
             if (pathname === '/api/market/formatted-prices' && req.method === 'GET') {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 return res.end(JSON.stringify(marketService.getFormattedPrices()));
+            }
+
+            // ============= MARKET NEWS ENDPOINTS =============
+            if (pathname === '/api/market/news' && req.method === 'GET') {
+                const limit = parseInt(url.searchParams.get('limit')) || 20;
+                const news = marketNewsService.getLatestNews(limit);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    articles: news,
+                    total: news.length,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+
+            if (pathname === '/api/market/news/summary' && req.method === 'GET') {
+                const summary = marketNewsService.getSummary();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify(summary));
+            }
+
+            if (pathname === '/api/market/news/search' && req.method === 'GET') {
+                const query = url.searchParams.get('q');
+                if (!query) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Search query required' }));
+                }
+                const results = marketNewsService.searchNews(query);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    query: query,
+                    results: results,
+                    count: results.length,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+
+            if (pathname === '/api/market/news/symbol' && req.method === 'GET') {
+                const symbol = url.searchParams.get('symbol');
+                if (!symbol) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Symbol required' }));
+                }
+                const news = marketNewsService.getNewsBySymbol(symbol);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    symbol: symbol,
+                    articles: news,
+                    count: news.length,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+
+            if (pathname === '/api/market/news/sentiment' && req.method === 'GET') {
+                const sentiment = marketNewsService.analyzeSentiment();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    sentiment_analysis: sentiment,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+
+            if (pathname === '/api/market/news/high-impact' && req.method === 'GET') {
+                const highImpact = marketNewsService.getHighImpactNews();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({
+                    articles: highImpact,
+                    count: highImpact.length,
+                    timestamp: new Date().toISOString()
+                }));
             }
 
             // ============= BOT ENDPOINTS =============
