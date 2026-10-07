@@ -430,8 +430,8 @@ class PaperTradingEngine {
         const totalCost = pos.quantity * pos.avgCost + cost;
         console.log(`[updatePortfolioForTrade] TotalCost: ${totalCost}`);
 
-        console.log(`[updatePortfolioForTrade] Updating position quantity from ${pos.quantity} to ${pos.quantity + quantity}`);
-        pos.quantity += quantity;
+        console.log(`[updatePortfolioForTrade] Updating position quantity from ${pos.quantity} to ${pos.quantity + tradeQuantity}`);
+        pos.quantity += tradeQuantity;
         console.log(`[updatePortfolioForTrade] Position quantity updated`);
 
         console.log(`[updatePortfolioForTrade] Calculating avgCost`);
