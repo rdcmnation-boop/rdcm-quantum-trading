@@ -1,15 +1,69 @@
+# Render.com Deployment Configuration for RDCMNATION QUANTUM
+# Phase 2 validation harness + Phase 3 intelligence systems
+
 services:
   - type: web
-    name: rdcm-quantum-trading
-    env: node
-    plan: free
-    startCommand: node app-builtin.js
+    name: quantum-validation
+    env: docker
+    region: oregon  # Change to your preferred region
+    plan: standard  # Upgrade for higher performance if needed
+    
+    # Docker build settings
+    dockerfilePath: ./Dockerfile
+    
+    # Environment variables
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
-      - key: JWT_SECRET
-        value: quantum-secret-key-production
-      - key: PASSWORD_SALT
-        value: quantum-salt-production
+      - key: QUANTUM_MODE
+        value: VALIDATION
+      - key: PHASE2_CYCLES
+        value: "10000"
+      - key: PHASE2_FAST
+        value: "true"
+      - key: PHASE3_ENABLED
+        value: "true"
+      - key: LOG_LEVEL
+        value: info
+      - key: REPORT_INTERVAL
+        value: "1000"
+    
+    # Health check
+    healthCheckPath: /health
+    healthCheckInterval: 30
+    
+    # Scaling (start small, scale up as needed)
+    scaling:
+      minInstances: 1
+      maxInstances: 1  # Increase after validation proves stability
+    
+    # Disk storage for reports
+    disk:
+      - mountPath: /app/reports
+        name: reports
+        sizeGB: 10
+      - mountPath: /app/logs
+        name: logs
+        sizeGB: 5
+    
+    # Auto-deploy on push to main
+    autoDeploy: true
+    
+    # Notifications
+    notifications:
+      email:
+        enabled: true
+        onDeploy: failure
+        onFailure: true
+
+# Add background worker for extended validation if desired (optional)
+# - type: background_worker
+#   name: quantum-extended-validation
+#   env: docker
+#   dockerfilePath: ./Dockerfile
+#   envVars:
+#     - key: QUANTUM_CYCLES
+#       value: "432000"  # 30-day equivalent
+#     - key: PHASE2_FAST
+#       value: "true"
+#   autoDeploy: true
