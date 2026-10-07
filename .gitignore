@@ -33,3 +33,6 @@ Thumbs.db
 # Build artifacts
 /dist/
 /build/
+
+# Generated reports (validation harness output)
+/reports/
