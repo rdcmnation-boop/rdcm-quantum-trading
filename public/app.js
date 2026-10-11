@@ -373,9 +373,9 @@ const TH_TAG = { buy: 'COMPRA', sell: 'VENTA', risk: 'FRENO', hold: 'VIGILA' };
 const vizWhy = (d) => (d.thoughts || []).map((x) => `<div class="w ${x.k}"><b>${x.big ? 'COMPRA GRANDE' : TH_TAG[x.k] || 'NOTA'}</b> ${esc(x.text)}</div>`).join('');
 const voiceLbl = () => (voice.on ? '🔊 Voz activa' : '🔈 Activar voz');
 function vizHtml(d, id) {
-  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${d.octopus && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
+  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${(d.octopus || d.city) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
     <div class="bstat">${vizStat(d)}</div><div class="brows" ${d.rows && d.rows.length ? '' : 'hidden'}>${vizRows(d)}</div>
-    <div class="bwhy" ${d.thoughts && d.thoughts.length ? '' : 'hidden'}>${vizWhy(d)}</div><div class="bstream">${vizStream(d)}</div><div class="bappr">${esc(d.approval)}</div></div>`;
+    ${d.city ? '<div class="bdetail" hidden></div>' : ''}<div class="bwhy" ${d.thoughts && d.thoughts.length ? '' : 'hidden'}>${vizWhy(d)}</div><div class="bstream">${vizStream(d)}</div><div class="bappr">${esc(d.approval)}</div></div>`;
 }
 function vizFill(root, d) {
   $('.bcap', root).textContent = d.caption; $('.bstat', root).innerHTML = vizStat(d); const r = $('.brows', root); r.innerHTML = vizRows(d); r.hidden = !(d.rows && d.rows.length); $('.bstream', root).innerHTML = vizStream(d);
@@ -412,7 +412,8 @@ function botViz(bn) {
 function agentsViz(b) {
   const st = new Map((b.agent_stats || []).map((x) => [x.name, x])); const lastNote = new Map();
   for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) if (!lastNote.has(a.agent) && (a.notes || []).length) lastNote.set(a.agent, a.notes[0]);
-  const nodes = b.agents.map((a) => { const x = st.get(a.name) || {}; const mx = Math.max(1, ...b.agents.map((q) => (st.get(q.name) || {}).runs || 0)); return { label: (a.label || a.name).split(' ')[0].slice(0, 13), kind: !a.available ? 'off' : a.enabled ? 'ok' : 'idle', w: ((x.runs || 0) / mx) * 0.6 + Math.min(0.4, (x.created || 0) / 20), sub: lastNote.get(a.name) || `${x.runs || 0} corridas · ${x.created || 0} propuestas` }; });
+  const detail = (a, x) => ({ name: a.name, label: a.label || a.name, state: !a.available ? 'próximamente' : a.enabled ? 'activo' : 'apagado', stats: x, notes: (() => { const o = []; for (const r of (b.runs || []).slice(0, 6)) for (const q of r.agents) if (q.agent === a.name) for (const n of (q.notes || []).slice(0, 2)) o.push({ t: r.t, text: n }); return o.slice(0, 4); })(), pending: (b.pending || []).filter((p) => p.agent === a.name).map((p) => p.title) });
+  const nodes = b.agents.map((a) => { const x = st.get(a.name) || {}; const mx = Math.max(1, ...b.agents.map((q) => (st.get(q.name) || {}).runs || 0)); return { label: (a.label || a.name).split(' ')[0].slice(0, 13), kind: !a.available ? 'off' : a.enabled ? 'ok' : 'idle', w: ((x.runs || 0) / mx) * 0.6 + Math.min(0.4, (x.created || 0) / 20), sub: lastNote.get(a.name) || `${x.runs || 0} corridas · ${x.created || 0} propuestas`, detail: detail(a, x) }; });
   const stream = [];
   for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) for (const n of (a.notes || []).slice(0, 2)) stream.push({ t: r.t, text: `${a.agent}: ${n}` });
   return { center: 'DIR', nodes, pending: b.pending.length, city: true, stream: stream.slice(0, 14), live: true, caption: 'Director + agentes',
@@ -421,9 +422,23 @@ function agentsViz(b) {
 }
 
 // Los agentes viven en una ciudad 3D; si el 3D falla, cae a la red de nodos.
+const agentSummary = (n) => { const x = n.detail.stats || {}; return `${n.detail.label}: ${n.detail.state}. ${x.runs || 0} corridas, ${x.created || 0} propuestas, ${x.applied || 0} aplicadas${n.detail.pending.length ? `, y ${n.detail.pending.length} esperando tu decisión` : ''}.${n.detail.notes[0] ? ` Última nota: ${n.detail.notes[0].text}` : ''}`; };
+function showAgent(r, n) {
+  const box = $('.bdetail', r); if (!box) return; const dt = n.detail; const x = dt.stats || {};
+  box.hidden = false; box.innerHTML = `<div class="dh"><b>${esc(dt.label)}</b><span class="dst ${dt.state === 'activo' ? 'on' : ''}">${esc(dt.state)}</span></div>
+    <div class="dg"><span><b>${x.runs || 0}</b>corridas</span><span><b>${x.created || 0}</b>propuestas</span><span><b>${x.applied || 0}</b>aplicadas</span><span><b>${x.rejected || 0}</b>rechazadas</span></div>
+    ${dt.pending.length ? `<div class="dp"><em>Esperan tu decisión</em>${dt.pending.map((t) => `<div>• ${esc(t)}</div>`).join('')}</div>` : ''}
+    ${dt.notes.length ? `<div class="dn"><em>Últimas notas</em>${dt.notes.map((q) => `<div>${esc(ago(q.t))} · ${esc(q.text)}</div>`).join('')}</div>` : '<div class="dn"><em>Sin notas todavía</em></div>'}`;
+}
+// Los agentes viven en una ciudad 3D; si el 3D falla, cae a la red de nodos.
 async function mountCity(r, d) {
   if (!r) return;
-  try { const m = await import('/city3d.js'); if (!document.body.contains(r)) return; m.createCity3D($('canvas', r), d); r.classList.add('is3d'); } catch { brainViz(r, d); }
+  try {
+    const m = await import('/city3d.js'); if (!document.body.contains(r)) return;
+    m.createCity3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi), onPick: (i) => { const n = d.nodes[i]; showAgent(r, n); voice.say(agentSummary(n), true); } });
+    r.classList.add('is3d'); bindVoice(r, { ot: 0 });
+    if (d.pending) voice.say(`Hay ${d.pending} propuesta${d.pending > 1 ? 's' : ''} esperando tu decisión. Solo tú las apruebas.`, false);
+  } catch { brainViz(r, d); }
 }
 let vizCtl = null; let vizMode = '';
 // Con el bot en AUTO el Cerebro es un OVNI con IA en 3D que recorre el mapa de criptos; si no, la red de nodos. Si el 3D falla, cae a la red.
@@ -435,7 +450,7 @@ async function mountViz(bn) {
 // Voz: botón de activar/silenciar y narración de lo nuevo que decide el pulpo (solo lo que llegó después de abrir la pantalla).
 let thoughtSeen = 0;
 function bindVoice(r, d) {
-  if (!thoughtSeen) thoughtSeen = d.ot || 1;
+  if (!thoughtSeen && d.ot) thoughtSeen = d.ot;
   const b = $('.bvoice', r); if (!b || b.dataset.b) return; b.dataset.b = '1';
   b.onclick = () => { voice.set(!voice.on); b.classList.toggle('on', voice.on); b.setAttribute('aria-pressed', String(voice.on)); b.textContent = voiceLbl(); };
 }

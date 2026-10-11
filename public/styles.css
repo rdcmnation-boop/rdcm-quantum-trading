@@ -228,3 +228,16 @@ th,td{padding:6px 5px;font-size:13px}
 .bviz .bwhy .w.sell{border-left-color:#ff5d4d}.bviz .bwhy .w.sell b{color:#ff5d4d}
 .bviz .bwhy .w.risk{border-left-color:#ffd60a}
 .bviz .bwhy[hidden]{display:none}
+/* detalle de agente (ciudad) */
+.bviz .bdetail{display:grid;gap:8px;padding:10px;border-top:1px solid var(--line);background:#0a0a0d;font:12px/1.5 ui-monospace,Menlo,monospace;color:#d9d6c6}
+.bviz .bdetail[hidden]{display:none}
+.bviz .bdetail .dh{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.bviz .bdetail .dh b{color:var(--accent);font-size:13px}
+.bviz .bdetail .dst{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.bviz .bdetail .dst.on{color:#4ade80;border-color:#4ade80}
+.bviz .bdetail .dg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.bviz .bdetail .dg span{display:flex;flex-direction:column;font-size:10px;color:var(--muted)}
+.bviz .bdetail .dg b{font-size:15px;color:#fff}
+.bviz .bdetail em{display:block;font-style:normal;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:2px}
+.bviz .bdetail .dp div{color:#ff9d2e}
+.bviz .bdetail .dn div{color:var(--muted)}

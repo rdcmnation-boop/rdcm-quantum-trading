@@ -9,7 +9,9 @@ const rgba = (h, a) => { const [r, g, b] = hex(h); return `rgba(${r},${g},${b},$
 const rnd = (() => { let x = 4242; return () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; })();
 const SKY = Array.from({ length: 46 }, () => { const a = rnd() * TAU; const r = 9 + rnd() * 8; return { x: Math.cos(a) * r, z: Math.sin(a) * r, h: 0.6 + rnd() * 2.6, w: 0.5 + rnd() * 0.5, ph: rnd() * TAU }; });
 
-export function createCity3D(cv, d0) {
+export function createCity3D(cv, d0, opt = {}) {
+  const say = (t, hi) => { try { if (opt.onSay && t) opt.onSay(t, hi); } catch { /* sin voz */ } };
+  let sel = -1; let A = [];
   const ctx = cv.getContext('2d'); const dpr = Math.min(2, window.devicePixelRatio || 1); const H = 340; let W = 340; let d = d0; let alive = true; let last = performance.now();
   const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const cam = { az: 0.5, el: 0.7, D: 27 }; let hud = { title: 'Ciudad de agentes', sub: 'esperando datos' }; let focus = 0; let focusUntil = 0;
@@ -34,7 +36,7 @@ export function createCity3D(cv, d0) {
   const frame = (now) => {
     if (!alive || !document.body.contains(cv)) return;
     const dt = Math.min(0.05, (now - last) / 1000); last = now; const sec = now / 1000; cam.az += dt * 0.1;
-    const A = agents(); const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#04040a'); bg.addColorStop(0.55, '#0b0a08'); bg.addColorStop(1, '#15120a'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    A = agents(); const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#04040a'); bg.addColorStop(0.55, '#0b0a08'); bg.addColorStop(1, '#15120a'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
     for (let i = 0; i < 40; i++) { const sx = (i * 97.3) % W; const sy = (i * 41.7) % (H * 0.4); ctx.fillStyle = `rgba(255,240,200,${0.25 + 0.3 * Math.sin(sec * 1.5 + i)})`; ctx.fillRect(sx, sy, 1.2, 1.2); }
     ctx.lineWidth = 1;
     for (let i = -16; i <= 16; i += 2) for (const [ax, az, bx, bz] of [[i, -16, i, 16], [-16, i, 16, i]]) { const a = proj(ax, 0, az); const b = proj(bx, 0, bz); ctx.strokeStyle = `rgba(255,214,10,${i % 6 === 0 ? 0.13 : 0.05})`; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
@@ -51,19 +53,30 @@ export function createCity3D(cv, d0) {
         ctx.font = '700 11px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd60a'; ctx.fillText('DIRECTOR', top.x, top.y - orb.k * 2.1); } }];
     // drones de los agentes activos: salen del Director, van a su edificio y regresan
     A.filter((a) => a.kind === 'ok').forEach((a) => { const ph = (sec * 0.22 + a.i * 0.31) % 1; const t = ph < 0.5 ? ph * 2 : (1 - ph) * 2; const e = t * t * (3 - 2 * t); const x = a.x * e; const z = a.z * e; const y = 1.8 + Math.sin(sec * 3 + a.i) * 0.2 + Math.sin(e * Math.PI) * 1.6;
-      items.push({ z: proj(x, y, z).z - 0.3, d: () => { const q = proj(x, y, z); const r = q.k * 0.3; ctx.fillStyle = 'rgba(0,0,0,.3)'; const s = proj(x, 0, z); ctx.beginPath(); ctx.ellipse(s.x, s.y, r * 1.4, r * 0.5, 0, 0, TAU); ctx.fill();
+      items.push({ z: proj(x, y, z).z - 0.3, d: () => { const q = proj(x, y, z); a.dx = q.x; a.dy = q.y; a.dr = q.k * 0.3; const r = q.k * 0.3; ctx.fillStyle = 'rgba(0,0,0,.3)'; const s = proj(x, 0, z); ctx.beginPath(); ctx.ellipse(s.x, s.y, r * 1.4, r * 0.5, 0, 0, TAU); ctx.fill();
         const gg = ctx.createLinearGradient(0, q.y - r, 0, q.y + r); gg.addColorStop(0, '#e6e9f0'); gg.addColorStop(1, '#4a4f5a'); ctx.fillStyle = gg; ctx.beginPath(); ctx.ellipse(q.x, q.y, r * 1.5, r * 0.5, 0, 0, TAU); ctx.fill(); ctx.fillStyle = 'rgba(120,220,255,.8)'; ctx.beginPath(); ctx.ellipse(q.x, q.y - r * 0.25, r * 0.6, r * 0.45, 0, Math.PI, TAU); ctx.fill(); ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(q.x + Math.sin(sec * 8 + a.i) * r, q.y + r * 0.1, Math.max(1, r * 0.14), 0, TAU); ctx.fill(); } }); });
     items.sort((p, q) => q.z - p.z).forEach((o) => o.d());
     // etiquetas
     ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center';
-    for (const a of A) if (a.top) { const w = ctx.measureText(a.label).width + 12; const col = KC[a.kind] || KC.idle; ctx.fillStyle = 'rgba(8,8,11,.8)'; ctx.strokeStyle = rgba(col, 0.6); ctx.beginPath(); ctx.roundRect(a.top.x - w / 2, a.top.y - 26, w, 16, 6); ctx.fill(); ctx.stroke(); ctx.fillStyle = col; ctx.fillText(a.label, a.top.x, a.top.y - 14); }
+    for (const a of A) if (a.top) { const w = ctx.measureText(a.label).width + 12; const col = KC[a.kind] || KC.idle; ctx.fillStyle = a.i === (sel >= 0 ? sel : -2) ? 'rgba(60,50,0,.95)' : 'rgba(8,8,11,.8)'; ctx.strokeStyle = rgba(col, a.i === sel ? 1 : 0.6); ctx.beginPath(); ctx.roundRect(a.top.x - w / 2, a.top.y - 26, w, 16, 6); ctx.fill(); ctx.stroke(); ctx.fillStyle = col; ctx.fillText(a.label, a.top.x, a.top.y - 14); }
+    // globo de texto sobre el dron del agente enfocado o elegido: dice lo que está haciendo
+    const fa = A[sel >= 0 ? sel : focus];
+    if (fa && fa.kind === 'ok' && fa.dx !== undefined) { const txt = String(fa.sub || '').slice(0, 30); const w = ctx.measureText(txt).width + 14; const bx = Math.max(w / 2 + 4, Math.min(W - w / 2 - 4, fa.dx)); const by = fa.dy - fa.dr * 2.6 - 12;
+      ctx.fillStyle = 'rgba(255,248,210,.95)'; ctx.beginPath(); ctx.roundRect(bx - w / 2, by - 11, w, 20, 7); ctx.fill(); ctx.beginPath(); ctx.moveTo(fa.dx - 4, by + 9); ctx.lineTo(fa.dx + 4, by + 9); ctx.lineTo(fa.dx, by + 15); ctx.fill();
+      ctx.fillStyle = '#1a1706'; ctx.textAlign = 'center'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.fillText(txt, bx, by + 3); }
     // HUD: recorre los agentes y cuenta qué hace cada uno
-    if (sec > focusUntil && A.length) { focus = (focus + 1) % A.length; focusUntil = sec + 3.2; const a = A[focus]; hud = { title: `${a.label}${a.kind === 'off' ? ' · apagado' : a.kind === 'ok' ? ' · activo' : ' · en pausa'}`, sub: a.sub || 'sin notas todavía' }; }
+    if (sec > focusUntil && A.length) { if (sel >= 0) sel = -1; focus = (focus + 1) % A.length; focusUntil = sec + 3.2; const a = A[focus]; say(`${a.label}. ${a.sub || ''}`, false); hud = { title: `${a.label}${a.kind === 'off' ? ' · apagado' : a.kind === 'ok' ? ' · activo' : ' · en pausa'}`, sub: a.sub || 'sin notas todavía' }; }
     ctx.fillStyle = 'rgba(8,8,11,.72)'; ctx.beginPath(); ctx.roundRect(8, 8, Math.min(W - 16, 330), 38, 8); ctx.fill();
     ctx.textAlign = 'left'; ctx.fillStyle = '#ffd60a'; ctx.font = '700 11px ui-monospace,Menlo,monospace'; ctx.fillText(`● ${hud.title}`.toUpperCase().slice(0, 40), 16, 24);
     ctx.fillStyle = '#c9c6b5'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.fillText(String(hud.sub).slice(0, 48), 16, 38);
     if (!still) requestAnimationFrame(frame);
   };
+  // tocar un edificio (o su etiqueta) abre el detalle de ese agente
+  cv.addEventListener('pointerdown', (e) => {
+    const r = cv.getBoundingClientRect(); const px = e.clientX - r.left; const py = e.clientY - r.top; let best = -1; let bd = 46;
+    for (const a of A) if (a.top) { const dd = Math.min(Math.hypot(px - a.top.x, py - (a.top.y - 18)), Math.hypot(px - a.top.x, py - (a.top.y + 20))); if (dd < bd) { bd = dd; best = a.i; } }
+    if (best >= 0) { sel = best; focus = best; focusUntil = performance.now() / 1000 + 9; const a = A[best]; hud = { title: `${a.label}${a.kind === 'off' ? ' · apagado' : a.kind === 'ok' ? ' · activo' : ' · en pausa'}`, sub: a.sub || 'sin notas todavía' }; if (opt.onPick) opt.onPick(best); }
+  });
   size(); new ResizeObserver(() => { size(); if (still) requestAnimationFrame(frame); }).observe(cv); requestAnimationFrame(frame);
   return { update(nd) { d = nd; }, destroy() { alive = false; } };
 }
