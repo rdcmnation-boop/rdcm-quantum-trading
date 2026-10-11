@@ -442,8 +442,14 @@ function botViz(bn) {
   if (bn.last) { for (const a of bn.last.auto || []) stream.push({ t: bn.last.t, text: a }); stream.push({ t: bn.last.t, text: bn.last.reason }); }
   for (const o of bn.recent || []) if (o.status === 'ok') stream.push({ t: o.t, text: `${o.side === 'buy' ? 'compra' : 'vende'} ${base(o.symbol)} ${money(o.usd)}${o.mode === 'live' ? ' (REAL)' : ' (papel)'}` });
   const rg = octo && octo.regime ? ({ bull: 'alcista', bear: 'bajista', volatile: 'volátil', range: 'lateral', unknown: 'sin datos' }[octo.regime] || octo.regime) : null;
+  const scouts = (() => { const nw = octo && octo.news; const top = octo && octo.items ? [...octo.items].sort((x, y) => (y.score || 0) - (x.score || 0))[0] : null; const q = (bn.scanner && bn.scanner.qualified) ? bn.scanner.qualified.length : 0;
+    return [{ name: 'NOTICIAS', col: '#5ac8fa', val: nw ? (nw.risk_off ? `freno · ${nw.negatives} negativas` : 'sin alertas') : 'leyendo…' },
+      { name: 'MERCADO', col: '#c4a8ff', val: rg || 'analizando…' },
+      { name: 'MOVIMIENTOS', col: '#4ade80', val: top ? `${base(top.symbol)} ${top.score ? top.score.toFixed(1) : ''}` : 'escaneando…' },
+      { name: 'RIESGO', col: '#ff9f6b', val: octo && octo.risk ? String(octo.risk) : 'normal' },
+      { name: 'COSTOS', col: '#ffd60a', val: `${q} validadas` }]; })();
   const rows = octo ? octo.items.map((it) => ({ sym: base(it.symbol), state: (OSTATE[it.state] || [0, it.state])[1], kind: (OSTATE[it.state] || ['idle'])[0], score: it.score, why: it.why || '', note: it.held ? `${it.gain_pct >= 0 ? '+' : ''}${(it.gain_pct || 0).toFixed(2)} %` : it.edge ? `${it.edge.toFixed(1)}× costo` : '' })) : null;
-  return { center: 'IA', ufo: true, nodes, stream, rows, thoughts: octo ? (octo.thoughts || []) : [], ot: octo ? octo.t : 0, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? 'Superintelligence · en vivo' : 'Cerebro · apagado',
+  return { center: 'IA', ufo: true, scouts, nodes, stream, rows, thoughts: octo ? (octo.thoughts || []) : [], ot: octo ? octo.t : 0, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? 'Superintelligence · en vivo' : 'Cerebro · apagado',
     stats: [['posiciones', held.length], ['validadas', ok.length], ['mercado', rg || '—'], ['revisó', agoS(bn.last_run)]],
     approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
 }

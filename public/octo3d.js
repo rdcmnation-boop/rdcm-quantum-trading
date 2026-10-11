@@ -165,6 +165,27 @@ export function createOcto3D(cv, d0, opt = {}) {
           ctx.fillStyle = 'rgba(255,241,168,.95)'; ctx.beginPath(); ctx.arc(px, py, 1.7, 0, TAU); ctx.fill(); });
         ctx.restore(); } });
     }
+    // naves exploradoras: cada una trabaja para el cerebro (noticias, mercado, movimientos, riesgo, costos) y le manda datos
+    if (STYLE === 'ufo' && d.scouts && d.scouts.length) {
+      const alt2 = 2.7 + Math.sin(oct.bob * 1.8) * 0.16; const uc = proj(oct.x, alt2, oct.z); const N = d.scouts.length;
+      d.scouts.forEach((sc, i) => {
+        const a = sec * 0.22 + (i / N) * TAU; const dep = Math.sin(a); const p = { x: W / 2 + Math.cos(a) * W * 0.36, y: H * 0.1 + (dep + 1) * H * 0.05 + Math.sin(sec * 1.4 + i) * 3, k: 30 + dep * 6, z: 4 - dep }; const sh = { x: p.x, y: p.y + H * 0.45 };
+        ops.push({ z: p.z - 0.2, d: () => {
+          const col = sc.col || '#5ac8fa'; const R = Math.max(5, p.k * 0.34);
+          ctx.save();
+          ctx.strokeStyle = `${col}55`; ctx.lineWidth = 1; ctx.setLineDash([3, 4]); ctx.lineDashOffset = -sec * 18; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(uc.x, uc.y); ctx.stroke(); ctx.setLineDash([]);
+          for (let k = 0; k < 3; k++) { const u = (sec * 0.8 + k / 3 + i * 0.17) % 1; ctx.fillStyle = col; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(p.x + (uc.x - p.x) * u, p.y + (uc.y - p.y) * u, 1.8, 0, TAU); ctx.fill(); }
+          ctx.globalAlpha = 0.18; ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(sh.x, sh.y, R * 1.2, R * 0.4, 0, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+          const g = ctx.createRadialGradient(p.x, p.y - R * 0.2, 1, p.x, p.y, R * 1.6); g.addColorStop(0, '#f4f6fa'); g.addColorStop(0.6, '#8a93a6'); g.addColorStop(1, '#3a4152');
+          ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(p.x, p.y, R * 1.5, R * 0.52, 0, 0, TAU); ctx.fill();
+          ctx.fillStyle = `${col}cc`; ctx.beginPath(); ctx.ellipse(p.x, p.y - R * 0.28, R * 0.7, R * 0.5, 0, Math.PI, TAU); ctx.fill();
+          ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.fillStyle = col; for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.arc(p.x + k * R * 0.7, p.y + R * 0.1, Math.max(1, R * 0.12), 0, TAU); ctx.fill(); } ctx.shadowBlur = 0;
+          ctx.restore();
+          ctx.font = '700 8px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = col; ctx.fillText(sc.name, p.x, p.y - R * 1.1 - 3);
+          ctx.font = '600 8px ui-monospace,Menlo,monospace'; ctx.fillStyle = 'rgba(230,230,220,.85)'; ctx.fillText(String(sc.val || '').slice(0, 22), p.x, p.y + R * 1.25 + 7);
+        } });
+      });
+    }
     // sombra del pulpo
     groundCircle(oct.x, oct.z, 1.2, 'rgba(0,0,0,.35)', null);
     if (STYLE === 'ufo') {
