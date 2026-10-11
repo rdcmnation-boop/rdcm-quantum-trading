@@ -3,6 +3,7 @@
 // Todo lo que muestra sale de datos reales del bot: cada isla es una cripto, su altura es la fuerza de la señal y
 // el pulpo va evaluando una por una; cuando el bot compra o suelta, el pulpo va a esa isla y lo ejecuta a la vista.
 const TAU = Math.PI * 2;
+const STYLE = 'toy'; // 'toy' = juguete articulado amarillo limón; 'real' = pulpo realista
 const COLORS = { held: '#4ade80', ok: '#ffd60a', idle: '#8a8776', off: '#4a4a44', hot: '#ff5d4d', buy: '#4ade80', keep: '#ffd60a', drop: '#ff5d4d' };
 const hexRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgba = (h, a) => { const [r, g, b] = hexRgb(h); return `rgba(${r},${g},${b},${a})`; };
@@ -13,7 +14,8 @@ const ARM_LEN = [1, 0.92, 1.1, 0.88, 1.04, 0.95, 1.12, 0.9];
 const BLOTCH = (() => { let x = 777; const rnd = () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; return Array.from({ length: 16 }, () => ({ x: (rnd() - 0.5) * 1.6, y: (rnd() - 0.5) * 1.6, r: 0.25 + rnd() * 0.35, dark: rnd() > 0.45 })); })();
 const SPECKS = (() => { let x = 12345; const rnd = () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; const a = []; for (let i = 0; i < 130; i++) { const r = Math.sqrt(rnd()) * 0.95; const t = rnd() * TAU; a.push({ x: Math.cos(t) * r * 0.9, y: Math.sin(t) * r, r: 0.012 + rnd() * 0.04, a: 0.1 + rnd() * 0.3, dark: rnd() > 0.35 }); } return a; })();
 
-export function createOcto3D(cv, d0) {
+export function createOcto3D(cv, d0, opt = {}) {
+  const say = (t, hi) => { try { if (opt.onSay && t) opt.onSay(t, hi); } catch { /* sin voz */ } };
   const ctx = cv.getContext('2d'); const dpr = Math.min(2, window.devicePixelRatio || 1);
   const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let d = d0; let W = 340; const H = 340;
@@ -70,6 +72,7 @@ export function createOcto3D(cv, d0) {
     rings.push({ x: oct.target.x, z: oct.target.z, r: 0.5, col: COLORS[oct.target.kind] || COLORS.idle });
     const n = oct.target; const row = n.row;
     hud = { title: `Evaluando ${n.label}`, sub: row ? `${row.state}${row.score ? ` · puntaje ${row.score.toFixed(1)}` : ''}${row.note ? ` · ${row.note}` : ''}` : (n.sub || 'vigilando') };
+    if (row && row.why) say(row.why, false);
   };
 
   const ops = []; // todo lo que se dibuja con profundidad (esferas, partes del pulpo)
@@ -151,6 +154,52 @@ export function createOcto3D(cv, d0) {
     for (let i = rings.length - 1; i >= 0; i--) if (rings[i].dead) rings.splice(i, 1);
     // sombra del pulpo
     groundCircle(oct.x, oct.z, 1.2, 'rgba(0,0,0,.35)', null);
+    if (STYLE === 'toy') {
+      // pulpo de juguete articulado: cabeza redonda amarillo limón, ojos grandes con pupilas, brazos de segmentos con aro verde
+      const walking = Math.min(1, spd * 0.35); const by = 1.15 + Math.sin(oct.bob * 2.4) * 0.07 + walking * 0.12;
+      const hx = Math.cos(oct.heading); const hz = Math.sin(oct.heading);
+      const YEL = '#e4e629'; const GRN = '#58ab3a'; const headC = proj(oct.x, by + 0.55, oct.z);
+      const tcol = oct.mode === 'buy' ? [60, 205, 110] : oct.mode === 'sell' ? [255, 70, 55] : [0, 0, 0]; oct.tint += (((oct.mode === 'buy' || oct.mode === 'sell') && tg ? 0.4 : 0) - oct.tint) * 0.05;
+      const reachCol = oct.mode === 'sell' ? '#ff5d4d' : '#4ade80';
+      { const ag = ctx.createRadialGradient(headC.x, headC.y + 30, 4, headC.x, headC.y + 30, headC.k * 3.8); ag.addColorStop(0, 'rgba(230,230,40,.16)'); ag.addColorStop(1, 'rgba(230,230,40,0)'); ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(headC.x, headC.y + 30, headC.k * 3.8, 0, TAU); ctx.fill(); }
+      for (let i = 0; i < 8; i++) {
+        const th = (i / 8) * TAU + oct.heading * 0.3 + 0.2; const L = ARM_LEN[i]; const reachArm = oct.reach * (i % 2 === 0 ? 1 : 0.35); const pts = []; let zs = 0; const NS = 11; const cs = i % 2 ? 1 : -1;
+        for (let j = 0; j <= NS; j++) {
+          const u = j / NS; const lift = walking * Math.max(0, Math.sin(sec * 5 + i * 1.7)) * 0.55 * u;
+          const ang = th + Math.sin(sec * 1.6 + i * 1.3 - u * 3) * 0.12 * u + cs * u * u * 0.35; const rr = 0.55 + 2.25 * u * L;
+          let px = oct.x + Math.cos(ang) * rr - oct.vx * u * 0.12; let pz = oct.z + Math.sin(ang) * rr - oct.vz * u * 0.12;
+          let py = by - 0.55 + 0.45 * Math.sin(u * Math.PI * 0.9) * 0.55 - u * 0.2 + lift + Math.sin(sec * 2.2 - u * 3 + i) * 0.05 * u;
+          if (tg && reachArm > 0.01) { const w = Math.pow(u, 1.4) * reachArm; px += (tg.x - px) * w; pz += (tg.z - pz) * w; py += (1.1 + 0.3 * Math.sin(sec * 4 + i) - py) * w; }
+          const q = proj(px, Math.max(0.12, py), pz); q.u = u; pts.push(q); zs += q.z;
+        }
+        const glow = tg && reachArm > 0.3 && oct.mode !== 'tour';
+        ops.push({ z: zs / pts.length, d: () => {
+          const N = pts.length - 1; const wid = (u) => 0.5 * (1 - u * 0.7) + 0.05;
+          const seg = (a, b, wa, wb, fill, off) => { const dx = b.x - a.x; const dy = b.y - a.y; const Ln = Math.hypot(dx, dy) || 1; const nx = -dy / Ln; const ny = dx / Ln; const sh = off || 0; ctx.fillStyle = fill; ctx.beginPath(); ctx.moveTo(a.x + nx * wa, a.y + ny * wa + sh); ctx.lineTo(b.x + nx * wb, b.y + ny * wb + sh); ctx.lineTo(b.x - nx * wb, b.y - ny * wb + sh); ctx.lineTo(a.x - nx * wa, a.y - ny * wa + sh); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.arc((a.x + b.x) / 2, (a.y + b.y) / 2 + sh, (wa + wb) / 2 * 0.98, 0, TAU); ctx.fill(); };
+          for (let j = 0; j < N; j++) { const a = pts[j]; const b = pts[j + 1]; const wa = wid(a.u) * a.k / 2; const wb = wid(b.u) * b.k / 2; const mid = { x: a.x + (b.x - a.x) * 0.5, y: a.y + (b.y - a.y) * 0.5 }; // aro verde por debajo + segmento amarillo con luz arriba
+            seg(a, b, wa * 0.96, wb * 0.96, GRN, wa * 0.28);
+            const sa = { x: a.x + (b.x - a.x) * 0.06, y: a.y + (b.y - a.y) * 0.06 }; const sb = { x: a.x + (b.x - a.x) * 0.94, y: a.y + (b.y - a.y) * 0.94 };
+            const gr = ctx.createLinearGradient(0, mid.y - wa, 0, mid.y + wa); gr.addColorStop(0, '#f6f86a'); gr.addColorStop(0.55, YEL); gr.addColorStop(1, '#b8bb18');
+            seg(sa, sb, wa * 0.9, wb * 0.9, gr, 0);
+            ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.beginPath(); ctx.arc(mid.x - wa * 0.15, mid.y - wa * 0.45, Math.max(0.6, wa * 0.16), 0, TAU); ctx.fill(); }
+          if (glow) { const e = pts[N]; const gg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 18); gg.addColorStop(0, rgba(reachCol, 0.9)); gg.addColorStop(1, rgba(reachCol, 0)); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(e.x, e.y, 18, 0, TAU); ctx.fill(); }
+        } });
+      }
+      ops.push({ z: headC.z, d: () => {
+        const R = headC.k * 1.05 * (1 + Math.sin(oct.bob * 2.4) * 0.02);
+        const g = ctx.createRadialGradient(headC.x - R * 0.35, headC.y - R * 0.45, R * 0.1, headC.x, headC.y, R * 1.05); g.addColorStop(0, '#f8fa7c'); g.addColorStop(0.5, YEL); g.addColorStop(1, '#a9ac12');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(headC.x, headC.y - R * 0.12, R * 0.98, R * 1.08, 0, 0, TAU); ctx.fill();
+        if (oct.tint > 0.01) { ctx.fillStyle = `rgba(${tcol[0]},${tcol[1]},${tcol[2]},${oct.tint})`; ctx.beginPath(); ctx.ellipse(headC.x, headC.y - R * 0.12, R * 0.98, R * 1.08, 0, 0, TAU); ctx.fill(); }
+        ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.beginPath(); ctx.ellipse(headC.x - R * 0.38, headC.y - R * 0.7, R * 0.2, R * 0.1, -0.5, 0, TAU); ctx.fill();
+        const look = tg ? proj(tg.x, 0.8, tg.z) : null; let lx = 0; let ly = 0; if (look) { const dx = look.x - headC.x; const dy = look.y - headC.y; const L2 = Math.hypot(dx, dy) || 1; lx = dx / L2; ly = dy / L2; }
+        for (const sgn of [-1, 1]) { // ojos grandes, pupilas que miran a la cripto y bailan al moverse
+          const ex = headC.x + sgn * R * 0.4; const ey = headC.y + R * 0.02; const er = R * 0.36;
+          ctx.fillStyle = '#fbfbf6'; ctx.strokeStyle = 'rgba(60,60,10,.5)'; ctx.lineWidth = Math.max(1, R * 0.03); ctx.beginPath(); ctx.arc(ex, ey, er, 0, TAU); ctx.fill(); ctx.stroke();
+          const jig = Math.min(1, spd * 0.4) * 0.12; const px = ex + (lx * 0.38 + Math.sin(sec * 7 + sgn) * jig) * er; const py = ey + (ly * 0.38 + Math.cos(sec * 6.3 + sgn) * jig + 0.1) * er;
+          ctx.fillStyle = '#0b0b0b'; ctx.beginPath(); ctx.arc(px, py, er * 0.5, 0, TAU); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.beginPath(); ctx.arc(px - er * 0.16, py - er * 0.18, er * 0.15, 0, TAU); ctx.fill();
+        }
+      } });
+    } else {
     // pulpo realista: manto abultado hacia atrás, cabeza con ojos, membrana entre brazos, brazos cónicos con ventosas y puntas enroscadas
     const by = 2.1 + Math.sin(oct.bob * 2.2) * 0.22 + Math.min(0.8, spd * 0.12);
     const hx = Math.cos(oct.heading); const hz = Math.sin(oct.heading);
@@ -218,6 +267,7 @@ export function createOcto3D(cv, d0) {
         ctx.strokeStyle = '#4a1408'; ctx.lineWidth = Math.max(1, er * 0.3); ctx.beginPath(); ctx.arc(e.x, e.y, er * 1.06, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
       }
     } });
+    }
     // burbujas flotando alrededor
     for (const bu of bubbles) { bu.y += dt * bu.v; if (bu.y > 6) bu.y = 0.1; const q = proj(oct.x + bu.x + Math.sin(sec + bu.ph) * 0.3, bu.y, oct.z + bu.z); const br = Math.max(0.8, bu.r * q.k); ops.push({ z: q.z, d: () => { ctx.strokeStyle = 'rgba(200,225,255,.35)'; ctx.fillStyle = 'rgba(200,225,255,.07)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q.x, q.y, br, 0, TAU); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(q.x - br * 0.3, q.y - br * 0.3, br * 0.22, 0, TAU); ctx.fill(); } }); }
     for (const p of parts) { p.x += p.vx; p.y += p.vy; p.z += p.vz; p.vy -= 0.006; p.life -= dt * 0.9; if (p.y < 0.05) { p.y = 0.05; p.vy *= -0.4; } if (p.life > 0) sphere(p.x, p.y, p.z, 0.1, p.col, Math.min(1, p.life * 1.5)); }

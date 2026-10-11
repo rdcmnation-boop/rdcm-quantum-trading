@@ -873,6 +873,7 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   t('rotación: con el cupo lleno cambia la cripto que pierde fuerza por otra con mejor señal', r1.length === 1 && r1[0].symbol === 'DOGE-USD' && r2.length === 3 && r2.some((o) => o.side === 'sell' && o.symbol === 'DOGE-USD' && /rota/.test(o.note)) && r2.some((o) => o.side === 'buy' && o.symbol === 'ADA-USD'), JSON.stringify(r2.map((o) => o.side + o.symbol + o.note.slice(0, 50))));
   const ost = (await R('GET', '/api/bot/status')).body.octopus;
   t('pulpo: guarda qué tentáculo suelta y cuál compra, solo para su dueño', ost && ost.items.some((x) => x.symbol === 'DOGE-USD' && x.state === 'suelta') && ost.items.some((x) => x.symbol === 'ADA-USD' && x.state === 'compró') && !JSON.stringify((await P('GET', '/api/bot/status')).body.octopus).includes('DOGE-USD'), JSON.stringify(ost && ost.items));
+  t('pulpo: cada tentáculo trae su porqué y hay pensamientos en español', !!ost && ost.items.every((x) => typeof x.why === 'string' && x.why.length > 5) && Array.isArray(ost.thoughts) && ost.thoughts.length > 0 && ost.thoughts.every((x) => x.text && ['buy', 'sell', 'risk', 'hold'].includes(x.k)), JSON.stringify(ost && ost.thoughts));
 }
 
 { const h = await fetch(base + '/api/health', { method: 'HEAD' }); t('HEAD /api/health responde 200 (monitores como UptimeRobot usan HEAD)', h.status === 200); }
@@ -891,6 +892,9 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   const pp = await nobody('GET', '/api/public/plan');
   t('precio público: la landing lo lee sin sesión', pp.status === 200 && pp.body.price === 29);
   const lo = []; for (let i = 0; i < 4; i++) lo.push({ symbol: 'L-USD', side: 'buy', qty: 1, usd: 10, created_at: Date.now() - 5000 - i * 2000 }, { symbol: 'L-USD', side: 'sell', qty: 1, usd: 9, created_at: Date.now() - 4000 - i * 2000 });
+  const xb = pro.explainBuy({ base: 'SOL', sg: { edge: 3.4 }, usd: 10, baseUsd: 10, regime: 'bull', risk: 'normal', news: { items: [], risk: {} } });
+  const xs = pro.explainBuy({ base: 'SOL', sg: { edge: 1.3 }, usd: 6, baseUsd: 10, regime: 'volatile', risk: 'defensivo', news: { items: [], risk: { SOL: 2 } } });
+  t('explicación: compra grande si la convicción es alta; reducida y con noticia negativa si no', xb.big && /compra grande/.test(xb.text) && /sin noticias negativas/.test(xb.text) && !xs.big && /reducida/.test(xs.text) && /negativa/.test(xs.text) && /defensivo/.test(xs.text), xb.text + ' | ' + xs.text);
   t('aprendizaje: una cripto con 4 operaciones perdedoras recientes descansa', pro.losingSymbols(lo).has('L-USD') && !pro.losingSymbols(lo.map((o) => ({ ...o, symbol: 'W-USD', usd: o.side === 'sell' ? 12 : 10 }))).has('W-USD'));
   t('riesgo: pérdida de 24 h y tamaño por convicción', Math.abs(pro.pnl24h(lo) - -4) < 1e-9 && pro.confidenceSize(1.2) === 0.6 && pro.confidenceSize(10) === 1);
 }

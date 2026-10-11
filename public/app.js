@@ -1,5 +1,6 @@
 // Interfaz de Quantum Trading. Sin librerías; todo dato dinámico pasa por esc() antes de insertarse.
 import { genEd25519 } from '/keygen.js';
+import { voice } from '/voice.js';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n, d = 2) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -368,13 +369,17 @@ const tagOf = (txt) => (/compra|buy|rota/i.test(txt) && !/vende|stop/i.test(txt)
 const vizStat = (d) => d.stats.map((x) => `<div><b>${esc(x[1])}</b>${esc(x[0])}</div>`).join('');
 const vizRows = (d) => (d.rows && d.rows.length ? d.rows.map((r) => `<div class="br ${r.kind}"><b>${esc(r.sym)}</b><span>${esc(r.state)}</span><span class="num">${r.score ? r.score.toFixed(1) : '—'}</span><span class="num">${esc(r.note)}</span></div>`).join('') : '');
 const vizStream = (d) => d.stream.slice(0, 14).map((x) => { const [tg, c] = tagOf(x.text); return `<div><span class="tg ${c}">${tg}</span>${x.t ? `<span>${esc(ago(x.t))} · </span>` : ''}${esc(x.text)}</div>`; }).join('') || '<div>Esperando la primera decisión…</div>';
+const TH_TAG = { buy: 'COMPRA', sell: 'VENTA', risk: 'FRENO', hold: 'VIGILA' };
+const vizWhy = (d) => (d.thoughts || []).map((x) => `<div class="w ${x.k}"><b>${x.big ? 'COMPRA GRANDE' : TH_TAG[x.k] || 'NOTA'}</b> ${esc(x.text)}</div>`).join('');
+const voiceLbl = () => (voice.on ? '🔊 Voz activa' : '🔈 Activar voz');
 function vizHtml(d, id) {
-  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>
+  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${d.octopus && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
     <div class="bstat">${vizStat(d)}</div><div class="brows" ${d.rows && d.rows.length ? '' : 'hidden'}>${vizRows(d)}</div>
-    <div class="bstream">${vizStream(d)}</div><div class="bappr">${esc(d.approval)}</div></div>`;
+    <div class="bwhy" ${d.thoughts && d.thoughts.length ? '' : 'hidden'}>${vizWhy(d)}</div><div class="bstream">${vizStream(d)}</div><div class="bappr">${esc(d.approval)}</div></div>`;
 }
 function vizFill(root, d) {
   $('.bcap', root).textContent = d.caption; $('.bstat', root).innerHTML = vizStat(d); const r = $('.brows', root); r.innerHTML = vizRows(d); r.hidden = !(d.rows && d.rows.length); $('.bstream', root).innerHTML = vizStream(d);
+  const w = $('.bwhy', root); if (w) { w.innerHTML = vizWhy(d); w.hidden = !(d.thoughts && d.thoughts.length); }
 }
 const agoS = (t) => { if (!t) return '—'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'ahora' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`; };
 const OSTATE = { compró: ['buy', 'compró'], listo: ['buy', 'listo p/comprar'], fuerte: ['held', 'fuerte'], mantiene: ['held', 'mantiene'], débil: ['drop', 'débil'], suelta: ['drop', 'suelta'], vendió: ['drop', 'vendió'], soltó: ['drop', 'soltó'] };
@@ -399,8 +404,8 @@ function botViz(bn) {
   if (bn.last) { for (const a of bn.last.auto || []) stream.push({ t: bn.last.t, text: a }); stream.push({ t: bn.last.t, text: bn.last.reason }); }
   for (const o of bn.recent || []) if (o.status === 'ok') stream.push({ t: o.t, text: `${o.side === 'buy' ? 'compra' : 'vende'} ${base(o.symbol)} ${money(o.usd)}${o.mode === 'live' ? ' (REAL)' : ' (papel)'}` });
   const rg = octo && octo.regime ? ({ bull: 'alcista', bear: 'bajista', volatile: 'volátil', range: 'lateral', unknown: 'sin datos' }[octo.regime] || octo.regime) : null;
-  const rows = octo ? octo.items.map((it) => ({ sym: base(it.symbol), state: (OSTATE[it.state] || [0, it.state])[1], kind: (OSTATE[it.state] || ['idle'])[0], score: it.score, note: it.held ? `${it.gain_pct >= 0 ? '+' : ''}${(it.gain_pct || 0).toFixed(2)} %` : it.edge ? `${it.edge.toFixed(1)}× costo` : '' })) : null;
-  return { center: 'IA', nodes, stream, rows, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? (octo ? 'Pulpo · en vivo' : 'Cerebro · en vivo') : 'Cerebro · apagado',
+  const rows = octo ? octo.items.map((it) => ({ sym: base(it.symbol), state: (OSTATE[it.state] || [0, it.state])[1], kind: (OSTATE[it.state] || ['idle'])[0], score: it.score, why: it.why || '', note: it.held ? `${it.gain_pct >= 0 ? '+' : ''}${(it.gain_pct || 0).toFixed(2)} %` : it.edge ? `${it.edge.toFixed(1)}× costo` : '' })) : null;
+  return { center: 'IA', nodes, stream, rows, thoughts: octo ? (octo.thoughts || []) : [], ot: octo ? octo.t : 0, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? (octo ? 'Pulpo · en vivo' : 'Cerebro · en vivo') : 'Cerebro · apagado',
     stats: [['posiciones', held.length], ['validadas', ok.length], ['mercado', rg || '—'], ['revisó', agoS(bn.last_run)]],
     approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
 }
@@ -417,13 +422,24 @@ let vizCtl = null; let vizMode = '';
 // Con el bot en AUTO el Cerebro es un pulpo 3D que recorre el mapa de criptos; si no, la red de nodos. Si el 3D falla, cae a la red.
 async function mountViz(bn) {
   const r = $('#bz_v'); if (!r) return; const d = botViz(bn);
-  if (d.octopus) { try { const m = await import('/octo3d.js'); if (!document.body.contains(r)) return; vizCtl = m.createOcto3D($('canvas', r), d); vizMode = '3d'; r.dataset.on = '1'; r.classList.add('is3d'); return; } catch { /* usa la red */ } }
+  if (d.octopus) { try { const m = await import('/octo3d.js'); if (!document.body.contains(r)) return; vizCtl = m.createOcto3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi) }); bindVoice(r, d); vizMode = '3d'; r.dataset.on = '1'; r.classList.add('is3d'); return; } catch { /* usa la red */ } }
   vizCtl = brainViz(r, d); vizMode = '2d'; r.dataset.on = '1'; r.classList.remove('is3d');
+}
+// Voz: botón de activar/silenciar y narración de lo nuevo que decide el pulpo (solo lo que llegó después de abrir la pantalla).
+let thoughtSeen = 0;
+function bindVoice(r, d) {
+  if (!thoughtSeen) thoughtSeen = d.ot || 1;
+  const b = $('.bvoice', r); if (!b || b.dataset.b) return; b.dataset.b = '1';
+  b.onclick = () => { voice.set(!voice.on); b.classList.toggle('on', voice.on); b.setAttribute('aria-pressed', String(voice.on)); b.textContent = voiceLbl(); };
+}
+function narrate(d) {
+  if (!d.octopus || !d.ot || d.ot <= thoughtSeen) return; thoughtSeen = d.ot;
+  for (const x of d.thoughts || []) voice.say(x.text, x.k !== 'hold');
 }
 // Actualiza SIN recrear: el pulpo sigue nadando y las islas se reacomodan según lo que el bot decide.
 function updateViz(bn) {
   const r = $('#bz_v'); if (!r) return; const d = botViz(bn);
-  if (vizCtl && r.dataset.on === '1' && vizMode === (d.octopus ? '3d' : '2d')) { vizCtl.update(d); vizFill(r, d); return; }
+  if (vizCtl && r.dataset.on === '1' && vizMode === (d.octopus ? '3d' : '2d')) { vizCtl.update(d); vizFill(r, d); narrate(d); return; }
   const c = $('canvas', r); if (c) c.replaceWith(c.cloneNode(false)); r.dataset.on = ''; vizFill(r, d); mountViz(bn);
 }
 const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>

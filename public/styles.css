@@ -217,3 +217,13 @@ th,td{padding:6px 5px;font-size:13px}
 .bviz .br:last-child{border-bottom:0}.bviz .br b{color:var(--fg)}.bviz .br .num{text-align:right;font-variant-numeric:tabular-nums}
 .bviz .br.buy span:nth-child(2){color:var(--good)}.bviz .br.held span:nth-child(2){color:var(--accent)}.bviz .br.drop span:nth-child(2){color:var(--bad)}
 .bviz.is3d .bcap{display:none}
+/* Voz y "por qué" del pulpo */
+.bviz{position:relative}
+.bviz .bvoice{position:absolute;right:10px;top:8px;z-index:2;min-height:34px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:rgba(8,8,11,.78);color:var(--muted);font:600 11px/1 ui-monospace,Menlo,monospace;cursor:pointer;backdrop-filter:blur(4px)}
+.bviz .bvoice.on{color:#0b0b0e;background:var(--accent);border-color:var(--accent);box-shadow:0 0 14px rgba(255,214,10,.45)}
+.bviz .bwhy{display:grid;gap:6px;padding:10px;border-top:1px solid var(--line);background:#0a0a0d;font:12px/1.5 ui-monospace,Menlo,monospace}
+.bviz .bwhy .w{color:#d9d6c6;padding-left:8px;border-left:2px solid var(--line)}
+.bviz .bwhy .w b{font-size:10px;letter-spacing:.1em;margin-right:6px;color:var(--accent)}
+.bviz .bwhy .w.buy{border-left-color:#4ade80}.bviz .bwhy .w.buy b{color:#4ade80}
+.bviz .bwhy .w.sell{border-left-color:#ff5d4d}.bviz .bwhy .w.sell b{color:#ff5d4d}
+.bviz .bwhy .w.risk{border-left-color:#ffd60a}
