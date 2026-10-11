@@ -63,7 +63,7 @@ function viewAuth() {
 
 // ============================ Estructura ============================
 const CLIENT_TABS = [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['exchanges', 'Conectar'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
-const OWNER_TABS = [['o_hoy', 'Hoy'], ['o_cerebro', 'Cerebro'], ['o_launch', 'Lanzar'], ['o_clientes', 'Clientes'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
+const OWNER_TABS = [['o_hoy', 'Hoy'], ['bot', 'Mi bot'], ['o_cerebro', 'Cerebro'], ['o_clientes', 'Clientes'], ['o_launch', 'Lanzar'], ['exchanges', 'Conectar'], ['mercado', 'Mercado'], ['ordenes', 'Mis órdenes'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes'], ['cuenta', 'Mi cuenta']];
 const ICONS = {
   resumen: '<path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z"/>', mercado: '<path d="M3 17l5-5 4 4 8-9M15 7h5v5"/>', exchanges: '<path d="M9 7H6a3 3 0 000 6h3M15 7h3a3 3 0 010 6h-3M8 10h8"/>',
   bot: '<rect x="5" y="8" width="14" height="10" rx="2"/><path d="M12 4v4M9 13h.01M15 13h.01"/>', mas: '<path d="M5 12h.01M12 12h.01M19 12h.01"/>',
@@ -74,8 +74,8 @@ const ico = (k) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" 
 
 function shell() {
   const owner = state.user.role === 'owner';
-  const inClient = !owner || state.showClient;
-  const main5 = inClient ? [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['bot', 'Bot'], ['exchanges', 'Conectar']] : [['o_hoy', 'Hoy'], ['o_cerebro', 'Cerebro'], ['o_launch', 'Lanzar'], ['o_clientes', 'Clientes']];
+  const inClient = !owner;
+  const main5 = inClient ? [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['bot', 'Bot'], ['exchanges', 'Conectar']] : [['o_hoy', 'Hoy'], ['bot', 'Mi bot'], ['o_cerebro', 'Cerebro'], ['o_clientes', 'Clientes']];
   const mainKeys = main5.map((x) => x[0]);
   const rest = (inClient ? CLIENT_TABS : OWNER_TABS).filter(([k]) => !mainKeys.includes(k));
   const inMore = !mainKeys.includes(state.tab);
@@ -84,7 +84,7 @@ function shell() {
   $('#root').innerHTML = `
   <div class="wrap">
     <div class="top">
-      <div class="brand"><small>${owner ? (inClient ? 'Dueño · vista cliente' : 'Consola del dueño') : 'RDCMNATION'}</small>Quantum Trading</div>
+      <div class="brand"><small>${owner ? 'Consola del dueño' : 'RDCMNATION'}</small>Quantum Trading</div>
       <div class="who"><span class="chip">${esc(cur ? cur[1] : '')}</span></div>
     </div>
     <div id="main"></div>
@@ -94,14 +94,12 @@ function shell() {
   <div class="sheet" id="sheet" hidden><div class="sheetb">
     <div class="muted" style="font-size:12px;margin-bottom:6px">${esc(state.user.email)}</div>
     ${rest.map(([k, l]) => `<button class="item" data-t="${k}">${esc(l)}</button>`).join('')}
-    ${owner ? `<button class="item" id="vc">${inClient ? '← Volver a la consola del dueño' : 'Ver como cliente'}</button>` : ''}
     <button class="item" id="out" style="color:var(--bad)">Salir</button>
   </div></div>`;
   const go = (k) => { state.tab = k; shell(); loadTab(); };
   document.querySelectorAll('.bar button[data-t], .sheet button[data-t]').forEach((b) => b.addEventListener('click', () => go(b.dataset.t)));
   $('#more').addEventListener('click', () => { $('#sheet').hidden = !$('#sheet').hidden; });
   $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') $('#sheet').hidden = true; });
-  const vc = $('#vc'); if (vc) vc.addEventListener('click', () => { state.showClient = !state.showClient; go(state.showClient ? 'resumen' : 'o_hoy'); });
   $('#out').addEventListener('click', async () => { try { await api('POST', '/api/auth/logout'); } catch { /* ya salió */ } state.user = null; state.me = null; render(); });
 }
 
@@ -122,7 +120,7 @@ async function loadTab() {
 // ============================ Cliente ============================
 const AUTO_PRESET = { autoMode: 'active', symbol: 'AUTO', strategy: 'sma', usd: 25, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'paper', paperExchange: 'best', maxPositions: 3, maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
 const DEMO_PRESET = { symbol: 'BTC-USD', strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', paperExchange: 'best', maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
-async function quickStart(preset) { await api('PUT', '/api/bot', preset); state.tab = 'resumen'; shell(); loadTab(); }
+async function quickStart(preset) { await api('PUT', '/api/bot', preset); state.tab = state.user.role === 'owner' ? 'o_hoy' : 'resumen'; shell(); loadTab(); }
 const cheapTxt = { coinbase: 'Coinbase', robinhood: 'Robinhood', igual: 'igual' };
 
 function botNowHtml(b) {
@@ -216,15 +214,26 @@ function bindBotNow() {
   if (d) d.addEventListener('click', () => quickStart(DEMO_PRESET).catch((e) => alert(e.message)));
 }
 
+const myBotCards = (bn) => `<div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
+  <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
+  <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
+function startMyBot(bn) {
+  bindBotNow(); refreshLive(); refreshDash();
+  const lr = $('#live_r'); if (lr) lr.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
+  let n = 0; let waiting = bn.enabled && !bn.last;
+  tabTimer = setInterval(async () => {
+    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); } if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
+    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
+  }, 4000);
+}
+
 async function tabResumen(main) {
   const [pnl, bot, conns, bn] = await Promise.all([api('GET', '/api/pnl'), api('GET', '/api/bot'), api('GET', '/api/connections'), api('GET', '/api/bot/status')]);
   const rows = pnl.positions.map((p) => `<tr><td><span class="chip ${esc(p.mode)}">${p.mode === 'live' ? 'REAL' : 'PAPEL'}</span></td><td>${esc(p.symbol)}</td>
     <td class="r">${num(p.qty, 8)}</td><td class="r">${money(p.cost)}</td><td class="r">${money(p.value)}</td>
     <td class="r ${cls(p.unrealized)}">${money(p.unrealized)}</td><td class="r ${cls(p.realized)}">${money(p.realized)}</td></tr>`).join('');
   main.innerHTML = `
-  <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
-  <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
-  <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>
+  ${myBotCards(bn)}
   <div class="banner">El modo <b>papel</b> simula con precios reales y <b>no mueve dinero</b>. Lo simulado no garantiza resultados reales.</div>
   <div class="kpis">
     <div class="kpi"><div class="l">Bot</div><div class="v">${bot.cfg.enabled ? 'Activo' : 'Apagado'}</div><div class="s">${bot.cfg.symbol === 'AUTO' ? 'Cerebro AUTO' : esc(bot.cfg.strategy.toUpperCase()) + ' · ' + esc(bot.cfg.symbol)} · ${bot.cfg.mode === 'live' ? 'REAL' : 'papel'}</div></div>
@@ -235,12 +244,7 @@ async function tabResumen(main) {
     ${rows ? `<div class="scroll"><table><thead><tr><th>Modo</th><th>Par</th><th class="r">Cantidad</th><th class="r">Costo</th><th class="r">Valor</th><th class="r">No realizado</th><th class="r">Realizado</th></tr></thead><tbody>${rows}</tbody></table></div>`
       : '<p class="muted">Aún no hay órdenes. Configura tu bot en la pestaña Bot (empieza en modo papel).</p>'}
   </div>`;
-  bindBotNow(); refreshLive(); refreshDash(); $('#live_r').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
-  let n = 0; let waiting = bn.enabled && !bn.last;
-  tabTimer = setInterval(async () => {
-    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); } if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
-    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
-  }, 4000);
+  startMyBot(bn);
 }
 
 const EXCH = {
@@ -672,13 +676,14 @@ function accordionize(main) {
 }
 
 async function tabHoy(main) {
-  const [b, br] = await Promise.all([api('GET', '/api/owner/briefing'), api('GET', '/api/owner/brain')]);
+  const [b, br, bn] = await Promise.all([api('GET', '/api/owner/briefing'), api('GET', '/api/owner/brain'), api('GET', '/api/bot/status')]);
   const icon = { crit: '●', warn: '●', info: '○' };
   const imp = b.items.filter((i) => i.level !== 'info'); const rest = b.items.filter((i) => i.level === 'info');
   const li = (i) => `<button class="item ${esc(i.level)}" data-go="${esc(i.tab)}"><span class="lv">${icon[i.level] || '○'}</span><span class="grow">${esc(i.text)}</span><span class="muted">›</span></button>`;
   const ap = br.guardrails.autopilot;
   const recent = br.changes.slice(0, 5).map((c) => `<div class="step-row"><div class="grow"><b>${esc(c.label || c.kind)}</b> ${c.auto ? '<span class="chip paper">auto</span>' : ''}<div class="muted" style="font-size:12px">${esc(ago(c.t))} · ${esc(c.title)}</div></div>${c.undone ? '<span class="muted">deshecho</span>' : `<button class="btn ghost small" data-undo="${esc(c.id)}">Deshacer</button>`}</div>`).join('');
   main.innerHTML = `
+  ${myBotCards(bn)}
   <div class="card hero-o ${esc(b.status)}">
     <div class="row" style="justify-content:space-between"><div><div class="muted" style="font-size:12px;letter-spacing:.1em;text-transform:uppercase">Resumen del Director</div><div class="big">${esc(b.headline)}</div></div>
       <div class="row"><span class="chip">Cerebro v${b.brain_version}</span><span class="chip">${b.score} % listo</span></div></div>
@@ -693,7 +698,8 @@ async function tabHoy(main) {
     ${recent ? `<h2 style="margin-top:14px">Cambios recientes</h2>${recent}` : ''}</div></details>
   <details class="card acc" id="nums"><summary><h2>Números del negocio (automáticos)</h2></summary><div class="accb" id="h_nums"><p class="muted">Toca para cargar…</p></div></details>
   <p class="muted" style="font-size:12px">Actualizado ${esc(ago(b.t))} · última corrida ${esc(ago(b.last_run))}</p>`;
-  document.querySelectorAll('[data-go]').forEach((x) => x.addEventListener('click', () => { state.tab = x.dataset.go; if (!state.tab.startsWith('o_') && state.user.role === 'owner') state.showClient = true; shell(); loadTab(); }));
+  document.querySelectorAll('[data-go]').forEach((x) => x.addEventListener('click', () => { state.tab = x.dataset.go; shell(); loadTab(); }));
+  startMyBot(bn);
   $('#h_run').addEventListener('click', async (e) => {
     e.target.disabled = true; setMsg($('#h_m'), 'El Director está orquestando a los agentes…', true);
     try { await api('POST', '/api/owner/brain/run'); await loadTab(); } catch (err) { setMsg($('#h_m'), err.message); e.target.disabled = false; }
