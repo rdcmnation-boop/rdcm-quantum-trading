@@ -5,6 +5,7 @@ import { setCalibration } from './lib/costs.js';
 import { createEngine } from './lib/engine.js';
 import { createDirector, getGuardrails } from './lib/agents.js';
 import { memoryStore, pgStore } from './lib/store.js';
+import { runScanner, getScanner } from './lib/scanner.js';
 import { ADAPTERS, getPrice, getCloses, getHistory } from './lib/exchanges.js';
 
 const env = { ...process.env };
@@ -49,4 +50,10 @@ const autoTimer = setInterval(async () => {
     if (Date.now() - last >= g.autoRunHours * 3600000) await director.run({ trigger: 'auto' });
   } catch (e) { console.error('director', e.message); }
 }, 30 * 60000);
-process.on('SIGTERM', () => { clearInterval(timer); clearInterval(autoTimer); server.close(() => process.exit(0)); });
+// El escáner de criptos (alimenta el modo AUTO) corre al arrancar y se refresca cada 6 h, sin esperar al Director.
+const scan = async () => {
+  try { const sc = await getScanner(store); if (!sc || Date.now() - sc.t > 6 * 3600000) await runScanner({ store, feed }); } catch (e) { console.error('escáner', e.message); }
+};
+setTimeout(scan, 15000);
+const scanTimer = setInterval(scan, 30 * 60000);
+process.on('SIGTERM', () => { clearInterval(timer); clearInterval(autoTimer); clearInterval(scanTimer); server.close(() => process.exit(0)); });

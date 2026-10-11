@@ -62,25 +62,46 @@ function viewAuth() {
 }
 
 // ============================ Estructura ============================
-const CLIENT_TABS = [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['exchanges', 'Exchanges'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
-const OWNER_TABS = [['o_hoy', 'Hoy'], ['o_cerebro', 'Cerebro'], ['o_launch', 'Lanzamiento'], ['o_clientes', 'Clientes'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
+const CLIENT_TABS = [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['exchanges', 'Conectar'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
+const OWNER_TABS = [['o_hoy', 'Hoy'], ['o_cerebro', 'Cerebro'], ['o_launch', 'Lanzar'], ['o_clientes', 'Clientes'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
+const ICONS = {
+  resumen: '<path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z"/>', mercado: '<path d="M3 17l5-5 4 4 8-9M15 7h5v5"/>', exchanges: '<path d="M9 7H6a3 3 0 000 6h3M15 7h3a3 3 0 010 6h-3M8 10h8"/>',
+  bot: '<rect x="5" y="8" width="14" height="10" rx="2"/><path d="M12 4v4M9 13h.01M15 13h.01"/>', mas: '<path d="M5 12h.01M12 12h.01M19 12h.01"/>',
+  o_hoy: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>', o_cerebro: '<path d="M9 4a3 3 0 00-3 3 3 3 0 00-2 5 3 3 0 002 5 3 3 0 006 0V7a3 3 0 00-3-3zM15 4a3 3 0 013 3 3 3 0 012 5 3 3 0 01-2 5 3 3 0 01-3 2"/>',
+  o_launch: '<path d="M5 19c1-4 3-7 7-10l3-4 4-1-1 4-4 3c-3 4-6 6-9 8zM9 15l-3 3"/>', o_clientes: '<circle cx="9" cy="9" r="3"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5M16 7a3 3 0 010 6M18 15c2 1 3 2 3 4"/>',
+};
+const ico = (k) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ICONS.mas}</svg>`;
 
 function shell() {
   const owner = state.user.role === 'owner';
-  const tabs = (list) => list.map(([k, l]) => `<button data-t="${k}" class="${state.tab === k ? 'on' : ''}">${esc(l)}</button>`).join('');
+  const inClient = !owner || state.showClient;
+  const main5 = inClient ? [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['bot', 'Bot'], ['exchanges', 'Conectar']] : [['o_hoy', 'Hoy'], ['o_cerebro', 'Cerebro'], ['o_launch', 'Lanzar'], ['o_clientes', 'Clientes']];
+  const mainKeys = main5.map((x) => x[0]);
+  const rest = (inClient ? CLIENT_TABS : OWNER_TABS).filter(([k]) => !mainKeys.includes(k));
+  const inMore = !mainKeys.includes(state.tab);
+  const btn = ([k, l]) => `<button data-t="${k}" class="${state.tab === k ? 'on' : ''}">${ico(k)}<span>${esc(l)}</span></button>`;
+  const cur = [...CLIENT_TABS, ...OWNER_TABS].find(([k]) => k === state.tab);
   $('#root').innerHTML = `
   <div class="wrap">
     <div class="top">
-      <div class="brand"><small>${owner ? 'Consola del dueño' : 'RDCMNATION'}</small>Quantum Trading</div>
-      <div class="who"><span title="${esc(state.user.email)}">${esc(state.user.email)}</span><button class="btn ghost small" id="out">Salir</button></div>
+      <div class="brand"><small>${owner ? (inClient ? 'Dueño · vista cliente' : 'Consola del dueño') : 'RDCMNATION'}</small>Quantum Trading</div>
+      <div class="who"><span class="chip">${esc(cur ? cur[1] : '')}</span></div>
     </div>
-    <nav>${owner ? `${tabs(OWNER_TABS)}<span class="sep"></span><button id="vc" class="${state.showClient ? 'on' : ''}">Vista cliente</button>` : tabs(CLIENT_TABS)}</nav>
-    ${owner && state.showClient ? `<nav>${tabs(CLIENT_TABS)}</nav>` : ''}
     <div id="main"></div>
-    <p class="muted" style="font-size:12px">Quantum Trading es una herramienta de software. No es asesoría de inversión ni custodio de fondos. Operar cripto implica riesgo de perder todo el dinero. <a href="/legal.html" target="_blank" rel="noopener">Legal</a></p>
-  </div>`;
-  document.querySelectorAll('nav button[data-t]').forEach((b) => b.addEventListener('click', () => { state.tab = b.dataset.t; shell(); loadTab(); }));
-  const vc = $('#vc'); if (vc) vc.addEventListener('click', () => { state.showClient = !state.showClient; if (state.showClient) state.tab = 'resumen'; else if (!state.tab.startsWith('o_')) state.tab = 'o_hoy'; shell(); loadTab(); });
+    <p class="muted" style="font-size:11px">No es asesoría de inversión ni custodia de fondos. Operar cripto implica riesgo de perder todo el dinero. <a href="/legal.html" target="_blank" rel="noopener">Legal</a></p>
+  </div>
+  <div class="bar" role="navigation">${main5.map(btn).join('')}<button id="more" class="${inMore ? 'on' : ''}">${ico('mas')}<span>Más</span></button></div>
+  <div class="sheet" id="sheet" hidden><div class="sheetb">
+    <div class="muted" style="font-size:12px;margin-bottom:6px">${esc(state.user.email)}</div>
+    ${rest.map(([k, l]) => `<button class="item" data-t="${k}">${esc(l)}</button>`).join('')}
+    ${owner ? `<button class="item" id="vc">${inClient ? '← Volver a la consola del dueño' : 'Ver como cliente'}</button>` : ''}
+    <button class="item" id="out" style="color:var(--bad)">Salir</button>
+  </div></div>`;
+  const go = (k) => { state.tab = k; shell(); loadTab(); };
+  document.querySelectorAll('.bar button[data-t], .sheet button[data-t]').forEach((b) => b.addEventListener('click', () => go(b.dataset.t)));
+  $('#more').addEventListener('click', () => { $('#sheet').hidden = !$('#sheet').hidden; });
+  $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') $('#sheet').hidden = true; });
+  const vc = $('#vc'); if (vc) vc.addEventListener('click', () => { state.showClient = !state.showClient; go(state.showClient ? 'resumen' : 'o_hoy'); });
   $('#out').addEventListener('click', async () => { try { await api('POST', '/api/auth/logout'); } catch { /* ya salió */ } state.user = null; state.me = null; render(); });
 }
 
@@ -99,22 +120,39 @@ async function loadTab() {
 }
 
 // ============================ Cliente ============================
+const AUTO_PRESET = { symbol: 'AUTO', strategy: 'sma', usd: 25, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'paper', paperExchange: 'best', maxPositions: 3, maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
+const DEMO_PRESET = { symbol: 'BTC-USD', strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', paperExchange: 'best', maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
+async function quickStart(preset) { await api('PUT', '/api/bot', preset); state.tab = 'resumen'; shell(); loadTab(); }
+const cheapTxt = { coinbase: 'Coinbase', robinhood: 'Robinhood', igual: 'igual' };
+
 function botNowHtml(b) {
   const actTxt = { buy: 'Comprar', sell: 'Vender', hold: 'Mantener' };
-  const l = b.last;
+  const l = b.last; const auto = b.symbol === 'AUTO';
   const fresh = b.last_run && Date.now() - b.last_run < 180000;
   const status = !b.enabled ? '<span class="chip">Apagado</span>' : fresh ? '<span class="chip paper">● Activo</span>' : '<span class="chip">Esperando ciclo</span>';
   const p = b.position;
-  return `<div class="row" style="justify-content:space-between"><div class="row"><b>${esc(b.symbol)}</b> ${status}<span class="chip ${b.mode === 'live' ? 'live' : 'paper'}">${b.mode === 'live' ? 'REAL' : 'PAPEL'}</span><span class="chip">${esc(String(b.strategy).toUpperCase())}</span></div>
+  const cta = b.enabled ? '' : `<div class="row" style="margin:8px 0"><button class="btn" id="bn_auto">▶ Encender Cerebro (papel)</button><button class="btn ghost" id="bn_demo">Demo: compra cada 15 min</button></div>`;
+  const hold = (b.holdings || []).map((h) => `<tr><td><b>${esc(h.symbol.replace('-USD', ''))}</b> <span class="chip">${esc(h.venue || '')}</span></td><td class="r">${num(h.qty, 6)}</td><td class="r">${h.value !== null ? money(h.value) : '—'}</td><td class="r ${cls(h.unrealized)}">${h.unrealized !== null ? money(h.unrealized) : '—'}</td></tr>`).join('');
+  const sc = b.scanner;
+  return `<div class="row" style="justify-content:space-between"><div class="row"><b>${auto ? 'Cerebro AUTO' : esc(b.symbol)}</b> ${status}<span class="chip ${b.mode === 'live' ? 'live' : 'paper'}">${b.mode === 'live' ? 'REAL' : 'PAPEL'}</span>${auto ? '' : `<span class="chip">${esc(String(b.strategy).toUpperCase())}</span>`}</div>
       <span class="muted" style="font-size:12px">revisó ${esc(ago(b.last_run))}</span></div>
-    <div class="botnow">${l ? `<span class="act ${esc(l.action)}">${esc(actTxt[l.action] || l.action)}</span> <span class="muted">${esc(l.reason)}</span>` : '<span class="muted">Aún sin decisiones. Enciende el bot en la pestaña Bot.</span>'}</div>
+    ${cta}
+    <div class="botnow">${l ? `<span class="act ${esc(l.action)}">${esc(actTxt[l.action] || l.action)}</span> <span class="muted">${esc(l.reason)}</span>` : '<span class="muted">Aún sin decisiones. Enciende el bot aquí arriba.</span>'}</div>
+    ${auto && sc ? `<div class="muted" style="font-size:12px;margin-top:6px">Validadas ahora: ${sc.qualified.length ? sc.qualified.map((q) => `<span class="chip">${esc(q.symbol.replace('-USD', ''))} · ${esc(cheapTxt[q.cheaper] || '')}</span>`).join(' ') : 'ninguna (el Cerebro espera)'} · escaneadas ${sc.scanned}</div>` : ''}
     <div class="kpis" style="margin-top:8px">
       <div class="kpi"><div class="l">Resultado total</div><div class="v ${cls(b.total)}">${money(b.total)}</div><div class="s">${money(b.realized)} cerrado</div></div>
-      <div class="kpi"><div class="l">Posición</div><div class="v" style="font-size:16px">${num(p.qty, 6)}</div><div class="s">${p.value !== null ? money(p.value) : '—'} · ${p.unrealized !== null ? `<span class="${cls(p.unrealized)}">${money(p.unrealized)}</span>` : ''}</div></div>
+      <div class="kpi"><div class="l">${auto ? 'Invertido ahora' : 'Posición'}</div><div class="v" style="font-size:16px">${auto ? (p.value !== null ? money(p.value) : '—') : num(p.qty, 6)}</div><div class="s">${auto ? `${(b.holdings || []).length} cripto(s)` : `${p.value !== null ? money(p.value) : '—'}`} · ${p.unrealized !== null ? `<span class="${cls(p.unrealized)}">${money(p.unrealized)}</span>` : ''}</div></div>
       <div class="kpi"><div class="l">Curva</div>${spark(b.curve.length > 1 ? b.curve : null, 120, 34)}</div>
     </div>
+    ${hold ? `<div class="scroll" style="margin-top:6px"><table><thead><tr><th>Posición</th><th class="r">Cant.</th><th class="r">Valor</th><th class="r">No realiz.</th></tr></thead><tbody>${hold}</tbody></table></div>` : ''}
     ${b.errors ? `<div class="msg err">${b.errors} error(es) seguidos del exchange</div>` : ''}
-    ${b.recent.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${b.recent.slice(0, 5).map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} ${esc(o.symbol)}</td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : `<span class="neg">${esc(o.status)}</span>`}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+    ${b.recent.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${b.recent.slice(0, 5).map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} ${esc(o.symbol)}</td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : `<span class="neg">${esc(o.status)}</span>`}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${b.enabled ? '<p class="muted" style="font-size:11px;margin:6px 0 0">El bot trabaja mientras el servidor está despierto. En el plan gratis de Render se duerme sin visitas: usa UptimeRobot sobre /api/health.</p>' : ''}`;
+}
+function bindBotNow() {
+  const a = $('#bn_auto'); const d = $('#bn_demo');
+  if (a) a.addEventListener('click', () => quickStart(AUTO_PRESET).catch((e) => alert(e.message)));
+  if (d) d.addEventListener('click', () => quickStart(DEMO_PRESET).catch((e) => alert(e.message)));
 }
 
 async function tabResumen(main) {
@@ -126,7 +164,7 @@ async function tabResumen(main) {
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
   <div class="banner">El modo <b>papel</b> simula operaciones con precios reales y <b>no mueve dinero</b>. Los resultados simulados no garantizan resultados reales.</div>
   <div class="kpis">
-    <div class="kpi"><div class="l">Bot</div><div class="v">${bot.cfg.enabled ? 'Activo' : 'Apagado'}</div><div class="s">${esc(bot.cfg.strategy.toUpperCase())} · ${esc(bot.cfg.symbol)} · ${bot.cfg.mode === 'live' ? 'REAL' : 'papel'}</div></div>
+    <div class="kpi"><div class="l">Bot</div><div class="v">${bot.cfg.enabled ? 'Activo' : 'Apagado'}</div><div class="s">${bot.cfg.symbol === 'AUTO' ? 'Cerebro AUTO' : esc(bot.cfg.strategy.toUpperCase()) + ' · ' + esc(bot.cfg.symbol)} · ${bot.cfg.mode === 'live' ? 'REAL' : 'papel'}</div></div>
     <div class="kpi"><div class="l">Exchanges conectados</div><div class="v">${conns.connections.length}</div><div class="s">solo llaves de trading</div></div>
     <div class="kpi"><div class="l">Posiciones</div><div class="v">${pnl.positions.length}</div><div class="s">según tus órdenes</div></div>
   </div>
@@ -134,7 +172,12 @@ async function tabResumen(main) {
     ${rows ? `<div class="scroll"><table><thead><tr><th>Modo</th><th>Par</th><th class="r">Cantidad</th><th class="r">Costo</th><th class="r">Valor</th><th class="r">No realizado</th><th class="r">Realizado</th></tr></thead><tbody>${rows}</tbody></table></div>`
       : '<p class="muted">Aún no hay órdenes. Configura tu bot en la pestaña Bot (empieza en modo papel).</p>'}
   </div>`;
-  tabTimer = setInterval(async () => { try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) el.innerHTML = botNowHtml(b); } catch { /* reintenta en el próximo ciclo */ } }, 30000);
+  bindBotNow();
+  let n = 0; let waiting = bn.enabled && !bn.last;
+  tabTimer = setInterval(async () => {
+    n++; if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
+    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
+  }, 4000);
 }
 
 const EXCH = {
@@ -224,13 +267,20 @@ async function tabExchanges(main) {
 
 async function tabBot(main) {
   const [{ cfg }, { connections }] = await Promise.all([api('GET', '/api/bot'), api('GET', '/api/connections')]);
+  try { state.uni = (await api('GET', '/api/universe')).symbols; } catch { state.uni = null; }
   const live = state.me.liveTradingEnabled;
   const opt = (v, cur, label) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(label || v)}</option>`;
   main.innerHTML = `
-  <div class="card"><h2>Tu bot</h2>
+  <div class="card" data-open><h2>Empezar en 1 toque</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">El <b>Cerebro AUTO</b> prueba todas las criptos grandes con costos reales de Coinbase y Robinhood y solo compra las que pasan la prueba, en el exchange más barato. Empieza en papel (sin dinero).</p>
+    <div class="row"><button class="btn" id="q_auto">▶ Cerebro AUTO · papel</button><button class="btn ghost" id="q_demo">Demo: BTC cada 15 min</button></div><div class="msg" id="qm"></div>
+  </div>
+  <div class="card"><h2>Avanzado: elegir yo la cripto y la estrategia</h2>
     <form id="bf" class="form">
-      <label>Par<select name="symbol">${state.me.symbols.map((s) => opt(s, cfg.symbol)).join('')}</select></label>
-      <label>Estrategia<select name="strategy">${opt('dca', cfg.strategy, 'DCA: compra periódica')}${opt('sma', cfg.strategy, 'SMA: cruce de medias (1 h)')}${opt('rsi', cfg.strategy, 'RSI: sobreventa / sobrecompra (1 h)')}${opt('macd', cfg.strategy, 'MACD: cruce de momentum (1 h)')}</select></label>
+      <label>Cripto (todas las listadas en Coinbase / Robinhood)<input name="symbol" list="symlist" value="${esc(cfg.symbol)}" autocomplete="off" autocapitalize="characters" spellcheck="false"><datalist id="symlist"><option value="AUTO">AUTO · el Cerebro elige</option>${(state.uni || state.me.symbols.map((s) => ({ s, cb: true, rh: null }))).map((x) => `<option value="${esc(x.s)}">${esc(x.s)}${x.cb ? ' · Coinbase' : ''}${x.rh ? ' · Robinhood' : ''}</option>`).join('')}</datalist><span class="muted" id="symhint" style="font-size:12px"></span></label>
+      <label>Exchange (papel) / ruteo<select name="paperExchange">${opt('best', cfg.paperExchange, 'Mejor: el más barato por brecha de costo')}${opt('coinbase', cfg.paperExchange, 'Coinbase')}${opt('robinhood', cfg.paperExchange, 'Robinhood')}</select></label>
+      <label class="auto">Máx. criptos a la vez<input name="maxPositions" type="number" min="1" max="10" value="${esc(cfg.maxPositions ?? 3)}"></label>
+      <label class="noauto">Estrategia<select name="strategy">${opt('dca', cfg.strategy, 'DCA: compra periódica')}${opt('sma', cfg.strategy, 'SMA: cruce de medias (1 h)')}${opt('rsi', cfg.strategy, 'RSI: sobreventa / sobrecompra (1 h)')}${opt('macd', cfg.strategy, 'MACD: cruce de momentum (1 h)')}</select></label>
       <label>Monto por compra (USD)<input name="usd" type="number" min="1" step="any" value="${esc(cfg.usd)}"></label>
       <label class="dca">Cada (minutos)<input name="intervalMin" type="number" min="15" value="${esc(cfg.intervalMin)}"></label>
       <label class="sma">SMA rápida<input name="fast" type="number" min="2" value="${esc(cfg.fast)}"></label>
@@ -263,25 +313,34 @@ async function tabBot(main) {
     <div class="row"><button class="btn ghost" id="bt_run" type="button">Correr backtest</button></div>
     <div id="bt_out" class="scroll"></div><div class="msg" id="bt_m"></div>
   </div>`;
+  $('#q_auto').addEventListener('click', () => quickStart(AUTO_PRESET).catch((e) => setMsg($('#qm'), e.message)));
+  $('#q_demo').addEventListener('click', () => quickStart(DEMO_PRESET).catch((e) => setMsg($('#qm'), e.message)));
+  const hint = () => {
+    const v = $('#bf').symbol.value.trim().toUpperCase(); const u = (state.uni || []).find((x) => x.s === v);
+    $('#symhint').textContent = v === 'AUTO' ? 'El Cerebro elige qué comprar y dónde.' : u ? `${u.cb ? 'Coinbase ✓' : 'Coinbase ✗'} · ${u.rh === null ? 'Robinhood: conecta para verificar' : u.rh ? 'Robinhood ✓' : 'Robinhood ✗'}` : v ? 'No aparece en la lista' : '';
+  };
   const sync = () => {
-    const f = $('#bf');
-    document.querySelectorAll('.dca').forEach((n) => { n.style.display = f.strategy.value === 'dca' ? '' : 'none'; });
-    document.querySelectorAll('.sma').forEach((n) => { n.style.display = f.strategy.value === 'sma' ? '' : 'none'; });
-    document.querySelectorAll('.rsi').forEach((n) => { n.style.display = f.strategy.value === 'rsi' ? '' : 'none'; });
-    document.querySelectorAll('.nodca').forEach((n) => { n.style.display = f.strategy.value === 'dca' ? 'none' : ''; });
+    const f = $('#bf'); const au = f.symbol.value.trim().toUpperCase() === 'AUTO'; hint();
+    document.querySelectorAll('.noauto').forEach((n) => { n.style.display = au ? 'none' : ''; });
+    document.querySelectorAll('.auto').forEach((n) => { n.style.display = au ? '' : 'none'; });
+    document.querySelectorAll('.dca').forEach((n) => { n.style.display = !au && f.strategy.value === 'dca' ? '' : 'none'; });
+    document.querySelectorAll('.sma').forEach((n) => { n.style.display = !au && f.strategy.value === 'sma' ? '' : 'none'; });
+    document.querySelectorAll('.rsi').forEach((n) => { n.style.display = !au && f.strategy.value === 'rsi' ? '' : 'none'; });
+    document.querySelectorAll('.nodca').forEach((n) => { n.style.display = au || f.strategy.value === 'dca' ? 'none' : ''; });
     document.querySelectorAll('.real').forEach((n) => { n.style.display = f.mode.value === 'live' ? '' : 'none'; });
   };
-  $('#bf').addEventListener('change', sync); sync();
+  $('#bf').addEventListener('change', sync); $('#bf').symbol.addEventListener('input', sync); sync();
   $('#bf').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
-    const body = { symbol: f.symbol.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
+    const body = { symbol: f.symbol.value.trim().toUpperCase(), paperExchange: f.paperExchange.value, maxPositions: f.maxPositions.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
       slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
       maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, enabled: f.enabled.checked };
     try { await api('PUT', '/api/bot', body); setMsg($('#bm'), 'Guardado.', true); } catch (err) { setMsg($('#bm'), err.message); }
   });
   $('#sg_run').addEventListener('click', async () => {
-    const sym = $('#bf').symbol.value;
+    const sym = $('#bf').symbol.value.trim().toUpperCase();
+    if (sym === 'AUTO') return setMsg($('#sg_m'), 'En AUTO mira el ranking del Cerebro en la pestaña Mercado.');
     setMsg($('#sg_m'), 'Consultando…', true);
     try {
       const r = await api('GET', `/api/signals?symbol=${encodeURIComponent(sym)}`);
@@ -302,7 +361,7 @@ async function tabBot(main) {
     const f = $('#bf');
     setMsg($('#bt_m'), 'Calculando…', true);
     try {
-      const r = await api('POST', '/api/backtest', { symbol: f.symbol.value, strategy: f.strategy.value, usd: f.usd.value,
+      const r = await api('POST', '/api/backtest', { symbol: f.symbol.value.trim().toUpperCase(), paperExchange: 'coinbase', strategy: f.strategy.value, usd: f.usd.value,
         intervalMin: f.intervalMin.value, fast: f.fast.value, slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, maxOrderUsd: f.maxOrderUsd.value, maxDailyUsd: f.maxDailyUsd.value,
         exchange: $('#bt_ex').value, capital: $('#bt_cap').value });
       const m = r.metrics;
@@ -461,6 +520,7 @@ async function tabCerebro(main) {
     <div class="kpi"><div class="l">Laboratorio</div><div class="v">${lab.runs || 0}</div><div class="s">corridas · ${esc(ago(b.last_run))}</div></div>
   </div>
   <div class="row"><button class="btn" id="br_run">▶ Correr agentes ahora</button><span class="msg" id="br_m"></span></div>
+  <div class="card" data-open><h2>Escáner de criptos · ${b.scanner ? `${b.scanner.items.filter((i) => i.qualified).length} validadas de ${b.scanner.scanned}` : 'sin datos'}</h2>${scannerHtml(b.scanner)}</div>
   <div class="card"><h2>Laboratorio de papel · $1M virtual</h2><div class="grid">${labCards}</div>
     ${lessons ? `<h2 style="margin-top:14px">Lo que aprendió</h2><ul class="lessons">${lessons}</ul>` : ''}</div>
   <div class="card" ${b.pending.length ? "data-open" : ""}><h2>Por decidir (${b.pending.length})</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
@@ -562,8 +622,17 @@ async function tabHoy(main) {
   $('#nums').addEventListener('toggle', async () => { if ($('#nums').open && !$('#nums').dataset.l) { $('#nums').dataset.l = '1'; try { await tabOverview($('#h_nums')); } catch (err) { $('#h_nums').textContent = err.message; } } }, { once: false });
 }
 
+function scannerHtml(sc) {
+  if (!sc || !sc.items || !sc.items.length) return '<p class="muted">El Cerebro aún no escaneó. El Director corre el escáner cada pocas horas; el dueño puede forzarlo en Cerebro.</p>';
+  const rows = sc.items.map((i) => `<tr><td><b>${esc(i.symbol.replace('-USD', ''))}</b></td><td>${i.qualified ? '<span class="pos">✔ validada</span>' : '<span class="muted">no pasa</span>'}</td><td>${esc(i.label)}</td>
+    <td class="r ${cls(i.coinbase.ret)}">${pc(i.coinbase.ret)}</td><td class="r ${cls(i.robinhood.ret)}">${pc(i.robinhood.ret)}</td><td class="r muted">${pc(i.coinbase.bh)}</td>
+    <td class="r">${i.coinbase.drag.toFixed(2)} / ${i.robinhood.drag.toFixed(2)} %</td><td>${esc(cheapTxt[i.cheaper] || '')}</td></tr>`).join('');
+  return `<div class="scroll"><table><thead><tr><th>Cripto</th><th></th><th>Estrategia</th><th class="r">Coinbase</th><th class="r">Robinhood</th><th class="r">Mant.</th><th class="r">Costo CB / RH</th><th>Más barato</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted" style="font-size:11px;margin:6px 0 0">${sc.scanned} de ${sc.universe} listadas en Coinbase · ${esc(sc.warning || '')} Actualizado ${esc(ago(sc.t))}.</p>`;
+}
+
 async function tabMercado(main) {
-  const m = await api('GET', '/api/market');
+  const [m, sc] = await Promise.all([api('GET', '/api/market'), api('GET', '/api/scanner').catch(() => null)]);
   const g = m.global;
   const coins = m.coins.map((c) => `<tr><td><b>${esc(c.symbol.replace('-USD', ''))}</b></td><td class="r">${money(c.price, c.price < 10 ? 4 : 2)}</td><td class="r ${cls(c.ch24)}">${pc(c.ch24)}</td><td class="r ${cls(c.ch7)}">${pc(c.ch7)}</td><td class="r ${cls(c.ch30)}">${pc(c.ch30)}</td></tr>`).join('');
   const books = m.books.map((b) => `<tr><td><b>${esc(b.symbol)}</b></td><td class="r">${b.spreadPct.toFixed(3)} %</td><td class="r">${money(Math.min(b.bidDepthUsd, b.askDepthUsd), 0)}</td><td class="r">${b.volume24Usd ? money(b.volume24Usd, 0) : '—'}</td></tr>`).join('');
@@ -574,6 +643,7 @@ async function tabMercado(main) {
     <div class="kpi"><div class="l">Mercado 24 h</div><div class="v ${g ? cls(g.mcap24) : ''}" style="font-size:20px">${g ? pc(g.mcap24) : '—'}</div><div class="s">capitalización total</div></div>
   </div>
   <div class="card" data-open><h2>Precios y tendencia</h2>${coins ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Precio</th><th class="r">24 h</th><th class="r">7 d</th><th class="r">30 d</th></tr></thead><tbody>${coins}</tbody></table></div>` : '<p class="muted">Sin datos de CoinGecko ahora mismo.</p>'}</div>
+  <div class="card" data-open><h2>Ranking del Cerebro: todas las criptos grandes</h2>${scannerHtml(sc)}</div>
   <div class="card"><h2>Liquidez real (Coinbase Exchange)</h2>${books ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Spread</th><th class="r">Profundidad ±0.5 %</th><th class="r">Volumen 24 h</th></tr></thead><tbody>${books}</tbody></table></div>` : '<p class="muted">Sin libro de órdenes ahora mismo.</p>'}</div>
   <div class="card"><h2>Tendencia en CoinGecko</h2>${m.trending.length ? `<div class="row">${m.trending.map((t) => `<span class="chip">${esc(t.name)} ${esc(t.symbol.toUpperCase())}</span>`).join('')}</div>` : '<p class="muted">Sin datos.</p>'}</div>
   <p class="muted" style="font-size:12px">${esc(m.note)} Actualizado ${esc(ago(m.t))}.${m.errors.length ? ' Fuentes con problemas: ' + esc(m.errors.join('; ')) : ''}</p>`;
@@ -646,7 +716,8 @@ async function tabAjustes(main) {
   main.innerHTML = `
   ${s ? '' : '<div class="banner">Por seguridad, activa la verificación en dos pasos (2FA) para usar la consola del dueño.</div>'}
   ${s ? `<div class="card"><h2>Plataforma</h2>
-    <label class="check"><input type="checkbox" id="s_live" ${s.live_trading ? 'checked' : ''}><span><b>Permitir trading REAL a los clientes.</b> Si lo apagas, todos los bots en modo real se detienen. Actívalo solo después de probar con tu propia cuenta y revisar los documentos legales con un abogado.</span></label>
+    <label>Trading REAL<select id="s_scope"><option value="off" ${s.live_scope === 'off' ? 'selected' : ''}>Apagado para todos</option><option value="owner" ${s.live_scope === 'owner' ? 'selected' : ''}>Solo yo (dueño): para probar con mi dinero</option><option value="on" ${s.live_scope === 'on' ? 'selected' : ''}>Todos los clientes</option></select></label>
+    <p class="muted" style="font-size:12px;margin:4px 0 0">Empieza en “Solo yo” con montos mínimos. “Todos” solo después de probar y revisar los documentos legales con un abogado de Florida. Al apagarlo, los bots en real se detienen.</p>
     <label class="check" style="margin-top:10px"><input type="checkbox" id="s_reg" ${s.registration_open ? 'checked' : ''}><span><b>Registro abierto</b> (nuevos clientes pueden crear cuenta).</span></label>
     <div class="row" style="margin-top:12px"><button class="btn" id="s_save">Guardar</button></div><div class="msg" id="sm"></div>
   </div>` : ''}
@@ -658,7 +729,7 @@ async function tabAjustes(main) {
   </div>`;
   $('#expo').addEventListener('toggle', async () => { if ($('#expo').open && !$('#expo').dataset.l) { $('#expo').dataset.l = '1'; try { await tabExport($('#expo_b')); } catch (err) { $('#expo_b').textContent = err.message; } } });
   if (s) $('#s_save').addEventListener('click', async () => {
-    try { await api('PUT', '/api/owner/settings', { live_trading: $('#s_live').checked, registration_open: $('#s_reg').checked }); setMsg($('#sm'), 'Guardado.', true); state.me = await api('GET', '/api/me'); } catch (err) { setMsg($('#sm'), err.message); }
+    try { await api('PUT', '/api/owner/settings', { live_scope: $('#s_scope').value, registration_open: $('#s_reg').checked }); setMsg($('#sm'), 'Guardado.', true); state.me = await api('GET', '/api/me'); } catch (err) { setMsg($('#sm'), err.message); }
   });
   $('#t_setup').addEventListener('click', async () => {
     const r = await api('POST', '/api/owner/2fa/setup');

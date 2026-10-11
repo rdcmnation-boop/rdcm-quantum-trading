@@ -151,3 +151,13 @@ nav .sep{align-self:stretch}
 .botnow{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#0b0b0e}
 .botnow .act{display:inline-block;font-weight:800;padding:2px 10px;border-radius:99px;margin-right:6px;background:var(--chip);border:1px solid var(--line)}
 .botnow .act.buy{color:var(--good);border-color:var(--good)}.botnow .act.sell{color:var(--bad);border-color:var(--bad)}.botnow .act.hold{color:var(--accent);border-color:#6b5300}
+
+/* ---- Navegación inferior compacta ---- */
+body{padding-bottom:84px}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:2px;padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));background:rgba(10,10,13,.96);backdrop-filter:blur(10px);border-top:1px solid var(--line)}
+.bar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;color:var(--muted);font:inherit;font-size:11px;padding:6px 2px;border-radius:10px;cursor:pointer;min-width:0}
+.bar button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.bar button.on{color:var(--accent);text-shadow:var(--glow)}.bar button.on svg{filter:drop-shadow(0 0 6px rgba(255,214,10,.6))}
+.sheet{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55);display:flex;align-items:flex-end}.sheet[hidden]{display:none}
+.sheetb{width:100%;max-width:520px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0;padding:14px 16px calc(78px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px rgba(0,0,0,.6)}
+.who .chip{font-size:12px;color:var(--accent);border-color:#3a3400}
