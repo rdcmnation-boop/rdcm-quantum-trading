@@ -3,7 +3,7 @@ services:
     name: quantum-trading
     runtime: node
     region: ohio
-    plan: starter
+    plan: free
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
@@ -21,4 +21,4 @@ databases:
     databaseName: quantum_trading
     user: qtrade_user
     region: ohio
-    plan: basic-256mb
+    plan: free
