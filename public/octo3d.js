@@ -9,6 +9,8 @@ const rgba = (h, a) => { const [r, g, b] = hexRgb(h); return `rgba(${r},${g},${b
 const shade = (h, k) => { const [r, g, b] = hexRgb(h); const f = (v) => Math.max(0, Math.min(255, Math.round(v * k))); return `rgb(${f(r)},${f(g)},${f(b)})`; };
 
 // Motas de la piel del manto, fijas (generadas con una semilla para que no parpadeen).
+const ARM_LEN = [1, 0.92, 1.1, 0.88, 1.04, 0.95, 1.12, 0.9];
+const BLOTCH = (() => { let x = 777; const rnd = () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; return Array.from({ length: 16 }, () => ({ x: (rnd() - 0.5) * 1.6, y: (rnd() - 0.5) * 1.6, r: 0.25 + rnd() * 0.35, dark: rnd() > 0.45 })); })();
 const SPECKS = (() => { let x = 12345; const rnd = () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; const a = []; for (let i = 0; i < 130; i++) { const r = Math.sqrt(rnd()) * 0.95; const t = rnd() * TAU; a.push({ x: Math.cos(t) * r * 0.9, y: Math.sin(t) * r, r: 0.012 + rnd() * 0.04, a: 0.1 + rnd() * 0.3, dark: rnd() > 0.35 }); } return a; })();
 
 export function createOcto3D(cv, d0) {
@@ -19,7 +21,8 @@ export function createOcto3D(cv, d0) {
   const parts = []; const floaters = []; const rings = [];
   const events = []; // acciones pendientes: { label, type: 'buy' | 'sell' }
   const prev = new Map();
-  const oct = { x: 0, z: 0, vx: 0, vz: 0, heading: 0, target: null, mode: 'tour', until: 0, reach: 0, bob: 0 };
+  const oct = { x: 0, z: 0, vx: 0, vz: 0, heading: 0, target: null, mode: 'tour', until: 0, reach: 0, bob: 0, tint: 0 };
+  const bubbles = Array.from({ length: 34 }, () => ({ x: (Math.random() - 0.5) * 9, z: (Math.random() - 0.5) * 9, y: Math.random() * 6, v: 0.25 + Math.random() * 0.5, r: 0.04 + Math.random() * 0.09, ph: Math.random() * TAU }));
   const cam = { az: 0.6, el: 0.78, D: 15, fx: 0, fz: 0 };
   let hud = { title: 'Mapa de criptos', sub: 'esperando datos' }; let tourIdx = 0; let last = performance.now(); let alive = true;
 
@@ -148,57 +151,75 @@ export function createOcto3D(cv, d0) {
     for (let i = rings.length - 1; i >= 0; i--) if (rings[i].dead) rings.splice(i, 1);
     // sombra del pulpo
     groundCircle(oct.x, oct.z, 1.2, 'rgba(0,0,0,.35)', null);
-    // pulpo realista: manto con textura, ojos con pupila horizontal y tentáculos cónicos con ventosas y puntas enroscadas
+    // pulpo realista: manto abultado hacia atrás, cabeza con ojos, membrana entre brazos, brazos cónicos con ventosas y puntas enroscadas
     const by = 2.1 + Math.sin(oct.bob * 2.2) * 0.22 + Math.min(0.8, spd * 0.12);
     const hx = Math.cos(oct.heading); const hz = Math.sin(oct.heading);
-    const headC = proj(oct.x, by + 0.2, oct.z);
-    { const ag = ctx.createRadialGradient(headC.x, headC.y + 20, 4, headC.x, headC.y + 20, headC.k * 3.6); ag.addColorStop(0, 'rgba(255,120,50,.2)'); ag.addColorStop(1, 'rgba(255,120,50,0)'); ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(headC.x, headC.y + 20, headC.k * 3.6, 0, TAU); ctx.fill(); }
-    const NSEG = 30; const reachCol = oct.mode === 'sell' ? '#ff5d4d' : '#4ade80';
+    const headC = proj(oct.x + hx * 0.28, by + 0.05, oct.z + hz * 0.28); const mantC = proj(oct.x - hx * 0.55, by + 0.8, oct.z - hz * 0.55);
+    // camuflaje: el cuerpo se tiñe de verde al comprar, de rojo al soltar
+    const tcol = oct.mode === 'buy' ? [60, 205, 110] : oct.mode === 'sell' ? [255, 70, 55] : [0, 0, 0]; oct.tint += (((oct.mode === 'buy' || oct.mode === 'sell') && tg ? 0.32 : 0) - oct.tint) * 0.05;
+    { const ag = ctx.createRadialGradient(headC.x, headC.y + 24, 4, headC.x, headC.y + 24, headC.k * 3.8); ag.addColorStop(0, 'rgba(255,120,50,.22)'); ag.addColorStop(1, 'rgba(255,120,50,0)'); ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(headC.x, headC.y + 24, headC.k * 3.8, 0, TAU); ctx.fill(); }
+    const NSEG = 32; const reachCol = oct.mode === 'sell' ? '#ff5d4d' : '#4ade80'; const arms = [];
     for (let i = 0; i < 8; i++) {
-      const th = (i / 8) * TAU + oct.heading * 0.35; const reachArm = oct.reach * (i % 2 === 0 ? 1 : 0.35); const pts = []; let zs = 0;
+      const th = (i / 8) * TAU + oct.heading * 0.35; const reachArm = oct.reach * (i % 2 === 0 ? 1 : 0.35); const pts = []; let zs = 0; const L = ARM_LEN[i]; const cs = i % 3 === 0 ? -1 : 1;
       for (let j = 0; j <= NSEG; j++) {
-        const u = j / NSEG; const wob = Math.sin(sec * 2.4 - u * 5 + i * 1.3) * 0.3 * u; const ang = th + wob * 0.5; const rr = 0.45 + 2.0 * u;
+        const u = j / NSEG; const wob = Math.sin(sec * 2.4 - u * 5 + i * 1.3) * 0.3 * u; const ang = th + wob * 0.5; const rr = 0.4 + 2.1 * u * L;
         let px = oct.x + Math.cos(ang) * rr - oct.vx * u * u * 0.5; let pz = oct.z + Math.sin(ang) * rr - oct.vz * u * u * 0.5;
-        let py = by - 0.15 - u * 1.4 + Math.sin(sec * 2 - u * 4 + i) * 0.22 * u;
-        if (u > 0.66) { const c = (u - 0.66) / 0.34; px -= Math.cos(ang) * c * c * 0.75; pz -= Math.sin(ang) * c * c * 0.75; py += c * c * 1.0; } // punta enroscada
+        let py = by - 0.1 - u * 1.45 * L + Math.sin(sec * 2 - u * 4 + i) * 0.22 * u;
+        if (u > 0.64) { const c = (u - 0.64) / 0.36; px -= Math.cos(ang) * c * c * 0.7 * L + -Math.sin(ang) * cs * c * c * 0.5; pz -= Math.sin(ang) * c * c * 0.7 * L + Math.cos(ang) * cs * c * c * 0.5; py += c * c * (0.7 + 0.4 * (i % 2)); }
         if (tg && reachArm > 0.01) { const w = Math.pow(u, 1.5) * reachArm; px += (tg.x - px) * w; pz += (tg.z - pz) * w; py += (1.2 + 0.4 * Math.sin(sec * 4 + i) - py) * w; }
-        const q = proj(px, Math.max(0.1, py), pz); q.u = u; pts.push(q); zs += q.z;
+        const q = proj(px, Math.max(0.1, py), pz); q.u = u; q.wx = px; q.wz = pz; pts.push(q); zs += q.z;
+        if (j % 5 === 2 && py < 1.2) { const sh = proj(px, 0, pz); ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(sh.x, sh.y, 0.2 * sh.k * (1 - u * 0.6), 0.07 * sh.k, 0, 0, TAU); ctx.fill(); }
       }
+      arms.push(pts);
       const glow = tg && reachArm > 0.3 && oct.mode !== 'tour';
       ops.push({ z: zs / pts.length, d: () => {
-        const N = pts.length - 1; const wid = (u) => 0.6 * Math.pow(1 - u, 0.85) + 0.05;
-        const nrm = (j) => { const a = pts[Math.max(0, j - 1)]; const b = pts[Math.min(N, j + 1)]; const dx = b.x - a.x; const dy = b.y - a.y; const L = Math.hypot(dx, dy) || 1; return [-dy / L, dx / L]; };
+        const N = pts.length - 1; const wid = (u) => 0.62 * Math.pow(1 - u, 0.85) + 0.05;
+        const nrm = (j) => { const a = pts[Math.max(0, j - 1)]; const b = pts[Math.min(N, j + 1)]; const dx = b.x - a.x; const dy = b.y - a.y; const Ln = Math.hypot(dx, dy) || 1; return [-dy / Ln, dx / Ln]; };
         for (let j = 0; j < N; j++) {
           const a = pts[j]; const b = pts[j + 1]; const na = nrm(j); const nb = nrm(j + 1); const wa = wid(a.u) * a.k / 2; const wb = wid(b.u) * b.k / 2;
-          const m = Math.pow(a.u, 1.4); const r = Math.round(150 + 90 * m); const g = Math.round(42 + 95 * m); const bl = Math.round(24 + 70 * m);
+          const m = Math.pow(a.u, 1.4); const mot = 0.85 + 0.15 * Math.sin(j * 1.7 + i * 2.1); const r = Math.round((150 + 90 * m) * mot); const g = Math.round((42 + 95 * m) * mot); const bl = Math.round((24 + 70 * m) * mot);
           const f = `rgb(${r},${g},${bl})`; ctx.fillStyle = f; ctx.strokeStyle = f; ctx.lineWidth = 0.8;
           ctx.beginPath(); ctx.moveTo(a.x + na[0] * wa, a.y + na[1] * wa); ctx.lineTo(b.x + nb[0] * wb, b.y + nb[1] * wb); ctx.lineTo(b.x - nb[0] * wb, b.y - nb[1] * wb); ctx.lineTo(a.x - na[0] * wa, a.y - na[1] * wa); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
-        ctx.strokeStyle = 'rgba(255,205,175,.28)'; ctx.lineWidth = 1.1; ctx.beginPath(); // brillo húmedo
-        for (let j = 2; j < N - 1; j++) { const a = pts[j]; const n = nrm(j); const w = wid(a.u) * a.k * 0.28; if (j === 2) ctx.moveTo(a.x - n[0] * w, a.y - n[1] * w); else ctx.lineTo(a.x - n[0] * w, a.y - n[1] * w); } ctx.stroke();
-        for (let j = 4; j < N - 1; j += 2) { // ventosas pálidas
-          const a = pts[j]; const n = nrm(j); const w = wid(a.u) * a.k; const sd = (j % 4 === 0 ? 1 : -1) * 0.2; const rad = Math.max(0.8, w * 0.17);
-          ctx.fillStyle = 'rgba(248,216,184,.92)'; ctx.strokeStyle = 'rgba(110,40,22,.55)'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.arc(a.x + n[0] * w * sd, a.y + n[1] * w * sd, rad, 0, TAU); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,215,190,.34)'; ctx.lineWidth = 1.2; ctx.beginPath();
+        for (let j = 2; j < N - 1; j++) { const a = pts[j]; const n = nrm(j); const w = wid(a.u) * a.k * 0.27; if (j === 2) ctx.moveTo(a.x - n[0] * w, a.y - n[1] * w); else ctx.lineTo(a.x - n[0] * w, a.y - n[1] * w); } ctx.stroke();
+        for (let j = 4; j < N - 1; j += 2) { // ventosas: aro claro y centro oscuro
+          const a = pts[j]; const n = nrm(j); const w = wid(a.u) * a.k; const sd = (j % 4 === 0 ? 1 : -1) * 0.2; const rad = Math.max(0.9, w * 0.18); const sx = a.x + n[0] * w * sd; const sy = a.y + n[1] * w * sd;
+          ctx.fillStyle = 'rgba(250,222,192,.95)'; ctx.strokeStyle = 'rgba(105,38,20,.6)'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.arc(sx, sy, rad, 0, TAU); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = 'rgba(150,70,50,.6)'; ctx.beginPath(); ctx.arc(sx, sy, rad * 0.45, 0, TAU); ctx.fill();
         }
-        if (glow) { const e = pts[N]; const gg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 16); gg.addColorStop(0, rgba(reachCol, 0.85)); gg.addColorStop(1, rgba(reachCol, 0)); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(e.x, e.y, 16, 0, TAU); ctx.fill(); }
+        if (glow) { const e = pts[N]; const gg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 18); gg.addColorStop(0, rgba(reachCol, 0.9)); gg.addColorStop(1, rgba(reachCol, 0)); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(e.x, e.y, 18, 0, TAU); ctx.fill(); }
       } });
     }
-    ops.push({ z: headC.z, d: () => { // manto
-      const R = headC.k * 1.18 * (1 + Math.sin(oct.bob * 2.2) * 0.025); const cx = headC.x; const cy = headC.y - R * 0.1; const tilt = -0.22 + Math.sin(sec * 0.8) * 0.04;
-      ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt);
-      ctx.beginPath(); ctx.ellipse(0, -R * 0.2, R * 0.9, R * 1.12, 0, 0, TAU);
-      const g = ctx.createRadialGradient(-R * 0.32, -R * 0.62, R * 0.08, 0, 0, R * 1.35); g.addColorStop(0, '#f7a87f'); g.addColorStop(0.32, '#df5e36'); g.addColorStop(0.78, '#a3321b'); g.addColorStop(1, '#5e180b'); ctx.fillStyle = g; ctx.fill(); ctx.clip();
-      for (const sp of SPECKS) { ctx.fillStyle = sp.dark ? `rgba(60,12,4,${sp.a})` : `rgba(255,196,160,${sp.a})`; ctx.beginPath(); ctx.arc(sp.x * R, -R * 0.2 + sp.y * R * 1.1, sp.r * R, 0, TAU); ctx.fill(); }
-      ctx.strokeStyle = 'rgba(70,14,5,.35)'; ctx.lineWidth = Math.max(1, R * 0.03); for (const k of [-0.55, 0.1, 0.62]) { ctx.beginPath(); ctx.ellipse(k * R * 0.9, R * 0.3, R * 0.22, R * 0.7, 0.3 * k, 0.2, 2.4); ctx.stroke(); }
+    // membrana entre los brazos
+    for (let i = 0; i < 8; i++) {
+      const A = arms[i]; const B = arms[(i + 1) % 8]; const zz = (A[4].z + B[4].z) / 2 + 0.2;
+      ops.push({ z: zz, d: () => { ctx.beginPath(); for (let j = 0; j <= 9; j++) ctx.lineTo(A[j].x, A[j].y); for (let j = 9; j >= 0; j--) ctx.lineTo(B[j].x, B[j].y); ctx.closePath(); const g = ctx.createLinearGradient(A[0].x, A[0].y, A[9].x, A[9].y); g.addColorStop(0, 'rgba(120,32,16,.95)'); g.addColorStop(1, 'rgba(200,100,70,.55)'); ctx.fillStyle = g; ctx.fill(); } });
+    }
+    const body = (c, Rr, R2, ang, bright) => { // elipsoide con piel: gradiente, motas, manchas de cromatóforos y brillo húmedo
+      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang); ctx.beginPath(); ctx.ellipse(0, 0, Rr, R2, 0, 0, TAU);
+      const g = ctx.createRadialGradient(-Rr * 0.3, -R2 * 0.55, R2 * 0.08, 0, 0, Rr * 1.3); g.addColorStop(0, bright ? '#f9b08a' : '#f19a73'); g.addColorStop(0.32, '#df5e36'); g.addColorStop(0.78, '#a3321b'); g.addColorStop(1, '#5a170a'); ctx.fillStyle = g; ctx.fill(); ctx.clip();
+      for (const bl of BLOTCH) { const rg = ctx.createRadialGradient(bl.x * Rr, bl.y * R2, 0, bl.x * Rr, bl.y * R2, bl.r * Rr); rg.addColorStop(0, bl.dark ? 'rgba(70,14,6,.28)' : 'rgba(255,175,130,.22)'); rg.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = rg; ctx.fillRect(-Rr, -R2, Rr * 2, R2 * 2); }
+      for (const sp of SPECKS) { ctx.fillStyle = sp.dark ? `rgba(60,12,4,${sp.a})` : `rgba(255,196,160,${sp.a})`; ctx.beginPath(); ctx.arc(sp.x * Rr, sp.y * R2, sp.r * Rr, 0, TAU); ctx.fill(); }
+      if (oct.tint > 0.01) { ctx.fillStyle = `rgba(${tcol[0]},${tcol[1]},${tcol[2]},${oct.tint})`; ctx.fillRect(-Rr, -R2, Rr * 2, R2 * 2); }
       ctx.restore();
-      for (const sgn of [-1, 1]) { // ojos con pupila horizontal
-        const ex = oct.x + hx * 0.78 + -hz * sgn * 0.42; const ez = oct.z + hz * 0.78 + hx * sgn * 0.42; const e = proj(ex, by + 0.12, ez); if (e.z > headC.z + 0.55) continue; const er = e.k * 0.27;
+      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang); ctx.strokeStyle = 'rgba(255,235,215,.38)'; ctx.lineWidth = Math.max(1.2, Rr * 0.045); ctx.lineCap = 'round'; ctx.beginPath(); ctx.ellipse(0, 0, Rr * 0.8, R2 * 0.8, 0, Math.PI * 1.15, Math.PI * 1.5); ctx.stroke(); ctx.restore();
+    };
+    const mantAng = Math.atan2(mantC.y - headC.y, mantC.x - headC.x) - Math.PI / 2 + Math.PI / 2; const breath = 1 + Math.sin(oct.bob * 2.2) * 0.03;
+    ops.push({ z: mantC.z, d: () => body(mantC, mantC.k * 1.1 * breath, mantC.k * 1.5 * breath, mantAng - Math.PI / 2, true) });
+    ops.push({ z: headC.z, d: () => {
+      const R = headC.k * 0.98; body(headC, R * 1.05, R * 0.92, mantAng - Math.PI / 2, false);
+      for (const sgn of [-1, 1]) { // ojos sobre la cabeza, con pupila horizontal
+        const ex = oct.x + hx * 0.85 + -hz * sgn * 0.5; const ez = oct.z + hz * 0.85 + hx * sgn * 0.5; const e = proj(ex, by + 0.28, ez); if (e.z > headC.z + 0.6) continue; const er = e.k * 0.3;
+        ctx.fillStyle = 'rgba(110,30,15,.9)'; ctx.beginPath(); ctx.arc(e.x, e.y + er * 0.12, er * 1.28, 0, TAU); ctx.fill();
         const sg = ctx.createRadialGradient(e.x - er * 0.25, e.y - er * 0.3, er * 0.1, e.x, e.y, er); sg.addColorStop(0, '#f6d27a'); sg.addColorStop(1, '#a8701c'); ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(e.x, e.y, er, 0, TAU); ctx.fill();
-        ctx.fillStyle = '#0a0705'; ctx.beginPath(); ctx.ellipse(e.x, e.y, er * 0.66, er * 0.2, 0, 0, TAU); ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(e.x - er * 0.32, e.y - er * 0.32, Math.max(0.8, er * 0.14), 0, TAU); ctx.fill();
-        ctx.strokeStyle = '#4a1408'; ctx.lineWidth = Math.max(1, er * 0.28); ctx.beginPath(); ctx.arc(e.x, e.y, er * 1.04, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+        ctx.fillStyle = '#0a0705'; ctx.beginPath(); ctx.ellipse(e.x, e.y, er * 0.68, er * 0.2, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(e.x - er * 0.34, e.y - er * 0.34, Math.max(0.8, er * 0.15), 0, TAU); ctx.fill();
+        ctx.strokeStyle = '#4a1408'; ctx.lineWidth = Math.max(1, er * 0.3); ctx.beginPath(); ctx.arc(e.x, e.y, er * 1.06, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
       }
     } });
+    // burbujas flotando alrededor
+    for (const bu of bubbles) { bu.y += dt * bu.v; if (bu.y > 6) bu.y = 0.1; const q = proj(oct.x + bu.x + Math.sin(sec + bu.ph) * 0.3, bu.y, oct.z + bu.z); const br = Math.max(0.8, bu.r * q.k); ops.push({ z: q.z, d: () => { ctx.strokeStyle = 'rgba(200,225,255,.35)'; ctx.fillStyle = 'rgba(200,225,255,.07)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q.x, q.y, br, 0, TAU); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(q.x - br * 0.3, q.y - br * 0.3, br * 0.22, 0, TAU); ctx.fill(); } }); }
     for (const p of parts) { p.x += p.vx; p.y += p.vy; p.z += p.vz; p.vy -= 0.006; p.life -= dt * 0.9; if (p.y < 0.05) { p.y = 0.05; p.vy *= -0.4; } if (p.life > 0) sphere(p.x, p.y, p.z, 0.1, p.col, Math.min(1, p.life * 1.5)); }
     for (let i = parts.length - 1; i >= 0; i--) if (parts[i].life <= 0) parts.splice(i, 1);
     ops.sort((a, b) => b.z - a.z); for (const o of ops) o.d();
