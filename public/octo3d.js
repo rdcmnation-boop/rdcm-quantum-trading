@@ -3,7 +3,7 @@
 // Todo lo que muestra sale de datos reales del bot: cada isla es una cripto, su altura es la fuerza de la señal y
 // el pulpo va evaluando una por una; cuando el bot compra o suelta, el pulpo va a esa isla y lo ejecuta a la vista.
 const TAU = Math.PI * 2;
-const STYLE = 'toy'; // 'toy' = juguete articulado amarillo limón; 'real' = pulpo realista
+const STYLE = 'ufo'; // 'toy' = juguete articulado amarillo limón; 'real' = pulpo realista
 const COLORS = { held: '#4ade80', ok: '#ffd60a', idle: '#8a8776', off: '#4a4a44', hot: '#ff5d4d', buy: '#4ade80', keep: '#ffd60a', drop: '#ff5d4d' };
 const hexRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgba = (h, a) => { const [r, g, b] = hexRgb(h); return `rgba(${r},${g},${b},${a})`; };
@@ -154,7 +154,50 @@ export function createOcto3D(cv, d0, opt = {}) {
     for (let i = rings.length - 1; i >= 0; i--) if (rings[i].dead) rings.splice(i, 1);
     // sombra del pulpo
     groundCircle(oct.x, oct.z, 1.2, 'rgba(0,0,0,.35)', null);
-    if (STYLE === 'toy') {
+    if (STYLE === 'ufo') {
+      // OVNI con IA: vuela sobre el mapa, escanea la cripto que evalúa y lanza un rayo verde al comprar o rojo al soltar
+      const alt = 2.7 + Math.sin(oct.bob * 1.8) * 0.16; const c = proj(oct.x, alt, oct.z); const R = c.k * 0.95;
+      const fwd = proj(oct.x + oct.vx * 0.4, alt, oct.z + oct.vz * 0.4); const tilt = Math.max(-0.28, Math.min(0.28, (fwd.x - c.x) * 0.02));
+      const acting = (oct.mode === 'buy' || oct.mode === 'sell') && tg; const beamCol = oct.mode === 'sell' ? [255, 93, 77] : [74, 222, 128];
+      const ground = proj(oct.x, 0, oct.z);
+      ops.push({ z: c.z + 0.4, d: () => {
+        // rayo hacia abajo (compra/venta) o haz de escaneo hacia la cripto evaluada
+        if (acting && oct.reach > 0.2) {
+          const a = Math.min(1, oct.reach) * (0.55 + 0.15 * Math.sin(sec * 14)); const w0 = R * 0.5; const w1 = R * 1.5;
+          const g = ctx.createLinearGradient(0, c.y, 0, ground.y); g.addColorStop(0, `rgba(${beamCol},${a})`); g.addColorStop(1, `rgba(${beamCol},${a * 0.15})`);
+          ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(c.x - w0, c.y + R * 0.3); ctx.lineTo(c.x + w0, c.y + R * 0.3); ctx.lineTo(ground.x + w1, ground.y); ctx.lineTo(ground.x - w1, ground.y); ctx.closePath(); ctx.fill();
+          for (let i = 0; i < 6; i++) { const u = ((sec * (oct.mode === 'sell' ? -0.9 : 0.9) + i / 6) % 1 + 1) % 1; const yy = c.y + (ground.y - c.y) * u; const xx = c.x + (ground.x - c.x) * u; ctx.fillStyle = `rgba(${beamCol},${0.8 * (1 - u)})`; ctx.beginPath(); ctx.arc(xx + Math.sin(sec * 5 + i * 2) * R * 0.5 * (0.4 + u), yy, Math.max(1, R * 0.05), 0, TAU); ctx.fill(); }
+        } else if (tg && oct.reach > 0.15) {
+          const tp = proj(tg.x, 0.5, tg.z); const a = 0.3 * Math.min(1, oct.reach * 1.5); const dx = tp.x - c.x; const dy = tp.y - c.y; const L = Math.hypot(dx, dy) || 1; const nx = -dy / L; const ny = dx / L; const w1 = R * 0.7;
+          const g = ctx.createLinearGradient(c.x, c.y, tp.x, tp.y); g.addColorStop(0, `rgba(255,214,10,${a})`); g.addColorStop(1, `rgba(255,214,10,${a * 0.2})`);
+          ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(c.x + nx * R * 0.12, c.y + ny * R * 0.12); ctx.lineTo(c.x - nx * R * 0.12, c.y - ny * R * 0.12); ctx.lineTo(tp.x - nx * w1, tp.y - ny * w1); ctx.lineTo(tp.x + nx * w1, tp.y + ny * w1); ctx.closePath(); ctx.fill();
+          const u = (sec * 1.4) % 1; ctx.strokeStyle = `rgba(255,214,10,${0.6 * (1 - u)})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(c.x + dx * u, c.y + dy * u, w1 * (0.2 + u * 0.8), w1 * (0.2 + u * 0.8) * 0.4, Math.atan2(dy, dx), 0, TAU); ctx.stroke();
+        }
+        ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(tilt);
+        const tint = oct.mode === 'buy' ? '#4ade80' : oct.mode === 'sell' ? '#ff5d4d' : '#ffd60a';
+        // resplandor inferior
+        const gl = ctx.createRadialGradient(0, R * 0.45, 2, 0, R * 0.45, R * 1.9); gl.addColorStop(0, rgba(tint, 0.35)); gl.addColorStop(1, rgba(tint, 0)); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, R * 0.45, R * 1.9, 0, TAU); ctx.fill();
+        // cúpula de cristal con piloto
+        const dg = ctx.createRadialGradient(-R * 0.25, -R * 0.75, R * 0.05, 0, -R * 0.3, R * 0.95); dg.addColorStop(0, 'rgba(210,250,255,.85)'); dg.addColorStop(0.6, 'rgba(90,200,230,.5)'); dg.addColorStop(1, 'rgba(40,110,150,.55)');
+        ctx.fillStyle = dg; ctx.strokeStyle = 'rgba(200,240,255,.7)'; ctx.lineWidth = Math.max(1, R * 0.03); ctx.beginPath(); ctx.ellipse(0, -R * 0.12, R * 0.78, R * 0.78, 0, Math.PI, TAU); ctx.fill(); ctx.stroke();
+        const lk = tg ? proj(tg.x, 0.8, tg.z) : null; let lx = 0; if (lk) lx = Math.max(-1, Math.min(1, (lk.x - c.x) / (R * 3)));
+        ctx.fillStyle = '#6fe08a'; ctx.beginPath(); ctx.ellipse(lx * R * 0.08, -R * 0.38, R * 0.3, R * 0.36, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#0b1a0e'; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.ellipse(lx * R * 0.12 + sg * R * 0.12, -R * 0.4, R * 0.075, R * 0.13, sg * 0.45, 0, TAU); ctx.fill(); }
+        ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.ellipse(-R * 0.3, -R * 0.72, R * 0.16, R * 0.07, -0.6, 0, TAU); ctx.fill();
+        // plato: casco metálico con aro luminoso
+        const hg = ctx.createLinearGradient(0, -R * 0.3, 0, R * 0.5); hg.addColorStop(0, '#d7dbe3'); hg.addColorStop(0.45, '#8d939e'); hg.addColorStop(1, '#2c2f37');
+        ctx.fillStyle = hg; ctx.beginPath(); ctx.ellipse(0, 0, R * 1.62, R * 0.46, 0, 0, TAU); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = Math.max(1, R * 0.03); ctx.beginPath(); ctx.ellipse(0, -R * 0.04, R * 1.5, R * 0.36, 0, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+        ctx.strokeStyle = tint; ctx.lineWidth = Math.max(1.5, R * 0.06); ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.ellipse(0, R * 0.04, R * 1.5, R * 0.34, 0, 0.05, Math.PI - 0.05); ctx.stroke(); ctx.globalAlpha = 1;
+        // luces que giran por el borde
+        for (let i = 0; i < 9; i++) { const ang = sec * 2.4 + (i / 9) * TAU; const front = Math.sin(ang); const lxp = Math.cos(ang) * R * 1.32; const lyp = R * 0.03 + front * R * 0.2; const on = (Math.floor(sec * 6) + i) % 3 === 0;
+          ctx.fillStyle = on ? '#fff7b0' : rgba(tint, 0.9); ctx.globalAlpha = front > -0.2 ? 1 : 0.35; ctx.beginPath(); ctx.arc(lxp, lyp, Math.max(1.2, R * (on ? 0.075 : 0.055)), 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
+        // emisor inferior
+        ctx.fillStyle = rgba(tint, 0.9); ctx.beginPath(); ctx.ellipse(0, R * 0.42, R * 0.34, R * 0.1, 0, 0, TAU); ctx.fill();
+        ctx.restore();
+      } });
+      const pu = proj(oct.x, alt + 0.1, oct.z); void pu;
+    } else if (STYLE === 'toy') {
       // pulpo de juguete articulado: cabeza redonda amarillo limón, ojos grandes con pupilas, brazos de segmentos con aro verde
       const walking = Math.min(1, spd * 0.35); const by = 1.15 + Math.sin(oct.bob * 2.4) * 0.07 + walking * 0.12;
       const hx = Math.cos(oct.heading); const hz = Math.sin(oct.heading);
@@ -275,7 +318,7 @@ export function createOcto3D(cv, d0, opt = {}) {
     } });
     }
     // burbujas flotando alrededor
-    for (const bu of bubbles) { bu.y += dt * bu.v; if (bu.y > 6) bu.y = 0.1; const q = proj(oct.x + bu.x + Math.sin(sec + bu.ph) * 0.3, bu.y, oct.z + bu.z); const br = Math.max(0.8, bu.r * q.k); ops.push({ z: q.z, d: () => { ctx.strokeStyle = 'rgba(200,225,255,.35)'; ctx.fillStyle = 'rgba(200,225,255,.07)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q.x, q.y, br, 0, TAU); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(q.x - br * 0.3, q.y - br * 0.3, br * 0.22, 0, TAU); ctx.fill(); } }); }
+    for (const bu of (STYLE === 'ufo' ? [] : bubbles)) { bu.y += dt * bu.v; if (bu.y > 6) bu.y = 0.1; const q = proj(oct.x + bu.x + Math.sin(sec + bu.ph) * 0.3, bu.y, oct.z + bu.z); const br = Math.max(0.8, bu.r * q.k); ops.push({ z: q.z, d: () => { ctx.strokeStyle = 'rgba(200,225,255,.35)'; ctx.fillStyle = 'rgba(200,225,255,.07)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q.x, q.y, br, 0, TAU); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(q.x - br * 0.3, q.y - br * 0.3, br * 0.22, 0, TAU); ctx.fill(); } }); }
     for (const p of parts) { p.x += p.vx; p.y += p.vy; p.z += p.vz; p.vy -= 0.006; p.life -= dt * 0.9; if (p.y < 0.05) { p.y = 0.05; p.vy *= -0.4; } if (p.life > 0) sphere(p.x, p.y, p.z, 0.1, p.col, Math.min(1, p.life * 1.5)); }
     for (let i = parts.length - 1; i >= 0; i--) if (parts[i].life <= 0) parts.splice(i, 1);
     ops.sort((a, b) => b.z - a.z); for (const o of ops) o.d();

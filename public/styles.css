@@ -227,3 +227,4 @@ th,td{padding:6px 5px;font-size:13px}
 .bviz .bwhy .w.buy{border-left-color:#4ade80}.bviz .bwhy .w.buy b{color:#4ade80}
 .bviz .bwhy .w.sell{border-left-color:#ff5d4d}.bviz .bwhy .w.sell b{color:#ff5d4d}
 .bviz .bwhy .w.risk{border-left-color:#ffd60a}
+.bviz .bwhy[hidden]{display:none}
