@@ -26,6 +26,11 @@ export const voice = {
     if (!on) { queue = []; busy = false; current = ''; try { speechSynthesis.cancel(); } catch { /* ignora */ } } else this.say('Voz activada. Te cuento lo que pienso y hago, y por qué.', true);
     emit();
   },
+  // Informe largo: dice todas las frases en orden (sin recortar la fila ni ignorar repetidas).
+  sayAll(list) {
+    if (!on) return; queue = []; for (const text of list) if (text) queue.push({ text, hi: true });
+    pump();
+  },
   // hi = decisión importante (compra, venta, freno): hace fila. Lo demás solo suena si el pulpo está libre.
   say(text, hi = false) {
     if (!on || !text) return;

@@ -371,9 +371,10 @@ const vizRows = (d) => (d.rows && d.rows.length ? d.rows.map((r) => `<div class=
 const vizStream = (d) => d.stream.slice(0, 14).map((x) => { const [tg, c] = tagOf(x.text); return `<div><span class="tg ${c}">${tg}</span>${x.t ? `<span>${esc(ago(x.t))} · </span>` : ''}${esc(x.text)}</div>`; }).join('') || '<div>Esperando la primera decisión…</div>';
 const TH_TAG = { pass: 'TRASPASO', buy: 'COMPRA', sell: 'VENTA', risk: 'FRENO', hold: 'VIGILA' };
 const vizWhy = (d) => (d.thoughts || []).map((x) => `<div class="w ${x.k}"><b>${x.big ? 'COMPRA GRANDE' : TH_TAG[x.k] || 'NOTA'}</b> ${esc(x.text)}</div>`).join('');
+const briefBtn = (d) => (d.city && voice.supported ? '<button type="button" class="bbrief">🎙 Informe del Cerebro</button>' : '');
 const voiceLbl = () => (voice.on ? '🔊 Voz activa' : '🔈 Toca para oírlo');
 function vizHtml(d, id) {
-  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${(d.octopus || d.city) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
+  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${briefBtn(d)}${(d.octopus || d.city) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
     <div class="bstat">${vizStat(d)}</div><div class="brows" ${d.rows && d.rows.length ? '' : 'hidden'}>${vizRows(d)}</div>
     ${d.city ? '<div class="bdetail" hidden></div>' : ''}<div class="bwhy" ${d.thoughts && d.thoughts.length ? '' : 'hidden'}>${vizWhy(d)}</div><div class="bstream">${vizStream(d)}</div><div class="bappr">${esc(d.approval)}</div></div>`;
 }
@@ -419,6 +420,28 @@ const COORD = {
   problem_processing: ['procesa los problemas que reportan los clientes y propone arreglos', null, 'sus propuestas a ti, que decides'],
   owner_analytics: ['analiza el negocio: clientes, uso y errores', null, 'avisos para ti'],
 };
+// Informe del Cerebro: lo que los agentes encontraron sobre trading y oportunidades (solo datos reales guardados; sin promesas).
+function briefing(b) {
+  const out = []; const pc1 = (x) => `${x >= 0 ? 'más ' : 'menos '}${Math.abs(x).toFixed(1)} por ciento`;
+  out.push(`Informe del Cerebro. ${b.agents.filter((a) => a.enabled).length} agentes trabajando.`);
+  const sc = b.scanner;
+  if (sc && sc.items) {
+    const q = sc.items.filter((i) => i.qualified);
+    if (q.length) {
+      out.push(`Oportunidades: el Escáner revisó ${sc.scanned} criptos y ${q.length} califican.`);
+      for (const i of q.slice(0, 3)) { const v = i[i.cheaper] || i.coinbase || i.robinhood; out.push(`${i.symbol.replace('-USD', '')}: estrategia ${i.label}${v && v.ret !== undefined ? `, en simulación ${pc1(v.ret)} frente a ${pc1(v.bh)} de comprar y mantener` : ''}${i.cheaper ? `. Conviene operarla en ${i.cheaper}, que cobra menos` : ''}.`); }
+    } else out.push(`Oportunidades: el Escáner revisó ${sc.scanned} criptos y ninguna cumple todas las reglas ahora. Por eso no recomienda comprar nada nuevo; prefiero esperar a una señal clara.`);
+  } else out.push('Oportunidades: el Escáner todavía no ha corrido.');
+  const lab = b.lab || {}; const ch = Object.entries(lab.champions || {});
+  if (ch.length) for (const [sym, c] of ch.slice(0, 2)) out.push(`Laboratorio de papel: en ${sym.replace('-USD', '')} la estrategia campeona es ${c.label}, ${c.validated ? 'ya validada con datos que no vio' : 'todavía sin validar'}.`);
+  else out.push('Laboratorio de papel: aún no hay estrategia campeona; sigue practicando con dinero virtual.');
+  const ml = (b.models || []).filter((m) => m.active || m.candidate);
+  if (ml.length) out.push(`Modelos: ${ml.map((m) => `${m.symbol.replace('-USD', '')} ${m.active ? 'activo' : 'candidato sin activar'}`).join(', ')}.`);
+  if (b.pending.length) out.push(`Esperan tu decisión ${b.pending.length} propuesta${b.pending.length > 1 ? 's' : ''}: ${b.pending.slice(0, 3).map((p) => p.title).join('; ')}.`);
+  else out.push('No hay propuestas pendientes para ti.');
+  out.push('Todo esto es simulación y análisis, no una promesa de ganancia. Solo tú apruebas los cambios.');
+  return out;
+}
 function agentsViz(b) {
   const st = new Map((b.agent_stats || []).map((x) => [x.name, x])); const lastNote = new Map();
   for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) if (!lastNote.has(a.agent) && (a.notes || []).length) lastNote.set(a.agent, a.notes[0]);
@@ -426,7 +449,7 @@ function agentsViz(b) {
   const nodes = b.agents.map((a) => { const x = st.get(a.name) || {}; const mx = Math.max(1, ...b.agents.map((q) => (st.get(q.name) || {}).runs || 0)); return { label: (a.label || a.name).split(' ')[0].slice(0, 13), kind: !a.available ? 'off' : a.enabled ? 'ok' : 'idle', w: ((x.runs || 0) / mx) * 0.6 + Math.min(0.4, (x.created || 0) / 20), sub: lastNote.get(a.name) || `${x.runs || 0} corridas · ${x.created || 0} propuestas`, detail: detail(a, x), name: a.name, say: (() => { const c = COORD[a.name]; const nt = lastNote.get(a.name); const tgt = c && c[1] ? (b.agents.find((q) => q.name === c[1]) || {}).label : null; return `${a.label || a.name}${a.enabled ? '' : ', apagado'}: ${c ? c[0] : 'agente en preparación'}.${nt ? ` Lo último que reportó: ${String(nt).slice(0, 170)}.` : ' Todavía no ha reportado nada.'}${c && a.enabled ? ` Le pasa ${c[2]}${tgt ? ` a ${tgt}` : ''}.` : ''}`; })(), to: (() => { const c = COORD[a.name]; return c && c[1] ? b.agents.findIndex((q) => q.name === c[1]) : -1; })() }; });
   const stream = [];
   for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) for (const n of (a.notes || []).slice(0, 2)) stream.push({ t: r.t, text: `${a.agent}: ${n}` });
-  return { center: 'DIR', nodes, pending: b.pending.length, city: true, thoughts: b.agents.filter((a) => a.enabled && COORD[a.name]).map((a) => { const c = COORD[a.name]; const t = c[1] ? (b.agents.find((q) => q.name === c[1]) || {}).label : 'ti'; return { k: 'pass', text: `${a.label} → ${t || 'ti'}: le pasa ${c[2]}.` }; }).slice(0, 7), directorSay: `Director al habla. ${b.agents.filter((a) => a.enabled).length} agentes están trabajando${b.pending.length ? ` y ${b.pending.length} propuesta${b.pending.length > 1 ? 's esperan' : ' espera'} tu decisión. Solo tú las apruebas` : ', sin propuestas pendientes'}. Última corrida ${agoS(b.last_run) === 'ahora' ? 'ahora mismo' : 'hace ' + agoS(b.last_run)}.`, stream: stream.slice(0, 14), live: true, caption: 'Director + agentes',
+  return { center: 'DIR', nodes, pending: b.pending.length, city: true, briefing: briefing(b), thoughts: b.agents.filter((a) => a.enabled && COORD[a.name]).map((a) => { const c = COORD[a.name]; const t = c[1] ? (b.agents.find((q) => q.name === c[1]) || {}).label : 'ti'; return { k: 'pass', text: `${a.label} → ${t || 'ti'}: le pasa ${c[2]}.` }; }).slice(0, 7), directorSay: `Director al habla. ${b.agents.filter((a) => a.enabled).length} agentes están trabajando${b.pending.length ? ` y ${b.pending.length} propuesta${b.pending.length > 1 ? 's esperan' : ' espera'} tu decisión. Solo tú las apruebas` : ', sin propuestas pendientes'}. Última corrida ${agoS(b.last_run) === 'ahora' ? 'ahora mismo' : 'hace ' + agoS(b.last_run)}.`, stream: stream.slice(0, 14), live: true, caption: 'Director + agentes',
     stats: [['agentes activos', b.agents.filter((a) => a.enabled).length], ['pendientes tuyos', b.pending.length], ['versión', 'v' + b.brain_version], ['última corrida', ago(b.last_run)]],
     approval: b.pending.length ? `Solo tú apruebas: ${b.pending.length} propuesta(s) esperan tu decisión.` : 'Solo tú apruebas los cambios críticos. Nada pendiente ahora.' };
 }
@@ -447,7 +470,8 @@ async function mountCity(r, d) {
     const m = await import('/city3d.js'); if (!document.body.contains(r)) return;
     m.createCity3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi), onPick: (i) => { const n = d.nodes[i]; showAgent(r, n); voice.say(n.say || agentSummary(n), true); } });
     r.classList.add('is3d'); bindVoice(r, { ot: 0 });
-    voice.say(d.directorSay, false);
+    const bb = $('.bbrief', r); if (bb) bb.onclick = () => { if (!voice.on) { voice.set(true); const vb = $('.bvoice', r); if (vb) { vb.classList.add('on'); vb.textContent = voiceLbl(); } } const box = $('.bdetail', r); if (box) { box.hidden = false; box.innerHTML = `<div class="dh"><b>Informe del Cerebro</b></div><div class="dn">${d.briefing.map((x) => `<div>${esc(x)}</div>`).join('')}</div>`; } voice.sayAll(d.briefing); };
+    if (voice.on) voice.sayAll([d.directorSay, ...d.briefing.slice(1, 3)]); else voice.say(d.directorSay, false);
   } catch { brainViz(r, d); }
 }
 let vizCtl = null; let vizMode = '';

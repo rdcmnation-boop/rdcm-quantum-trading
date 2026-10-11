@@ -242,3 +242,4 @@ th,td{padding:6px 5px;font-size:13px}
 .bviz .bdetail .dp div{color:#ff9d2e}
 .bviz .bdetail .dn div{color:var(--muted)}
 .bviz .bwhy .w.pass{border-left-color:#8fe3ff}.bviz .bwhy .w.pass b{color:#8fe3ff}
+.bviz .bbrief{position:absolute;right:10px;top:50px;z-index:2;min-height:34px;padding:6px 12px;border-radius:999px;border:1px solid var(--accent);background:rgba(8,8,11,.78);color:var(--accent);font:600 11px/1 ui-monospace,Menlo,monospace;cursor:pointer;backdrop-filter:blur(4px)}
