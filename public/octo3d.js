@@ -198,6 +198,12 @@ export function createOcto3D(cv, d0, opt = {}) {
           const jig = Math.min(1, spd * 0.4) * 0.12; const px = ex + (lx * 0.38 + Math.sin(sec * 7 + sgn) * jig) * er; const py = ey + (ly * 0.38 + Math.cos(sec * 6.3 + sgn) * jig + 0.1) * er;
           ctx.fillStyle = '#0b0b0b'; ctx.beginPath(); ctx.arc(px, py, er * 0.5, 0, TAU); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.beginPath(); ctx.arc(px - er * 0.16, py - er * 0.18, er * 0.15, 0, TAU); ctx.fill();
         }
+        // parpadeo, mejillas y sonrisa (más grande al comprar)
+        const bl = Math.max(0, Math.sin(sec * 1.3 + 1) * 6 - 5.2); // pestañeo breve cada ~5 s
+        if (bl > 0) for (const sgn of [-1, 1]) { ctx.fillStyle = YEL; ctx.beginPath(); ctx.ellipse(headC.x + sgn * R * 0.4, headC.y + R * 0.02, R * 0.38, R * 0.38 * Math.min(1, bl * 1.4), 0, 0, TAU); ctx.fill(); }
+        ctx.fillStyle = 'rgba(255,120,90,.28)'; for (const sgn of [-1, 1]) { ctx.beginPath(); ctx.ellipse(headC.x + sgn * R * 0.68, headC.y + R * 0.5, R * 0.14, R * 0.08, 0, 0, TAU); ctx.fill(); }
+        const sm = oct.mode === 'buy' ? 0.34 : oct.mode === 'sell' ? 0.08 : 0.2;
+        ctx.strokeStyle = '#3d4a0c'; ctx.lineWidth = Math.max(1.4, R * 0.045); ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(headC.x, headC.y + R * (0.5 - (oct.mode === 'sell' ? -0.1 : 0.05)), R * 0.2, oct.mode === 'sell' ? Math.PI * 1.15 : 0.15 * Math.PI, oct.mode === 'sell' ? Math.PI * 1.85 : 0.85 * Math.PI); ctx.stroke(); void sm;
       } });
     } else {
     // pulpo realista: manto abultado hacia atrás, cabeza con ojos, membrana entre brazos, brazos cónicos con ventosas y puntas enroscadas

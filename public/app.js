@@ -365,7 +365,7 @@ function brainViz(root, d0) {
   new ResizeObserver(() => { size(); if (still) frame(0); }).observe(cv); requestAnimationFrame(frame);
   return { update(nd) { const was = d.octopus; d = nd; if (was !== d.octopus) size(); layout(nd); if (still) frame(0); } };
 }
-const tagOf = (txt) => (/compra|buy|rota/i.test(txt) && !/vende|stop/i.test(txt) ? ['COMPRA', 'buy'] : /vend|stop|sell|rota:/i.test(txt) ? ['VENTA', 'sell'] : /mantiene|vigila|espera|pausa|descansa|freno|límite/i.test(txt) ? ['VIGILA', 'hold'] : ['NOTA', '']);
+const tagOf = (txt) => (/mantiene|vigila|espera|pausa|descansa|freno|límite|sin saldo/i.test(txt) && !/^(compra|vende)\s/i.test(txt) ? ['VIGILA', 'hold'] : /compra|buy/i.test(txt) && !/vende|vend[ií]|sell/i.test(txt) ? ['COMPRA', 'buy'] : /vend|stop din|sell|rota:|toma de ganancia|tendencia rota/i.test(txt) ? ['VENTA', 'sell'] : ['NOTA', '']);
 const vizStat = (d) => d.stats.map((x) => `<div><b>${esc(x[1])}</b>${esc(x[0])}</div>`).join('');
 const vizRows = (d) => (d.rows && d.rows.length ? d.rows.map((r) => `<div class="br ${r.kind}"><b>${esc(r.sym)}</b><span>${esc(r.state)}</span><span class="num">${r.score ? r.score.toFixed(1) : '—'}</span><span class="num">${esc(r.note)}</span></div>`).join('') : '');
 const vizStream = (d) => d.stream.slice(0, 14).map((x) => { const [tg, c] = tagOf(x.text); return `<div><span class="tg ${c}">${tg}</span>${x.t ? `<span>${esc(ago(x.t))} · </span>` : ''}${esc(x.text)}</div>`; }).join('') || '<div>Esperando la primera decisión…</div>';
