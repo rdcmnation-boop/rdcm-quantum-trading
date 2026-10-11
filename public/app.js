@@ -63,7 +63,7 @@ function viewAuth() {
 
 // ============================ Estructura ============================
 const CLIENT_TABS = [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['exchanges', 'Conectar'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
-const OWNER_TABS = [['o_hoy', 'Hoy'], ['bot', 'Mi bot'], ['o_cerebro', 'Cerebro'], ['o_clientes', 'Clientes'], ['o_launch', 'Lanzar'], ['exchanges', 'Conectar'], ['mercado', 'Mercado'], ['ordenes', 'Mis órdenes'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes'], ['cuenta', 'Mi cuenta']];
+const OWNER_TABS = [['o_hoy', 'Hoy'], ['bot', 'Mi bot'], ['o_cerebro', 'Cerebro'], ['o_clientes', 'Clientes'], ['o_finanzas', 'Finanzas'], ['o_launch', 'Lanzar'], ['exchanges', 'Conectar'], ['mercado', 'Mercado'], ['ordenes', 'Mis órdenes'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes'], ['cuenta', 'Mi cuenta']];
 const ICONS = {
   resumen: '<path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z"/>', mercado: '<path d="M3 17l5-5 4 4 8-9M15 7h5v5"/>', exchanges: '<path d="M9 7H6a3 3 0 000 6h3M15 7h3a3 3 0 010 6h-3M8 10h8"/>',
   bot: '<rect x="5" y="8" width="14" height="10" rx="2"/><path d="M12 4v4M9 13h.01M15 13h.01"/>', mas: '<path d="M5 12h.01M12 12h.01M19 12h.01"/>',
@@ -111,7 +111,7 @@ async function loadTab() {
   main.innerHTML = '<div class="card muted">Cargando…</div>';
   try {
     const fn = { resumen: tabResumen, exchanges: tabExchanges, bot: tabBot, ordenes: tabOrdenes, descargar: tabDescargar, cuenta: tabCuenta, mercado: tabMercado, o_hoy: tabHoy,
-      o_launch: tabLaunch, o_cerebro: tabCerebro, o_export: tabExport, o_overview: tabOverview, o_clientes: tabClientes, o_seguridad: tabSeguridad, o_ajustes: tabAjustes }[state.tab];
+      o_launch: tabLaunch, o_cerebro: tabCerebro, o_export: tabExport, o_overview: tabOverview, o_clientes: tabClientes, o_finanzas: tabFinanzas, o_seguridad: tabSeguridad, o_ajustes: tabAjustes }[state.tab];
     await fn(main);
     accordionize(main);
   } catch (e) { main.innerHTML = `<div class="card"><span class="neg">${esc(e.message)}</span></div>`; }
@@ -308,12 +308,21 @@ function startMyBot(bn) {
   }, 4000);
 }
 
+function onboardHtml(bn, conns) {
+  const connected = conns.connections.length > 0; const tried = bn.enabled || (bn.recent || []).length > 0; const live = bn.enabled && bn.mode === 'live';
+  if (connected && tried && live) return '';
+  const st = [[tried, 'Prueba el bot en papel', 'Sin dinero real, con precios reales. Toca «Encender Cerebro (papel)» abajo.', 'bot'], [connected, 'Conecta tu exchange', 'Robinhood o Coinbase, con llave de solo ver y operar (nunca retiros).', 'exchanges'], [live, 'Activa dinero real con topes', 'Cuando estés cómodo: desde el Tablero, con tu propio monto.', null]];
+  const done = st.filter((x) => x[0]).length;
+  return `<div class="card" data-open><div class="row" style="justify-content:space-between"><h2 style="margin:0">Primeros pasos</h2><span class="chip ${done === 3 ? 'paper' : ''}">${done}/3</span></div><div class="meter"><i style="width:${(done / 3) * 100}%"></i></div>
+    ${st.map((x) => `<div class="step-row ${x[0] ? 'ok' : ''}"><span class="dot">${x[0] ? '✓' : '○'}</span><div class="grow"><b>${esc(x[1])}</b><div class="muted" style="font-size:12px">${esc(x[2])}</div></div>${!x[0] && x[3] ? `<button class="btn ghost small" data-go="${x[3]}">Ir ›</button>` : ''}</div>`).join('')}</div>`;
+}
 async function tabResumen(main) {
   const [pnl, bot, conns, bn] = await Promise.all([api('GET', '/api/pnl'), api('GET', '/api/bot'), api('GET', '/api/connections'), api('GET', '/api/bot/status')]);
   const rows = pnl.positions.map((p) => `<tr><td><span class="chip ${esc(p.mode)}">${p.mode === 'live' ? 'REAL' : 'PAPEL'}</span></td><td>${esc(p.symbol)}</td>
     <td class="r">${num(p.qty, 8)}</td><td class="r">${money(p.cost)}</td><td class="r">${money(p.value)}</td>
     <td class="r ${cls(p.unrealized)}">${money(p.unrealized)}</td><td class="r ${cls(p.realized)}">${money(p.realized)}</td></tr>`).join('');
   main.innerHTML = `
+  ${onboardHtml(bn, conns)}
   ${myBotCards(bn)}
   <div class="banner">El modo <b>papel</b> simula con precios reales y <b>no mueve dinero</b>. Lo simulado no garantiza resultados reales.</div>
   <div class="kpis">
@@ -326,6 +335,7 @@ async function tabResumen(main) {
       : '<p class="muted">Aún no hay órdenes. Configura tu bot en la pestaña Bot (empieza en modo papel).</p>'}
   </div>`;
   startMyBot(bn);
+  document.querySelectorAll('[data-go]').forEach((x) => x.addEventListener('click', () => { state.tab = x.dataset.go; shell(); loadTab(); }));
 }
 
 const EXCH = {
@@ -867,11 +877,45 @@ async function tabClientes(main) {
   }));
 }
 
+
+async function tabFinanzas(main) {
+  const d = await api('GET', '/api/owner/finance'); const m = d.model; const c = d.calc;
+  const costRow = (x, i) => `<div class="row" style="margin:4px 0"><input data-cn="${i}" value="${esc(x.name)}" style="flex:2;min-width:120px" aria-label="Costo"><input data-cu="${i}" type="number" min="0" step="any" value="${x.usd}" style="flex:1;min-width:80px" aria-label="USD por mes"></div>`;
+  const k = (l, v, sub, c2) => `<div class="kpi"><div class="l">${l}</div><div class="v ${c2 || ''}" style="font-size:18px">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
+  main.innerHTML = `<div class="card" data-open><h2>Finanzas del negocio (CFO)</h2>
+    <div class="kpis">${k('Costos al mes', money(c.cost))}${k('Ingreso mensual (MRR)', money(c.mrr), 'precio × clientes que pagan')}${k('Ganancia al mes', money(c.profit), c.margin_pct === null ? 'sin ingresos aún' : `margen ${c.margin_pct.toFixed(0)} %`, cls(c.profit))}
+      ${k('Clientes para empatar', c.breakeven_customers === null ? '—' : c.breakeven_customers, 'con el precio actual')}${k('Precio mínimo para tu margen', c.price_for_target === null ? '—' : money(c.price_for_target), 'con los clientes actuales')}${k('LTV / CAC', c.ltv_cac === null ? '—' : c.ltv_cac.toFixed(1) + '×', c.ltv ? `LTV ${money(c.ltv, 0)}` : '')}</div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Uso real ahora: ${d.usage.users} clientes activos · ${d.usage.bots_on} bots encendidos (${d.usage.live_bots_on} en real).</p></div>
+  <div class="card" data-open><h2>Tus números (los anotas tú)</h2>
+    <div class="row"><label style="flex:1;min-width:140px">Precio por cliente (USD/mes)<input id="f_price" type="number" min="0" step="any" value="${m.price}"></label>
+      <label style="flex:1;min-width:140px">Clientes que pagan<input id="f_paying" type="number" min="0" value="${m.paying}"></label></div>
+    <div class="row"><label style="flex:1;min-width:140px">Costo de conseguir un cliente (CAC, USD)<input id="f_cac" type="number" min="0" step="any" value="${m.cac}"></label>
+      <label style="flex:1;min-width:140px">Bajas al mes (%)<input id="f_churn" type="number" min="0" max="100" step="any" value="${m.churn_pct}"></label>
+      <label style="flex:1;min-width:140px">Margen objetivo (%)<input id="f_tm" type="number" min="0" max="95" step="any" value="${m.target_margin_pct}"></label></div>
+    <h2 style="margin-top:12px">Costos mensuales</h2><div id="f_costs">${m.costs.map(costRow).join('')}</div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost small" id="f_add" type="button">+ Costo</button><button class="btn" id="f_save" type="button">Guardar</button></div><div class="msg" id="f_m"></div>
+    <p class="muted" style="font-size:12px">Si pones un precio, la página de inicio lo muestra solo (con precio 0 muestra «beta gratis»).</p></div>
+  <div class="card"><h2>Consejos del CFO</h2><ul class="lessons">${d.advice.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>`;
+  let n = m.costs.length;
+  $('#f_add').onclick = () => { $('#f_costs').insertAdjacentHTML('beforeend', costRow({ name: '', usd: 0 }, n++)); };
+  $('#f_save').onclick = async () => {
+    const costs = [...document.querySelectorAll('[data-cn]')].map((el) => ({ name: el.value.trim(), usd: Number(document.querySelector(`[data-cu="${el.dataset.cn}"]`).value) || 0 })).filter((x) => x.name);
+    try { await api('PUT', '/api/owner/finance', { price: Number($('#f_price').value), paying: Number($('#f_paying').value), cac: Number($('#f_cac').value), churn_pct: Number($('#f_churn').value), target_margin_pct: Number($('#f_tm').value), costs }); setMsg($('#f_m'), 'Guardado.', true); loadTab(); } catch (e) { setMsg($('#f_m'), e.message); }
+  };
+}
+
 async function tabSeguridad(main) {
-  const [c, { events }] = await Promise.all([api('GET', '/api/owner/compliance'), api('GET', '/api/owner/audit')]);
+  const [c, { events }, sx] = await Promise.all([api('GET', '/api/owner/compliance'), api('GET', '/api/owner/audit'), api('GET', '/api/owner/security')]);
   const row = (x) => `<div class="step-row ${x.ok ? 'ok' : ''}"><span class="dot">${x.ok ? '✓' : '○'}</span><div class="grow">${esc(x.label)}${x.detail ? `<div class="muted" style="font-size:12px">${esc(x.detail)}</div>` : ''}</div></div>`;
   const rows = events.map((e) => `<tr><td>${esc(ago(e.created_at))}</td><td>${esc(e.action)}</td><td>${esc(e.actor || '—')}</td><td>${esc(e.ip || '')}</td><td>${esc(e.detail || '')}</td></tr>`).join('');
-  main.innerHTML = `
+  const secCard = `<div class="card" data-open><div class="row" style="justify-content:space-between"><h2 style="margin:0">Seguridad · últimas 24 h</h2><span class="chip ${sx.flags.length ? 'live' : 'paper'}">${sx.flags.length ? 'revisar' : 'sin alertas'}</span></div>
+    <div class="kpis" style="margin-top:8px"><div class="kpi"><div class="l">Accesos fallidos</div><div class="v ${sx.failed_logins ? 'neg' : ''}" style="font-size:18px">${sx.failed_logins}</div><div class="s">${sx.distinct_ips} IP distintas</div></div>
+      <div class="kpi"><div class="l">Intentos al panel dueño</div><div class="v ${sx.owner_denied ? 'neg' : ''}" style="font-size:18px">${sx.owner_denied}</div></div>
+      <div class="kpi"><div class="l">Cuentas bloqueadas</div><div class="v" style="font-size:18px">${sx.locked_now}</div></div></div>
+    ${sx.flags.map((f) => `<div class="msg err" style="margin-top:6px">${esc(f)}</div>`).join('')}
+    <div class="muted" style="font-size:12px;margin-top:8px">2FA del dueño: <b class="${sx.checks.twofa ? 'pos' : 'neg'}">${sx.checks.twofa ? 'activo' : 'FALTA'}</b> · HTTPS: ${sx.checks.https ? 'sí' : 'no (local)'} · sesión ${sx.checks.session_hours} h · llaves cifradas · llaves con retiros rechazadas</div>
+    ${sx.owner_events.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${sx.owner_events.map((e) => `<tr><td>${esc(ago(e.t))}</td><td>${esc(e.action)}</td><td>${esc(e.ip || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}</div>`;
+  main.innerHTML = secCard + `
   <div class="card" data-open><div class="row" style="justify-content:space-between"><h2 style="margin:0">Cumplimiento (verificado en vivo)</h2><span class="chip ${c.score >= 80 ? 'paper' : ''}">${c.score} %</span></div>
     <div class="meter"><i style="width:${c.score}%"></i></div>
     ${c.live.map(row).join('')}

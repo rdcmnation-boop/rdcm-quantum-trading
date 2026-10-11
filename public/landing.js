@@ -5,3 +5,8 @@ document.querySelectorAll('.c').forEach((c) => c.addEventListener('pointermove',
   const r = c.getBoundingClientRect();
   c.style.setProperty('--x', `${((e.clientX - r.left) / r.width) * 100}%`);
 }));
+// Precio: solo se muestra si el dueño lo fijó; si no, sigue diciendo "beta gratis".
+fetch('/api/public/plan').then((r) => r.json()).then((p) => {
+  const el = document.getElementById('priceline');
+  if (el && p && p.price) el.textContent = `Desde $${p.price} al mes, suscripción fija. Sin porcentaje de tus ganancias. Cancela cuando quieras.`;
+}).catch(() => {});

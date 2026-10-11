@@ -247,6 +247,8 @@ t('2FA: login sin código pide 2FA', need.status === 401 && need.body.need_totp 
 t('2FA: login con código malo falla', (await O2('POST', '/api/auth/login', { email: 'owner@test.com', password: env.OWNER_PASSWORD, totp: '000001' })).status === 401);
 t('2FA: login con código bueno', (await O2('POST', '/api/auth/login', { email: 'owner@test.com', password: env.OWNER_PASSWORD, totp: sec.totp(setup.body.secret) })).status === 200);
 
+t('2FA: el mismo código no se puede reusar (anti-replay)', (await client()('POST', '/api/auth/login', { email: 'owner@test.com', password: env.OWNER_PASSWORD, totp: sec.totp(setup.body.secret) })).status === 401);
+
 // aislamiento de datos
 const secretPem = ['-----BEGIN EC PRIVATE KEY-----', ['SECRET-PEM', 'XYZ', '123'].join('-'), '-----END EC PRIVATE KEY-----'].join('\n');
 const riskyRes = await A('POST', '/api/connections', { exchange: 'robinhood', keyId: 'k', secret: 'A'.repeat(44) });
@@ -771,7 +773,7 @@ console.log('Privacidad: cada quien solo ve lo suyo; solo el dueño ve agregados
   t('un cliente no puede usar la conexión de otro', (await Y('PUT', '/api/bot', { symbol: 'BTC-USD', strategy: 'dca', usd: 5, intervalMin: 60, mode: 'live', enabled: false, connectionId: xConn.id, maxOrderUsd: 25, maxDailyUsd: 100 })).body.cfg?.connectionId === null);
   t('un cliente no borra la conexión de otro', (await Y('DELETE', `/api/connections/${xConn.id}`)).status !== 200 && !!(await store.getConnection(xId, xConn.id)));
   let ownerLeak = null;
-  for (const ep of ['/api/owner/overview', '/api/owner/users', '/api/owner/briefing', '/api/owner/brain', '/api/owner/readiness', '/api/owner/compliance', '/api/owner/export/brain']) {
+  for (const ep of ['/api/owner/overview', '/api/owner/users', '/api/owner/briefing', '/api/owner/brain', '/api/owner/readiness', '/api/owner/compliance', '/api/owner/security', '/api/owner/finance', '/api/owner/export/brain']) {
     const r = await O2('GET', ep); const txt = r.text || JSON.stringify(r.body);
     const m = ['KEYID-SECRETO-X', 'PRIVADA-SECRETA-X', 'NOTA-PRIVADA-X', 'DECISION-PRIVADA-X', 'RH-SECRETO-X', 'secret_enc', 'pass_hash'].find((k) => txt.includes(k)); if (m) ownerLeak = `${ep} muestra ${m}`;
   }
@@ -872,6 +874,25 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
 }
 
 { const h = await fetch(base + '/api/health', { method: 'HEAD' }); t('HEAD /api/health responde 200 (monitores como UptimeRobot usan HEAD)', h.status === 200); }
+{
+  console.log('Seguridad, finanzas y riesgo del portafolio (v18)');
+  const pro = await import('../lib/pro.js');
+  const sx = await O2('GET', '/api/owner/security');
+  t('seguridad del dueño: agregados 24 h y controles activos', sx.status === 200 && typeof sx.body.failed_logins === 'number' && sx.body.checks.twofa === true && Array.isArray(sx.body.flags));
+  const f0 = await O2('GET', '/api/owner/finance');
+  t('finanzas: costos de Render precargados y sin ingresos inventados', f0.status === 200 && f0.body.calc.cost === 13 && f0.body.calc.mrr === 0 && f0.body.calc.margin_pct === null);
+  const f1 = await O2('PUT', '/api/owner/finance', { price: 29, paying: 10, cac: 20, churn_pct: 5, target_margin_pct: 70 });
+  const f2 = await O2('GET', '/api/owner/finance');
+  t('finanzas: MRR, ganancia, empate y LTV/CAC calculados con lo que anota el dueño', f1.status === 200 && f2.body.calc.mrr === 290 && f2.body.calc.profit === 277 && f2.body.calc.breakeven_customers === 1 && Math.abs(f2.body.calc.ltv_cac - 29) < 1e-9, JSON.stringify(f2.body.calc));
+  t('finanzas: entradas absurdas se limitan', (await O2('PUT', '/api/owner/finance', { price: -5, paying: 1e12 })).body.model.price === 0);
+  await O2('PUT', '/api/owner/finance', { price: 29, paying: 10 });
+  const pp = await nobody('GET', '/api/public/plan');
+  t('precio público: la landing lo lee sin sesión', pp.status === 200 && pp.body.price === 29);
+  const lo = []; for (let i = 0; i < 4; i++) lo.push({ symbol: 'L-USD', side: 'buy', qty: 1, usd: 10, created_at: Date.now() - 5000 - i * 2000 }, { symbol: 'L-USD', side: 'sell', qty: 1, usd: 9, created_at: Date.now() - 4000 - i * 2000 });
+  t('aprendizaje: una cripto con 4 operaciones perdedoras recientes descansa', pro.losingSymbols(lo).has('L-USD') && !pro.losingSymbols(lo.map((o) => ({ ...o, symbol: 'W-USD', usd: o.side === 'sell' ? 12 : 10 }))).has('W-USD'));
+  t('riesgo: pérdida de 24 h y tamaño por convicción', Math.abs(pro.pnl24h(lo) - -4) < 1e-9 && pro.confidenceSize(1.2) === 0.6 && pro.confidenceSize(10) === 1);
+}
+
 console.log('Exportación del Cerebro y del app');
 const eb = await O2('GET', '/api/owner/export/brain');
 t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
