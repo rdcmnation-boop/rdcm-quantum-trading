@@ -51,7 +51,7 @@ function viewAuth() {
     try {
       const r = await api('POST', reg ? '/api/auth/register' : '/api/auth/login',
         reg ? { email: f.email, password: f.password, acceptTos: f.tos === 'on' } : { email: f.email, password: f.password, totp: f.totp });
-      state.user = r.user; state.needTotp = false; state.tab = r.user.role === 'owner' ? 'o_overview' : 'resumen';
+      state.user = r.user; state.needTotp = false; state.tab = r.user.role === 'owner' ? 'o_launch' : 'resumen';
       await boot();
     } catch (err) {
       if (err.data && err.data.need_totp) { state.needTotp = true; viewAuth(); $('#m').textContent = err.message; $('#m').className = 'msg err'; return; }
@@ -62,7 +62,7 @@ function viewAuth() {
 
 // ============================ Estructura ============================
 const CLIENT_TABS = [['resumen', 'Resumen'], ['exchanges', 'Exchanges'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
-const OWNER_TABS = [['o_overview', 'Analíticas'], ['o_clientes', 'Clientes'], ['o_cerebro', 'Cerebro'], ['o_export', 'Exportar'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
+const OWNER_TABS = [['o_launch', 'Lanzamiento'], ['o_cerebro', 'Cerebro'], ['o_overview', 'Analíticas'], ['o_clientes', 'Clientes'], ['o_export', 'Exportar'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
 
 function shell() {
   const owner = state.user.role === 'owner';
@@ -87,7 +87,7 @@ async function loadTab() {
   main.innerHTML = '<div class="card muted">Cargando…</div>';
   try {
     const fn = { resumen: tabResumen, exchanges: tabExchanges, bot: tabBot, ordenes: tabOrdenes, descargar: tabDescargar, cuenta: tabCuenta,
-      o_cerebro: tabCerebro, o_export: tabExport, o_overview: tabOverview, o_clientes: tabClientes, o_seguridad: tabSeguridad, o_ajustes: tabAjustes }[state.tab];
+      o_launch: tabLaunch, o_cerebro: tabCerebro, o_export: tabExport, o_overview: tabOverview, o_clientes: tabClientes, o_seguridad: tabSeguridad, o_ajustes: tabAjustes }[state.tab];
     await fn(main);
   } catch (e) { main.innerHTML = `<div class="card"><span class="neg">${esc(e.message)}</span></div>`; }
 }
@@ -324,50 +324,89 @@ async function tabCuenta(main) {
   });
 }
 
-const KIND_LABEL = { strategy_defaults: 'Estrategia sugerida', agent_toggle: 'Activar/desactivar agente', model_update: 'Actualizar modelo ML',
-  risk_alert: 'Alerta de riesgo', ops_alert: 'Alerta operativa', insight: 'Hallazgo' };
+const KIND_LABEL = { strategy_defaults: 'Estrategia sugerida', agent_toggle: 'Agente', model_update: 'Modelo ML',
+  risk_alert: 'Riesgo', ops_alert: 'Operación', insight: 'Hallazgo' };
 const APPLIES = ['strategy_defaults', 'agent_toggle', 'model_update'];
+const ago = (t) => { if (!t) return '—'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'ahora' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; };
+const pc = (x, d = 1) => (x === null || x === undefined || !Number.isFinite(x) ? '—' : `${x >= 0 ? '+' : ''}${x.toFixed(d)} %`);
+
+function spark(vals, w = 160, h = 40) {
+  if (!vals || vals.length < 2) return '<span class="muted" style="font-size:12px">sin datos aún</span>';
+  const lo = Math.min(...vals); const hi = Math.max(...vals); const r = hi - lo || 1;
+  const pts = vals.map((v, i) => `${((i / (vals.length - 1)) * (w - 4) + 2).toFixed(1)},${(h - 3 - ((v - lo) / r) * (h - 6)).toFixed(1)}`).join(' ');
+  const up = vals[vals.length - 1] >= vals[0];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" role="img" aria-label="curva de capital"><polyline points="${pts}" class="${up ? 'up' : 'dn'}"/></svg>`;
+}
+
+async function tabLaunch(main) {
+  const r = await api('GET', '/api/owner/readiness');
+  const rows = r.items.map((i) => `<div class="step-row ${i.status}">
+    <span class="dot">${i.status === 'ok' ? '✓' : '○'}</span>
+    <div class="grow"><b>${esc(i.label)}</b>${i.status === 'todo' ? `<div class="muted" style="font-size:12px">${esc(i.step)}</div>` : ''}</div>
+    ${i.manual ? `<button class="btn ${i.status === 'ok' ? 'ghost' : ''} small" data-step="${esc(i.id)}" data-done="${i.status === 'ok' ? '0' : '1'}">${i.status === 'ok' ? 'Desmarcar' : 'Hecho'}</button>` : ''}</div>`).join('');
+  const todo = r.items.filter((i) => i.status === 'todo').length;
+  main.innerHTML = `
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Listo para vender</h2><span class="chip ${r.score >= 80 ? 'paper' : ''}">${r.score} %</span></div>
+    <div class="meter"><i style="width:${r.score}%"></i></div>
+    <p class="muted" style="margin:8px 0 0;font-size:13px">${todo ? `Te faltan ${todo} paso${todo === 1 ? '' : 's'}.` : 'Todo marcado. Puedes lanzar.'} Trading real: <b>${r.live_trading ? 'ACTIVADO' : 'apagado'}</b> · Registro: <b>${r.registration_open ? 'abierto' : 'cerrado'}</b></p>
+  </div>
+  <div class="card">${rows}<div class="msg" id="lm"></div></div>`;
+  document.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', async () => {
+    try { await api('PUT', '/api/owner/readiness', { id: b.dataset.step, done: b.dataset.done === '1' }); await loadTab(); } catch (err) { setMsg($('#lm'), err.message); }
+  }));
+}
 
 async function tabCerebro(main) {
   const b = await api('GET', '/api/owner/brain');
-  const agents = b.agents.map((a) => `<tr><td><b>${esc(a.label)}</b><div class="muted" style="font-size:12px;white-space:normal">${esc(a.description)}${a.available ? '' : ` · No disponible: ${esc(a.reason || '')}`}</div></td>
-    <td>${a.available ? (a.enabled ? '<span class="pos">activo</span>' : 'apagado') : '<span class="muted">no disponible</span>'}</td>
-    <td class="r">${a.available ? `<button class="btn ghost small" data-ag="${esc(a.name)}" data-en="${a.enabled ? '0' : '1'}">${a.enabled ? 'Apagar' : 'Encender'}</button>` : ''}</td></tr>`).join('');
-  const pend = b.pending.map((p) => `<div class="card" style="margin-top:10px"><div class="row"><span class="chip">${esc(KIND_LABEL[p.kind] || p.kind)}</span><span class="chip">${esc(p.agent || '')}</span></div>
-    <h3 style="margin-top:8px">${esc(p.title)}</h3>
-    <p class="muted" style="font-size:13px">${esc((p.detail && p.detail.text) || '')}</p>
-    <details><summary class="muted" style="font-size:12px;cursor:pointer">Evidencia</summary><pre style="white-space:pre-wrap;font-size:11px;overflow-x:auto">${esc(JSON.stringify(p.evidence, null, 1))}</pre></details>
-    <div class="row" style="margin-top:8px">${APPLIES.includes(p.kind) ? `<button class="btn small" data-dec="approve" data-id="${esc(p.id)}">Aprobar y aplicar</button>` : `<button class="btn ghost small" data-dec="approve" data-id="${esc(p.id)}">Enterado</button>`}
+  const lab = b.lab; const lastRun = (name) => { for (const r of b.runs) { const a = r.agents.find((x) => x.agent === name); if (a) return { t: r.t, ...a }; } return null; };
+  const active = b.agents.filter((a) => a.enabled).length; const avail = b.agents.filter((a) => a.available).length;
+  const labCards = ['BTC-USD', 'ETH-USD'].map((sym) => {
+    const ch = lab.champions[sym]; const l = lab.latest[sym];
+    if (!ch) return `<div class="c2"><h3>${esc(sym)}</h3><p class="muted">${(() => { const lr = lastRun('paper_lab'); return lr && lr.notes && lr.notes.length ? esc(lr.notes.join(' · ')) : 'Corre los agentes para elegir campeón.'; })()}</p></div>`;
+    const row = (name, x) => x ? `<tr><td>${name}</td><td class="r ${cls(x.ret)}">${pc(x.ret, 2)}</td><td class="r ${cls(x.bh)}">${pc(x.bh, 2)}</td><td class="r">${x.drag.toFixed(3)} %</td><td class="r">${x.trades}</td></tr>` : `<tr><td>${name}</td><td colspan="4" class="muted">recopilando…</td></tr>`;
+    return `<div class="c2"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(sym)} · ${esc(ch.label)}</h3><span class="chip ${ch.validated ? 'paper' : ''}">${ch.validated ? 'validada' : 'sin validar'}</span></div>
+      <div class="row" style="margin:8px 0">${spark(l && l.coinbase ? l.coinbase.equity : null)}<span class="muted" style="font-size:12px">${l ? `${(l.candles / 24).toFixed(1)} d en vivo` : 'día 0'}</span></div>
+      <div class="scroll"><table><thead><tr><th></th><th class="r">Retorno</th><th class="r">Comprar y mant.</th><th class="r">Costo</th><th class="r">Ops</th></tr></thead><tbody>${row('Coinbase', l && l.coinbase)}${row('Robinhood', l && l.robinhood)}</tbody></table></div>
+      <p class="muted" style="font-size:11px;margin:6px 0 0">Antes de congelar: ${pc(ch.val_return)} vs ${pc(ch.val_bh)} (validación)</p></div>`;
+  }).join('');
+  const agents = b.agents.map((a) => { const lr = lastRun(a.name); return `<tr><td><b>${esc(a.label)}</b></td>
+    <td>${a.available ? (a.enabled ? '<span class="pos">activo</span>' : 'apagado') : '<span class="muted">próximamente</span>'}</td>
+    <td class="muted" style="white-space:normal">${lr ? `${ago(lr.t)} · ${lr.error ? `<span class="neg">error</span>` : `${lr.created} prop.`}` : '—'}</td>
+    <td class="r">${a.available ? `<button class="btn ghost small" data-ag="${esc(a.name)}" data-en="${a.enabled ? '0' : '1'}">${a.enabled ? 'Apagar' : 'Encender'}</button>` : ''}</td></tr>`; }).join('');
+  const pend = b.pending.map((p) => `<div class="prop"><div class="row"><span class="chip">${esc(KIND_LABEL[p.kind] || p.kind)}</span><span class="muted" style="font-size:12px">${esc(p.agent || '')}</span></div>
+    <div style="margin:6px 0"><b>${esc(p.title)}</b></div>
+    <details><summary class="muted" style="font-size:12px;cursor:pointer">Datos</summary><pre style="white-space:pre-wrap;font-size:11px;overflow-x:auto">${esc(JSON.stringify(p.evidence, null, 1))}</pre></details>
+    <div class="row" style="margin-top:8px">${APPLIES.includes(p.kind) ? `<button class="btn small" data-dec="approve" data-id="${esc(p.id)}">Aprobar</button>` : `<button class="btn ghost small" data-dec="approve" data-id="${esc(p.id)}">Enterado</button>`}
     <button class="btn ghost small" data-dec="reject" data-id="${esc(p.id)}">Rechazar</button></div></div>`).join('');
-  const hist = b.history.map((p) => `<tr><td>${esc(when(p.decided_at || p.created_at))}</td><td>${esc(KIND_LABEL[p.kind] || p.kind)}</td><td style="white-space:normal">${esc(p.title)}</td><td>${esc(p.status)}</td></tr>`).join('');
-  const models = b.models.map((m) => `<tr><td>${esc(m.symbol)}</td><td>${m.active ? '<span class="pos">activo</span>' : 'ninguno'}</td>
-    <td>${m.candidate ? `precisión ${(m.candidate.metrics.acc_test * 100).toFixed(1)} % vs ${(m.candidate.metrics.baseline_test * 100).toFixed(1)} % base (z=${Number(m.candidate.metrics.z_test).toFixed(1)})` : '—'}</td>
-    <td>${m.candidate && m.candidate.drift ? `deriva ${Number(m.candidate.drift.score).toFixed(1)}` : '—'}</td></tr>`).join('');
+  const runs = b.runs.slice(0, 8).map((r) => `<tr><td>${esc(ago(r.t))}</td><td>${esc(r.trigger)}</td><td>${r.agents.map((a) => `${esc(a.agent)}: ${a.error ? '✗' : a.created}`).join(' · ')}</td></tr>`).join('');
+  const lessons = (lab.lessons || []).slice(0, 5).map((x) => `<li><span class="muted">${esc(ago(x.t))}</span> ${esc(x.text)}</li>`).join('');
+  const hist = b.history.map((p) => `<tr><td>${esc(ago(p.decided_at || p.created_at))}</td><td style="white-space:normal">${esc(p.title)}</td><td>${esc(p.status)}</td></tr>`).join('');
+  const models = b.models.map((m) => `<tr><td>${esc(m.symbol)}</td><td>${m.active ? '<span class="pos">activo</span>' : '—'}</td><td>${m.candidate ? `${(m.candidate.metrics.acc_test * 100).toFixed(1)} % vs ${(m.candidate.metrics.baseline_test * 100).toFixed(1)} %` : '—'}</td></tr>`).join('');
   const g = b.guardrails;
   main.innerHTML = `
-  <div class="banner">El Cerebro solo <b>propone</b>. Nada cambia sin tu aprobación, y las áreas protegidas (riesgo, aislamiento de datos, seguridad, acceso del dueño) nunca las toca un agente.</div>
   <div class="kpis">
-    <div class="kpi"><div class="l">Versión del app</div><div class="v">${esc(b.app_version)}</div></div>
-    <div class="kpi"><div class="l">Versión del Cerebro</div><div class="v">${b.brain_version}</div></div>
-    <div class="kpi"><div class="l">Pendientes</div><div class="v">${b.pending.length}</div></div>
-    <div class="kpi"><div class="l">Última corrida</div><div class="s">${esc(when(b.last_run))}</div></div>
+    <div class="kpi"><div class="l">Cerebro</div><div class="v">v${b.brain_version}</div><div class="s">app ${esc(b.app_version)}</div></div>
+    <div class="kpi"><div class="l">Agentes</div><div class="v">${active}/${avail}</div><div class="s">activos</div></div>
+    <div class="kpi"><div class="l">Propuestas</div><div class="v">${b.pending.length}</div><div class="s">${b.stats.applied} aplicadas · ${b.stats.rejected} rechazadas</div></div>
+    <div class="kpi"><div class="l">Laboratorio</div><div class="v">${lab.runs || 0}</div><div class="s">corridas · ${esc(ago(b.last_run))}</div></div>
   </div>
-  <div class="card"><h2>Director</h2><div class="row"><button class="btn" id="br_run">Correr análisis ahora</button></div><div class="msg" id="br_m"></div></div>
-  <div class="card"><h2>Propuestas pendientes</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
+  <div class="row"><button class="btn" id="br_run">▶ Correr agentes ahora</button><span class="msg" id="br_m"></span></div>
+  <div class="card"><h2>Laboratorio de papel · $1M virtual</h2><div class="grid">${labCards}</div>
+    ${lessons ? `<h2 style="margin-top:14px">Lo que aprendió</h2><ul class="lessons">${lessons}</ul>` : ''}</div>
+  <div class="card"><h2>Por decidir (${b.pending.length})</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
   <div class="card"><h2>Agentes</h2><div class="scroll"><table><tbody>${agents}</tbody></table></div><div class="msg" id="ag_m"></div></div>
-  <div class="card"><h2>Modelos ML</h2><div class="scroll"><table><thead><tr><th>Par</th><th>Estado</th><th>Último entrenamiento (fuera de muestra)</th><th>Deriva</th></tr></thead><tbody>${models}</tbody></table></div>
-    <p class="muted" style="font-size:12px">Un modelo solo se propone si supera la línea base con significancia estadística (z &gt; 2). Si no, el sistema te lo dice.</p></div>
-  <div class="card"><h2>Límites inviolables</h2>
-    <form id="gf" class="form">
-      <label>Máx. propuestas pendientes<input name="maxPendingProposals" type="number" min="1" max="100" value="${esc(g.maxPendingProposals)}"></label>
-      <label>Corrida automática cada (horas)<input name="autoRunHours" type="number" min="1" max="168" value="${esc(g.autoRunHours)}"></label>
-      <label class="full">Tipos de propuesta permitidos<span class="row">${Object.keys(KIND_LABEL).map((k) => `<label class="check"><input type="checkbox" name="kind_${k}" ${g.allowedKinds.includes(k) ? 'checked' : ''}><span>${esc(KIND_LABEL[k])}</span></label>`).join('')}</span></label>
-      <p class="muted full" style="font-size:12px">Áreas protegidas (fijas): ${g.protectedAreas.map((a) => `<code>${esc(a)}</code>`).join(' ')}</p>
-      <button class="btn full" type="submit">Guardar límites</button><div class="msg full" id="gm"></div>
-    </form></div>
-  <div class="card"><h2>Historial</h2>${hist ? `<div class="scroll"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Propuesta</th><th>Estado</th></tr></thead><tbody>${hist}</tbody></table></div>` : '<p class="muted">Sin historial.</p>'}</div>`;
+  <div class="card"><h2>Corridas</h2>${runs ? `<div class="scroll"><table><tbody>${runs}</tbody></table></div>` : '<p class="muted">Sin corridas.</p>'}</div>
+  <details class="card"><summary><h2 style="display:inline">Modelos ML</h2></summary><div class="scroll"><table><thead><tr><th>Par</th><th>Estado</th><th>Precisión vs base</th></tr></thead><tbody>${models}</tbody></table></div></details>
+  <details class="card"><summary><h2 style="display:inline">Historial (${b.history.length})</h2></summary>${hist ? `<div class="scroll"><table><tbody>${hist}</tbody></table></div>` : '<p class="muted">Vacío.</p>'}</details>
+  <details class="card"><summary><h2 style="display:inline">Límites inviolables</h2></summary>
+    <form id="gf" class="form" style="margin-top:10px">
+      <label>Máx. pendientes<input name="maxPendingProposals" type="number" min="1" max="100" value="${esc(g.maxPendingProposals)}"></label>
+      <label>Auto-corrida (horas)<input name="autoRunHours" type="number" min="1" max="168" value="${esc(g.autoRunHours)}"></label>
+      <label class="full">Tipos permitidos<span class="row">${Object.keys(KIND_LABEL).map((k) => `<label class="check"><input type="checkbox" name="kind_${k}" ${g.allowedKinds.includes(k) ? 'checked' : ''}><span>${esc(KIND_LABEL[k])}</span></label>`).join('')}</span></label>
+      <p class="muted full" style="font-size:12px">Protegido: ${g.protectedAreas.map((a) => `<code>${esc(a)}</code>`).join(' ')}</p>
+      <button class="btn full" type="submit">Guardar</button><div class="msg full" id="gm"></div></form></details>`;
   $('#br_run').addEventListener('click', async (e) => {
-    e.target.disabled = true; setMsg($('#br_m'), 'Analizando datos reales… puede tardar unos segundos.', true);
+    e.target.disabled = true; setMsg($('#br_m'), 'Corriendo agentes…', true);
     try { await api('POST', '/api/owner/brain/run'); await loadTab(); } catch (err) { setMsg($('#br_m'), err.message); e.target.disabled = false; }
   });
   document.querySelectorAll('[data-dec]').forEach((x) => x.addEventListener('click', async () => {
@@ -380,7 +419,7 @@ async function tabCerebro(main) {
     e.preventDefault();
     const f = e.target;
     const allowedKinds = Object.keys(KIND_LABEL).filter((k) => f[`kind_${k}`].checked);
-    try { await api('PUT', '/api/owner/guardrails', { maxPendingProposals: f.maxPendingProposals.value, autoRunHours: f.autoRunHours.value, allowedKinds }); setMsg($('#gm'), 'Límites guardados.', true); }
+    try { await api('PUT', '/api/owner/guardrails', { maxPendingProposals: f.maxPendingProposals.value, autoRunHours: f.autoRunHours.value, allowedKinds }); setMsg($('#gm'), 'Guardado.', true); }
     catch (err) { setMsg($('#gm'), err.message); }
   });
 }
@@ -422,6 +461,7 @@ async function tabOverview(main) {
     <div class="card"><h2>Altas por día (30 d)</h2>${barChart(o.signups_30d, 'Altas por día')}</div>
     <div class="card"><h2>Órdenes por día (30 d)</h2>${barChart(o.orders_30d, 'Órdenes por día')}</div>
   </div>
+  <div class="card"><h2>Embudo de clientes</h2>${o.funnel.map((f) => `<div class="fun"><span>${esc(f.k)}</span><div class="bar2"><i style="width:${o.funnel[0].n ? Math.round((f.n / o.funnel[0].n) * 100) : 0}%"></i></div><b>${f.n}</b></div>`).join('')}</div>
   <div class="card"><h2>Conexiones por exchange</h2><p>${ex}</p>
     <h2>Pares más operados</h2><p>${o.top_symbols.length ? o.top_symbols.map(([s, n]) => `${esc(s)}: ${n}`).join(' · ') : 'sin operaciones aún'}</p>
     <p class="muted" style="font-size:12px">Actualizado ${esc(when(o.generated_at))}. Por privacidad, aquí solo ves totales: nunca llaves ni órdenes individuales de clientes.</p></div>`;

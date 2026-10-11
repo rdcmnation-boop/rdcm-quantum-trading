@@ -345,7 +345,7 @@ t('el Director corre todos los agentes disponibles', run.status === 200 && ['pro
 t('los agentes NO cambian nada por sí solos', (await store.getSetting('default_cfg', null)) === null
   && (await store.getSetting('brain_version', '1')) === v0 && (await store.getSetting('model:active:BTC-USD', null)) === null);
 const brain = (await O2('GET', '/api/owner/brain')).body;
-t('Cerebro: 6 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 6 && brain.agents.filter((a) => !a.available).length === 2
+t('Cerebro: 7 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 7 && brain.agents.filter((a) => !a.available).length === 2
   && brain.agents.filter((a) => !a.available).every((a) => /Claude/.test(a.reason)));
 t('Cerebro: propuestas pendientes con evidencia', brain.pending.length > 0 && brain.pending.every((p) => p.evidence && p.title));
 const mlProp = brain.pending.find((p) => p.kind === 'model_update');
@@ -417,10 +417,39 @@ t('el Director corre solo si los datos fallan sin romperse', await (async () => 
   return Array.isArray(r);
 })());
 
+console.log('Laboratorio de papel, registro de corridas y lanzamiento');
+const brain2 = (await O2('GET', '/api/owner/brain')).body;
+t('el laboratorio $1M eligió campeones y guardó estado', brain2.lab.capital === 1000000 && brain2.lab.runs >= 1 && brain2.lab.champions['BTC-USD']?.label && brain2.lab.champions['ETH-USD']);
+t('el campeón se congela con fecha y validación previa', brain2.lab.champions['BTC-USD'].selected_at > 0 && typeof brain2.lab.champions['BTC-USD'].validated === 'boolean');
+t('el Director guarda el registro de corridas con resultado por agente', brain2.runs.length >= 1 && brain2.runs.some((r) => r.agents.some((a) => a.agent === 'paper_lab')));
+t('estadísticas de propuestas', brain2.stats.total >= 1);
+{
+  const { runLab, labProposals } = await import('../lib/lab.js');
+  const later = Date.now() + 10 * 86400000; // simula 10 días después: hay avance hacia adelante
+  const feed2 = { getHistory: async (sym, n) => series(n + 300, 0.6, 7) };
+  const r = await runLab({ store, feed: feed2, now: later });
+  const l = r.lab.latest['BTC-USD'];
+  t('prueba hacia adelante: tras 10 días hay avance en ambos exchanges', l.candles >= 200 && l.coinbase && l.robinhood && Number.isFinite(l.coinbase.ret) && l.coinbase.equity.length > 5);
+  t('el laboratorio acumula fotos de avance', r.lab.snapshots.length >= 2);
+  t('con 7+ días, el laboratorio puede proponer o informar (nunca aplica solo)', labProposals(r.lab).length >= 1 && labProposals(r.lab).every((p) => ['strategy_defaults', 'insight'].includes(p.kind)));
+  const bd = (await store.getSetting('brain_version', '1'));
+  t('correr el laboratorio no cambia la versión del Cerebro', bd === (await store.getSetting('brain_version', '1')));
+}
+const rd = await O2('GET', '/api/owner/readiness');
+t('lista de lanzamiento: pasos con estado y puntaje', rd.status === 200 && rd.body.items.length >= 10 && rd.body.score >= 0 && rd.body.items.every((i) => ['ok', 'todo'].includes(i.status)));
+t('lanzamiento: 2FA y laboratorio detectados automáticamente', rd.body.items.find((i) => i.id === 'owner_2fa').status === 'ok' && rd.body.items.find((i) => i.id === 'brain_ran').status === 'ok');
+t('lanzamiento: la base en memoria NO cuenta como lista', rd.body.items.find((i) => i.id === 'database').status === 'todo');
+const rd2 = await O2('PUT', '/api/owner/readiness', { id: 'attorney', done: true });
+t('el dueño marca un paso manual', rd2.status === 200 && rd2.body.items.find((i) => i.id === 'attorney').status === 'ok');
+t('paso manual desconocido rechazado', (await O2('PUT', '/api/owner/readiness', { id: 'hack', done: true })).status === 400);
+t('un cliente no ve la lista de lanzamiento', (await A('GET', '/api/owner/readiness')).status === 403);
+const ov2 = (await O2('GET', '/api/owner/overview')).body;
+t('embudo real de clientes', ov2.funnel.length === 5 && ov2.funnel[0].n >= 1 && ov2.funnel.every((f) => f.n <= ov2.funnel[0].n));
+
 console.log('Exportación del Cerebro y del app');
 const eb = await O2('GET', '/api/owner/export/brain');
 t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
-t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 6
+t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 7
   && eb.body.models['BTC-USD']?.active && eb.body.changelog.length >= 2 && eb.body.agent_audit.length > 0);
 t('el Cerebro exportado no contiene secretos', !eb.text.includes(secretPem) && !eb.text.includes('pass_hash') && !eb.text.includes('organizations/o/apiKeys'));
 const ea = await fetch(base + '/api/owner/export/app', { headers: { Cookie: eb.cookie } });
