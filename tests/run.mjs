@@ -745,7 +745,7 @@ console.log('AUTO activo y tablero de inicio');
   await store.patchBot(g2, { cfg: { ...(await store.getBot(g2)).cfg, enabled: true } });
   await eng4.runBot({ ...(await store.getBot(g2)), last_run: 0 }, Date.now() + 1000);
   const acc = (await store.listOrders(g2)).filter((o) => o.status === 'ok');
-  t('sin ventaja demostrada, AUTO acumula BTC con una compra pequeña y lo explica', acc.length === 1 && acc[0].symbol === 'BTC-USD' && /acumulación gradual/.test(acc[0].note));
+  t('sin ventaja demostrada, AUTO acumula cualquier cripto disponible (no solo BTC) con una compra pequeña y lo explica', acc.length === 1 && acc[0].symbol === 'ADA-USD' && /acumulación gradual/.test(acc[0].note));
   await eng4.runBot({ ...(await store.getBot(g2)), last_run: 0 }, Date.now() + 2000);
   t('la acumulación no repite antes de 4 horas', (await store.listOrders(g2)).filter((o) => o.status === 'ok').length === 1);
   t('el modo "solo validadas" se guarda', (await G('GET', '/api/bot')).body.cfg.autoMode === 'validated');
