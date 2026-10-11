@@ -871,6 +871,7 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   t('rotación: con el cupo lleno cambia la cripto que pierde fuerza por otra con mejor señal', r1.length === 1 && r1[0].symbol === 'DOGE-USD' && r2.length === 3 && r2.some((o) => o.side === 'sell' && o.symbol === 'DOGE-USD' && /rota/.test(o.note)) && r2.some((o) => o.side === 'buy' && o.symbol === 'ADA-USD'), JSON.stringify(r2.map((o) => o.side + o.symbol + o.note.slice(0, 50))));
 }
 
+{ const h = await fetch(base + '/api/health', { method: 'HEAD' }); t('HEAD /api/health responde 200 (monitores como UptimeRobot usan HEAD)', h.status === 200); }
 console.log('Exportación del Cerebro y del app');
 const eb = await O2('GET', '/api/owner/export/brain');
 t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
