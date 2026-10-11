@@ -180,3 +180,22 @@ th,td{padding:6px 5px;font-size:13px}
 
 .startbox{border:1px solid var(--accent);border-radius:12px;padding:12px;margin-bottom:10px;background:#1a1700;box-shadow:var(--glow)}
 .startbox .btn{width:100%}
+
+/* Gráficos estilo Robinhood */
+.chart{user-select:none;-webkit-user-select:none}
+.chart .chv{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.chart .chs{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;min-height:18px}
+.chart .chg{touch-action:pan-y;margin-top:8px;cursor:crosshair}
+.chart svg{display:block;width:100%;height:190px}
+.chart .ln{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.chart.up .ln{stroke:var(--good)}.chart.dn .ln{stroke:var(--bad)}
+.chart .ar{opacity:.14}.chart.up .ar{fill:var(--good)}.chart.dn .ar{fill:var(--bad)}
+.chart .base{stroke:var(--line);stroke-dasharray:3 4;stroke-width:1;fill:none}
+.chart .xh{stroke:var(--muted);stroke-width:1}
+.chart .dot{fill:var(--fg)}.chart.up .dot{stroke:var(--good)}.chart.dn .dot{stroke:var(--bad)}.chart .dot{stroke-width:2}
+.chart .mb{fill:var(--good);stroke:var(--bg);stroke-width:1.5}.chart .ms{fill:var(--bad);stroke:var(--bg);stroke-width:1.5}
+.chart .rng{display:flex;gap:4px;margin-top:6px;justify-content:space-between}
+.chart .rng button,.symsel button{background:transparent;color:var(--muted);border:0;border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.chart.up .rng button.on{color:var(--good);background:rgba(74,222,128,.12)}.chart.dn .rng button.on{color:var(--bad);background:rgba(255,93,77,.12)}
+.symsel{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.symsel button{border:1px solid var(--line);background:var(--chip)}.symsel button.on{color:var(--accent-fg);background:var(--accent);border-color:var(--accent)}

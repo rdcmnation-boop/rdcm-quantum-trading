@@ -216,15 +216,94 @@ function bindBotNow() {
   if (d) d.addEventListener('click', () => quickStart(DEMO_PRESET).catch((e) => alert(e.message)));
 }
 
-const myBotCards = (bn) => `<div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
+
+// ---- Gráficos estilo Robinhood (SVG propio, sin librerías por la CSP) ----
+const fmtT = (t, long) => new Date(t).toLocaleString('es', long ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short' });
+const priceFmt = (v) => money(v, v < 1 ? 5 : v < 100 ? 3 : 2);
+// Dibuja la línea y deja que el dedo/mouse recorra la curva actualizando el valor de arriba (como Robinhood).
+function drawChart(root, pts, o) {
+  const H = 190; const P = 8;
+  const g = $('.chg', root); const W = Math.max(240, Math.round(g.clientWidth || root.clientWidth || 340)); const vEl = $('.chv', root); const sEl = $('.chs', root);
+  if (!pts || pts.length < 2) { g.innerHTML = '<p class="muted" style="margin:30px 0;text-align:center">Sin datos suficientes todavía.</p>'; return; }
+  const vals = pts.map((p) => p.v); const lo = Math.min(...vals, o.base ?? Infinity); const hi = Math.max(...vals, o.base ?? -Infinity); const r = hi - lo || 1;
+  const t0 = pts[0].t; const t1 = pts[pts.length - 1].t; const dt = t1 - t0 || 1;
+  const X = (t) => P + ((t - t0) / dt) * (W - 2 * P); const Y = (v) => H - P - ((v - lo) / r) * (H - 2 * P);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join('');
+  const up = vals[vals.length - 1] >= (o.base ?? vals[0]);
+  root.classList.toggle('up', up); root.classList.toggle('dn', !up);
+  const marks = (o.marks || []).map((m) => `<circle class="${m.side === 'buy' ? 'mb' : 'ms'}" cx="${X(Math.max(t0, Math.min(t1, m.t))).toFixed(1)}" cy="${Y(m.price ?? vals[vals.length - 1]).toFixed(1)}" r="5"><title>${m.side === 'buy' ? 'Compra' : 'Venta'} ${money(m.usd)}</title></circle>`).join('');
+  g.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label)}"><path class="ar" d="${line}L${X(t1).toFixed(1)},${H}L${X(t0).toFixed(1)},${H}Z"/>
+    ${o.base !== undefined ? `<line class="base" x1="${P}" x2="${W - P}" y1="${Y(o.base).toFixed(1)}" y2="${Y(o.base).toFixed(1)}"/>` : ''}<path class="ln" d="${line}" vector-effect="non-scaling-stroke"/>${marks}
+    <line class="xh" id="xh" y1="0" y2="${H}" x1="-9" x2="-9"/><circle class="dot" id="dt" r="5" cx="-9" cy="-9"/></svg>`;
+  const rest = () => { vEl.textContent = o.fmt(vals[vals.length - 1]); sEl.innerHTML = o.sub(vals[vals.length - 1], null); };
+  const at = (ev) => {
+    const b = g.getBoundingClientRect(); const fx = Math.max(0, Math.min(1, (ev.clientX - b.left) / b.width));
+    const t = t0 + fx * dt; let i = 0; while (i < pts.length - 1 && pts[i + 1].t <= t) i++;
+    if (i < pts.length - 1 && t - pts[i].t > pts[i + 1].t - t) i++;
+    const p = pts[i]; $('#xh', g).setAttribute('x1', X(p.t)); $('#xh', g).setAttribute('x2', X(p.t)); $('#dt', g).setAttribute('cx', X(p.t)); $('#dt', g).setAttribute('cy', Y(p.v));
+    vEl.textContent = o.fmt(p.v); sEl.innerHTML = o.sub(p.v, p.t);
+  };
+  const clear = () => { for (const [id, a, v] of [['#xh', 'x1', -9], ['#xh', 'x2', -9], ['#dt', 'cx', -9], ['#dt', 'cy', -9]]) $(id, g).setAttribute(a, v); rest(); };
+  g.onpointermove = at; g.onpointerdown = at; g.onpointerleave = clear; g.onpointerup = (e) => { if (e.pointerType !== 'mouse') clear(); };
+  rest();
+}
+const chartShell = (id) => `<div class="chart" id="${id}"><div class="chv">…</div><div class="chs"></div><div class="chg"><p class="muted" style="margin:30px 0;text-align:center">Cargando gráfico…</p></div></div>`;
+async function loadProfit(mode) {
+  const root = $('#pf_c'); if (!root) return;
+  try {
+    const d = await api('GET', `/api/profit?mode=${mode || ''}`);
+    if (!d.started) { root.innerHTML = '<p class="muted" style="margin:0">Aún no se ha encendido el bot. Cuando lo enciendas aquí verás cuánto has ganado desde ese momento, con su curva.</p>'; return; }
+    root.className = '';
+    root.innerHTML = `<div class="chart" id="pf_ch"><div class="chv"></div><div class="chs"></div><div class="chg"></div></div>
+      <div class="kpis" style="margin-top:10px"><div class="kpi"><div class="l">Cerrado</div><div class="v ${cls(d.realized)}" style="font-size:16px">${money(d.realized)}</div></div>
+      <div class="kpi"><div class="l">Abierto</div><div class="v ${cls(d.unrealized)}" style="font-size:16px">${d.unrealized === null ? '—' : money(d.unrealized)}</div></div>
+      <div class="kpi"><div class="l">Operaciones</div><div class="v" style="font-size:16px">${d.orders}</div></div></div>
+      <p class="muted" style="font-size:11px;margin:6px 0 0">Ganancia = cambio de tu capital en el bot desde el encendido (${d.mode === 'live' ? 'REAL' : 'papel'}), incluye lo cerrado y lo abierto, ya con comisiones y spread.${d.partial ? ' Algunos precios históricos no estaban disponibles; la curva es aproximada.' : ''} No garantiza resultados futuros.</p>`;
+    const ch = $('#pf_ch');
+    const sub = (v, t) => `<span class="${cls(v)}">${d.pct !== null ? `${v >= 0 ? '+' : ''}${(d.peak_capital > 0 ? (v / d.peak_capital) * 100 : 0).toFixed(2)} %` : ''}</span> ${t ? fmtT(t, true) : `desde que se encendió · ${esc(ago(d.start))}`}`;
+    drawChart(ch, d.curve.map((p) => ({ t: p.t, v: p.v })), { base: 0, label: 'Ganancia desde el encendido', fmt: (v) => `${v >= 0 ? '+' : '−'}${money(Math.abs(v))}`, sub });
+  } catch (e) { root.innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+}
+const chartState = { sym: null, range: '1D' };
+async function loadPrice() {
+  const root = $('#pc_c'); if (!root) return;
+  try {
+    const d = await api('GET', `/api/chart?symbol=${encodeURIComponent(chartState.sym)}&range=${chartState.range}`);
+    const base = d.symbol.replace('-USD', '');
+    $('#pc_t', root).innerHTML = '<div class="chv"></div><div class="chs"></div><div class="chg"></div>';
+    const ch = $('#pc_t', root); ch.className = 'chart';
+    const sub = (v, t) => { const c = (v / d.open - 1) * 100; return `<span class="${cls(c)}">${v >= d.open ? '▲' : '▼'} ${money(Math.abs(v - d.open), v < 1 ? 5 : 2)} (${pc(c, 2)})</span> ${t ? fmtT(t, true) : `${esc(base)} · ${chartState.range}`}`; };
+    $('#pc_rw').className = `chart ${d.price >= d.open ? 'up' : 'dn'}`;
+    drawChart(ch, d.points, { base: d.open, label: `Precio de ${base}`, fmt: priceFmt, sub, marks: d.mine });
+    $('#pc_hl', root).textContent = `Máx ${priceFmt(d.hi)} · Mín ${priceFmt(d.lo)}${d.mine.length ? ' · puntos = tus compras (verde) y ventas (rojo)' : ''}`;
+  } catch (e) { $('#pc_t', root).innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+}
+function priceCardHtml(bn) {
+  const syms = [...new Set([...(bn.holdings || []).map((h) => h.symbol), ...(bn.symbol && bn.symbol !== 'AUTO' ? [bn.symbol] : []), 'BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD'])].slice(0, 8);
+  if (!chartState.sym || !syms.includes(chartState.sym)) chartState.sym = syms[0];
+  return `<div class="symsel" id="pc_s">${syms.map((x) => `<button type="button" data-sym="${esc(x)}" class="${x === chartState.sym ? 'on' : ''}">${esc(x.replace('-USD', ''))}</button>`).join('')}</div>
+    <div id="pc_t" class="chart"><div class="chv">…</div><div class="chs"></div><div class="chg"></div></div>
+    <div class="chart" id="pc_rw"><div class="rng" id="pc_r">${['1D', '1W', '1M', '3M'].map((r) => `<button type="button" data-r="${r}" class="${r === chartState.range ? 'on' : ''}">${r === '1W' ? '1S' : r}</button>`).join('')}</div></div>
+    <div class="muted" style="font-size:12px;margin-top:6px" id="pc_hl"></div>`;
+}
+function bindPrice() {
+  const s = $('#pc_s'); const r = $('#pc_r'); if (!s || !r) return;
+  s.onclick = (e) => { const b = e.target.closest('button[data-sym]'); if (!b) return; chartState.sym = b.dataset.sym; for (const x of s.children) x.classList.toggle('on', x === b); loadPrice(); };
+  r.onclick = (e) => { const b = e.target.closest('button[data-r]'); if (!b) return; chartState.range = b.dataset.r; for (const x of r.children) x.classList.toggle('on', x === b); loadPrice(); };
+  loadPrice();
+}
+
+const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
+  <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
+  <div class="card" data-open id="pc"><h2>Gráfico de precio</h2><div id="pc_c">${priceCardHtml(bn)}</div></div>
   <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
 function startMyBot(bn) {
-  bindBotNow(); refreshLive(); refreshDash();
+  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); bindPrice();
   const lr = $('#live_r'); if (lr) lr.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
   let n = 0; let waiting = bn.enabled && !bn.last;
   tabTimer = setInterval(async () => {
-    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); } if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
+    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); loadProfit(bn.mode); } if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
     try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
   }, 4000);
 }

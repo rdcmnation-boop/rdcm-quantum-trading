@@ -835,6 +835,40 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   const engP3 = createEngine({ store, adapters, feed: feedP, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
   await engP3.runBot({ ...(await store.getBot(p2)), last_run: 0 }, Date.now() + 9000);
   t('pro: con noticias negativas de mercado no abre posiciones nuevas', (await store.listOrders(p2)).length === 0 && /noticias negativas/.test((await P2('GET', '/api/bot/status')).body.last?.reason || ''));
+
+  // --- v17.1: ganancia desde el encendido, gráficos y rotación ---
+  const { profitSince } = await import('../lib/charts.js');
+  const H = 3600000; const t0 = 1_000_000_000_000;
+  const ords = [{ symbol: 'A-USD', side: 'buy', qty: 1, usd: 100, price: 100, status: 'ok', created_at: t0 + H }, { symbol: 'A-USD', side: 'sell', qty: 1, usd: 110, price: 110, status: 'ok', created_at: t0 + 5 * H }];
+  const ps = profitSince({ orders: ords, start: t0, now: t0 + 8 * H, hist: new Map(), livePx: new Map() });
+  t('ganancia desde encendido: compra 100, vende 110 = +10 (10 %) y curva termina en +10', Math.abs(ps.total - 10) < 1e-9 && Math.abs(ps.pct - 10) < 1e-9 && Math.abs(ps.curve.at(-1).v - 10) < 1e-9 && ps.realized === 10);
+  const ps2 = profitSince({ orders: ords.slice(0, 1), start: t0 + 2 * H, now: t0 + 8 * H, hist: new Map([['A-USD', { closes: [100, 100, 100, 100, 100, 100, 100, 100, 100], endMs: t0 + 8 * H }]]), livePx: new Map([['A-USD', 104]]) });
+  t('ganancia desde encendido: no cuenta lo que ya había antes del encendido, solo el cambio desde ahí', Math.abs(ps2.total - 4) < 1e-9, String(ps2.total));
+  const PC = await P('GET', '/api/profit?mode=paper');
+  t('/api/profit: devuelve inicio, total y curva del propio usuario', PC.status === 200 && PC.body.started === true && Array.isArray(PC.body.curve) && PC.body.curve.length >= 2 && typeof PC.body.total === 'number', JSON.stringify(PC.body).slice(0, 160));
+  const PC2 = await P2('GET', '/api/profit?mode=live');
+  t('/api/profit: sin operaciones ni encendido devuelve started=false', PC2.status === 200 && PC2.body.started === false);
+  const CH = await P('GET', '/api/chart?symbol=BTC-USD&range=1W');
+  t('/api/chart: puntos, cambio %, máx/mín y tus órdenes marcadas', CH.status === 200 && CH.body.points.length > 20 && Number.isFinite(CH.body.change_pct) && CH.body.hi >= CH.body.lo && Array.isArray(CH.body.mine), JSON.stringify(CH.body).slice(0, 120));
+  t('/api/chart: símbolo inválido 400 y sin sesión 401', (await P('GET', '/api/chart?symbol=../x')).status === 400 && (await client()('GET', '/api/chart?symbol=BTC-USD')).status === 401);
+  const upS = up; const flatS = Array.from({ length: 120 }, (_, i) => 100 + Math.sin(i) * 0.1);
+  const fade = [...up.slice(0, 114), ...Array.from({ length: 6 }, (_, i) => up[113] * (1 - 0.0015 * (i + 1)))];
+  const sym = { 'DOGE-USD': upS, 'ADA-USD': flatS };
+  const feedR = { getPrice: async (s) => sym[s].at(-1), getCloses: async (s) => sym[s], getHistory: async (s) => sym[s] };
+  const itm = (symbol) => ({ symbol, label: 'x', qualified: false, cheaper: 'coinbase', gap_pct: 0, mcap: symbol === 'DOGE-USD' ? 2e10 : 1e10, cfg: { strategy: 'sma', fast: 5, slow: 20, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: -1, bh: 1, drag: 1 }, robinhood: { ret: -1, bh: 1, drag: 1 } });
+  await store.setSetting('scanner:latest', JSON.stringify({ t: Date.now(), scanned: 2, universe: 4, items: [itm('DOGE-USD'), itm('ADA-USD')] }));
+  await store.setSetting('news:latest', JSON.stringify({ t: Date.now(), items: [], risk: {}, global_neg: 0, risk_off: false }));
+  const R = client();
+  await R('POST', '/api/auth/register', { email: 'p-rot@x.com', password: 'Clave-De-Rot-12345', acceptTos: true });
+  const rId = (await R('GET', '/api/me')).body.user.id;
+  await R('PUT', '/api/bot', { autoMode: 'pro', symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'best', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100, maxPositions: 1 });
+  await store.patchBot(rId, { cfg: { ...(await store.getBot(rId)).cfg, enabled: true } });
+  await createEngine({ store, adapters, feed: feedR, encKey: env.ENCRYPTION_KEY, log: { error() {} } }).runBot({ ...(await store.getBot(rId)), last_run: 0 }, Date.now() + 1000);
+  const r1 = (await store.listOrders(rId)).filter((o) => o.status === 'ok');
+  sym['DOGE-USD'] = fade; sym['ADA-USD'] = upS;
+  await createEngine({ store, adapters, feed: feedR, encKey: env.ENCRYPTION_KEY, log: { error() {} } }).runBot({ ...(await store.getBot(rId)), last_run: 0 }, Date.now() + 4 * H);
+  const r2 = (await store.listOrders(rId)).filter((o) => o.status === 'ok');
+  t('rotación: con el cupo lleno cambia la cripto que pierde fuerza por otra con mejor señal', r1.length === 1 && r1[0].symbol === 'DOGE-USD' && r2.length === 3 && r2.some((o) => o.side === 'sell' && o.symbol === 'DOGE-USD' && /rota/.test(o.note)) && r2.some((o) => o.side === 'buy' && o.symbol === 'ADA-USD'), JSON.stringify(r2.map((o) => o.side + o.symbol + o.note.slice(0, 50))));
 }
 
 console.log('Exportación del Cerebro y del app');
