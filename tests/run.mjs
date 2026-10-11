@@ -303,6 +303,11 @@ await store.patchBot(ra.body.user.id, { last_run: 0 });
 await engine.tick();
 const live = (await A('GET', '/api/orders')).body.orders.filter((o) => o.mode === 'live' && o.ext_id);
 t('el motor ejecuta la orden live por el conector', live.length === 1 && live[0].ext_id === 'ord-1');
+{ const vr = (await A('GET', '/api/verify')).body; const ex0 = vr.exchanges && vr.exchanges[0];
+  t('verificación: si el bot anota una posición que el exchange no muestra, da ALERTA (no la da por buena)', ex0 && ex0.verified === true && ex0.ok === false && ex0.positions.some((p) => p.symbol === 'BTC-USD' && p.status === 'alerta'), JSON.stringify(vr).slice(0, 300));
+  const rs = (await A('GET', '/api/results')).body;
+  t('resultados: separa real y papel con 4 periodos y 14 días', rs.real && rs.paper && ['24h', '7d', '30d', 'total'].every((k) => rs.real.periods[k] && rs.paper.periods[k]) && rs.real.daily.length === 14);
+  t('verificación y resultados: B no ve lo de A', (await B('GET', '/api/verify')).body.exchanges.length === 0 && (await B('GET', '/api/results')).body.real.periods.total.orders === 0); }
 t('B no ve la orden live de A', (await B('GET', '/api/orders')).body.orders.length === 0);
 t('el dueño apaga live global y el bot se desactiva', (await O2('PUT', '/api/owner/settings', { live_trading: false })).status === 200);
 await store.patchBot(ra.body.user.id, { last_run: 0 });
@@ -902,6 +907,15 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   const xb = pro.explainBuy({ base: 'SOL', sg: { edge: 3.4 }, usd: 10, baseUsd: 10, regime: 'bull', risk: 'normal', news: { items: [], risk: {} } });
   const xs = pro.explainBuy({ base: 'SOL', sg: { edge: 1.3 }, usd: 6, baseUsd: 10, regime: 'volatile', risk: 'defensivo', news: { items: [], risk: { SOL: 2 } } });
   t('explicación: compra grande si la convicción es alta; reducida y con noticia negativa si no', xb.big && /compra grande/.test(xb.text) && /sin noticias negativas/.test(xb.text) && !xs.big && /reducida/.test(xs.text) && /negativa/.test(xs.text) && /defensivo/.test(xs.text), xb.text + ' | ' + xs.text);
+  { const vf = await import('../lib/verify.js'); const T0 = Date.UTC(2026, 9, 11, 12); const D = 86400000;
+    const od = [{ symbol: 'X-USD', side: 'buy', qty: 1, usd: 10, created_at: T0 - 20 * D, status: 'ok' }, { symbol: 'X-USD', side: 'sell', qty: 1, usd: 12, created_at: T0 - 19 * D, status: 'ok' },
+      { symbol: 'Y-USD', side: 'buy', qty: 1, usd: 10, created_at: T0 - 3 * D, status: 'ok' }, { symbol: 'Y-USD', side: 'sell', qty: 1, usd: 7, created_at: T0 - 2 * D, status: 'ok' },
+      { symbol: 'Z-USD', side: 'buy', qty: 1, usd: 5, created_at: T0 - 1000, status: 'error' }];
+    const pr = vf.periodResults(od, T0).periods;
+    t('periodos: 30 d suma +2 y -3; 7 d solo -3; errores no cuentan', Math.abs(pr['30d'].pnl - (-1)) < 1e-9 && Math.abs(pr['7d'].pnl + 3) < 1e-9 && pr['7d'].closed === 1 && pr.total.orders === 4 && pr['24h'].closed === 0 && pr['30d'].max_drawdown <= -3 + 1e-9, JSON.stringify(pr['30d']));
+    const rc = vf.reconcile({ ledger: [{ symbol: 'BTC-USD', side: 'buy', qty: 1, usd: 1, created_at: T0 - 1000, ext_id: 'a1' }, { symbol: 'ETH-USD', side: 'buy', qty: 2, usd: 1, created_at: T0 - 1000, ext_id: 'a2' }],
+      balances: [{ asset: 'BTC', available: 1, hold: 0, usd: 50000 }, { asset: 'ETH', available: 1, hold: 0, usd: 3000 }], exchangeOrders: [{ id: 'a1', side: 'buy', state: 'filled', qty: 1 }, { id: 'a2', side: 'buy', state: 'filled', qty: 2 }], nowMs: T0 });
+    t('conciliación: coincide BTC, alerta ETH (el bot cree tener más) y las dos órdenes coinciden', rc.positions.find((p) => p.symbol === 'BTC-USD').status === 'ok' && rc.positions.find((p) => p.symbol === 'ETH-USD').status === 'alerta' && rc.orders.matched === 2 && rc.ok === false); }
   t('aprendizaje: una cripto con 4 operaciones perdedoras recientes descansa', pro.losingSymbols(lo).has('L-USD') && !pro.losingSymbols(lo.map((o) => ({ ...o, symbol: 'W-USD', usd: o.side === 'sell' ? 12 : 10 }))).has('W-USD'));
   t('riesgo: pérdida de 24 h y tamaño por convicción', Math.abs(pro.pnl24h(lo) - -4) < 1e-9 && pro.confidenceSize(1.2) === 0.6 && pro.confidenceSize(10) === 1);
 }

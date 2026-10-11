@@ -249,6 +249,40 @@ function drawChart(root, pts, o) {
   rest();
 }
 const chartShell = (id) => `<div class="chart" id="${id}"><div class="chv">…</div><div class="chs"></div><div class="chg"><p class="muted" style="margin:30px 0;text-align:center">Cargando gráfico…</p></div></div>`;
+const pm = (n) => (n === null || n === undefined ? '—' : `${n >= 0 ? '+' : '−'}${money(Math.abs(n))}`);
+function resTable(r) {
+  const rows = [['24 h', '24h'], ['7 días', '7d'], ['30 días', '30d'], ['Total', 'total']].map(([l, k]) => { const x = r.periods[k];
+    return `<tr><td>${l}</td><td class="r ${cls(x.pnl)}"><b>${pm(x.pnl)}</b></td><td class="r">${x.closed}</td><td class="r">${x.win_rate === null ? '—' : x.win_rate.toFixed(0) + ' %'}</td><td class="r ${x.max_drawdown < 0 ? 'neg' : ''}">${x.closed ? pm(x.max_drawdown) : '—'}</td></tr>`; }).join('');
+  const mx = Math.max(0.01, ...r.daily.map((d) => Math.abs(d.pnl))); const W = 300; const bw = W / r.daily.length;
+  const bars = r.daily.map((d, i) => { const h = Math.max(d.closed ? 2 : 0, (Math.abs(d.pnl) / mx) * 34); return `<rect x="${(i * bw + 2).toFixed(1)}" y="${d.pnl >= 0 ? (40 - h).toFixed(1) : 40}" width="${(bw - 4).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${d.pnl >= 0 ? '#4ade80' : '#ff5d4d'}" opacity="${d.closed ? 1 : 0.15}"><title>${new Date(d.day).toLocaleDateString()}: ${pm(d.pnl)} (${d.closed} cerradas)</title></rect>`; }).join('');
+  return `<div class="scroll"><table><thead><tr><th></th><th class="r">Ganó</th><th class="r">Cerr.</th><th class="r">Acierto</th><th class="r">Caída</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <svg viewBox="0 0 ${W} 80" width="100%" height="80" role="img" aria-label="Ganancia o pérdida realizada por día, últimos 14 días"><line x1="0" x2="${W}" y1="40" y2="40" stroke="#555" stroke-width="1"/>${bars}</svg>
+    <div class="muted" style="font-size:11px">Últimos 14 días (por día, solo operaciones cerradas)</div>`;
+}
+async function loadResults() {
+  const root = $('#res_b'); if (!root) return;
+  try {
+    const d = await api('GET', '/api/results');
+    root.className = ''; root.innerHTML = `<div class="row" style="gap:6px;margin-bottom:6px"><span class="chip live">DINERO REAL</span></div>${d.real.periods.total.orders ? resTable(d.real) : '<p class="muted" style="margin:0 0 10px">Aún no hay operaciones reales.</p>'}
+      <div class="row" style="gap:6px;margin:12px 0 6px"><span class="chip paper">PAPEL (simulado)</span></div>${d.paper.periods.total.orders ? resTable(d.paper) : '<p class="muted" style="margin:0">Aún no hay operaciones simuladas.</p>'}
+      <p class="muted" style="font-size:11px;margin:10px 0 0">${esc(d.real.note)} Un porcentaje de aciertos alto no prueba rentabilidad: mira la ganancia, la caída (la peor racha de pérdida) y que pasen semanas.</p>`;
+  } catch (e) { root.textContent = e.message; }
+}
+function bindVerify() {
+  const go = $('#ver_go'); if (!go || go.dataset.b) return; go.dataset.b = '1';
+  go.addEventListener('click', async () => {
+    const box = $('#ver_b'); go.disabled = true; go.textContent = 'Consultando tu exchange…';
+    try {
+      const v = await api('GET', '/api/verify');
+      const body = !v.exchanges.length ? '<p class="muted">No tienes ninguna conexión. Conecta Robinhood o Coinbase en «Conectar».</p>' : v.exchanges.map((e) => {
+        if (!e.verified) return `<div class="vrow warn"><b>${esc(e.exchange)}</b> · NO VERIFICADO: ${esc(e.error || 'sin respuesta')}</div>`;
+        const pos = e.positions.length ? e.positions.map((p) => `<div class="vl ${p.status}"><span>${p.status === 'ok' ? '✓' : p.status === 'info' ? 'ℹ' : '⚠'}</span><span><b>${esc(p.symbol.replace('-USD', ''))}</b> bot ${num(p.ledger_qty, 8)} · exchange ${num(p.exchange_qty, 8)}<br><em>${esc(p.msg)}</em></span></div>`).join('') : '<div class="vl ok"><span>✓</span><span>El bot no registra posiciones abiertas en este exchange.</span></div>';
+        const o = e.orders; return `<div class="vrow ${e.ok ? 'good' : 'warn'}"><b>${esc(e.exchange)}</b> · ${e.ok ? 'TODO COINCIDE' : `${e.alerts} ALERTA(S)`} · saldo total ${money(e.balance_usd)}</div>${pos}
+          <div class="vl ${o.mismatched ? 'alerta' : 'ok'}"><span>${o.mismatched ? '⚠' : '✓'}</span><span>Órdenes de 48 h: ${o.checked} del bot · ${o.matched} confirmadas por el exchange${o.unseen ? ` · ${o.unseen} no aparecen en sus últimas 15 (no verificadas)` : ''}${o.mismatched ? ` · ${o.mismatched} con diferencia` : ''}${o.issues.length ? `<br><em>${esc(o.issues.join(' | '))}</em>` : ''}${e.orders_error ? `<br><em>No se pudo leer su historial: ${esc(e.orders_error)}</em>` : ''}</span></div>`; }).join('');
+      box.innerHTML = `${body}<p class="muted" style="font-size:11px;margin:8px 0">${esc(v.note)} · ${esc(ago(v.t))}</p><button class="btn small" id="ver_go" type="button">Verificar de nuevo</button>`; bindVerify();
+    } catch (e) { box.innerHTML = `<p class="neg">${esc(e.message)}</p><button class="btn small" id="ver_go" type="button">Reintentar</button>`; bindVerify(); }
+  });
+}
 async function loadProfit(mode) {
   const root = $('#pf_c'); if (!root) return;
   try {
@@ -500,16 +534,18 @@ function updateViz(bn) {
 }
 const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
   <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
+  <div class="card" data-open id="res"><h2>Resultados por periodo</h2><div id="res_b" class="muted">Calculando…</div></div>
+  <div class="card" data-open id="ver"><h2>Verificación con tu exchange</h2><div id="ver_b"><p class="muted" style="margin:0 0 8px">Compara lo que el bot anotó con lo que reporta tu exchange: saldos y órdenes.</p><button class="btn small" id="ver_go" type="button">Verificar ahora</button></div></div>
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
   <div class="card" data-open id="bz"><h2>Cerebro en vivo</h2><div id="bz_b">${vizHtml(botViz(bn), 'bz_v')}</div></div>
   <div class="card" data-open id="pc"><h2>Gráfico de precio</h2><div id="pc_c">${priceCardHtml(bn)}</div></div>
   <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
 function startMyBot(bn) {
-  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); bindPrice(); mountViz(bn);
+  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); loadResults(); bindVerify(); bindPrice(); mountViz(bn);
   const lr = $('#live_r'); if (lr) lr.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
   let n = 0; let waiting = bn.enabled && !bn.last; let on = bn.enabled;
   tabTimer = setInterval(async () => {
-    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); loadProfit(bn.mode); }
+    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); loadProfit(bn.mode); loadResults(); }
     if (!(waiting || (on && n % 2 === 0) || n % 8 === 0)) return; // con el bot encendido, el pulpo se actualiza cada ~8 s
     try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { if (!el.contains(document.activeElement)) { el.innerHTML = botNowHtml(b); bindBotNow(); } updateViz(b); } waiting = b.enabled && !b.last; on = b.enabled; } catch { /* reintenta en el próximo ciclo */ }
   }, 4000);
