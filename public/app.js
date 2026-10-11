@@ -118,7 +118,7 @@ async function loadTab() {
 }
 
 // ============================ Cliente ============================
-const AUTO_PRESET = { autoMode: 'active', symbol: 'AUTO', strategy: 'sma', usd: 25, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'paper', paperExchange: 'best', maxPositions: 3, maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
+const AUTO_PRESET = { autoMode: 'pro', symbol: 'AUTO', strategy: 'sma', usd: 25, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'paper', paperExchange: 'best', maxPositions: 3, maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
 const DEMO_PRESET = { symbol: 'BTC-USD', strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', paperExchange: 'best', maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
 async function quickStart(preset) { await api('PUT', '/api/bot', preset); state.tab = state.user.role === 'owner' ? 'o_hoy' : 'resumen'; shell(); loadTab(); }
 const cheapTxt = { coinbase: 'Coinbase', robinhood: 'Robinhood', igual: 'igual' };
@@ -173,6 +173,8 @@ function dashHtml(d) {
       ${rows ? `<div class="scroll" style="margin-top:6px"><table><tbody>${rows}</tbody></table></div>` : ''}
     </div>
     <div class="muted" style="font-size:12px;margin-top:8px">Papel (sin dinero): <b class="${cls(p.total)}">${money(p.total)}</b> · ${p.orders} operaciones simuladas</div>
+    ${d.perf && d.perf.closed ? `<div class="muted" style="font-size:12px;margin-top:6px">Rendimiento del bot (${d.perf.mode === 'live' ? 'real' : 'papel'}): ${d.perf.closed} operaciones cerradas · ${d.perf.win_rate === null ? '—' : d.perf.win_rate.toFixed(0)} % ganadoras · <span class="${cls(d.perf.pnl)}">${money(d.perf.pnl)}</span> · modo de riesgo: <b>${d.perf.risk === 'normal' ? 'normal' : d.perf.risk === 'defensivo' ? 'defensivo (tamaño reducido)' : 'en pausa'}</b></div>` : ''}
+    ${d.news ? `<div class="muted" style="font-size:12px">Noticias: ${d.news.risk_off ? '<span class="neg">riesgo alto, no abre posiciones nuevas</span>' : `sin alerta (${d.news.negatives} negativas) `}· ${esc(ago(d.news.t))}</div>` : ''}
     <div class="brainline"><b>Cerebro</b> ${br.auto ? '<span class="chip paper">aprende y se actualiza solo</span>' : ''}
       <div class="muted" style="font-size:12px">Escáner ${esc(ago(br.scanner_t))}: ${br.qualified} validadas de ${br.scanned}${br.top.length ? ` (${esc(br.top.map((s) => s.replace('-USD', '')).join(', '))})` : ''} · mercado ${esc(br.regime ? br.regime.label : '—')} · próxima revisión ${esc(until(br.next_run))} · v${br.version}</div>
       ${br.lessons.length ? `<div class="muted" style="font-size:12px">Último aprendizaje: ${esc(br.lessons[0].text)}</div>` : ''}</div>`;
@@ -198,8 +200,8 @@ async function refreshDash() {
       e.preventDefault();
       if (!f.ack.checked) return setMsg($('#ds_m'), 'Marca la confirmación de riesgo para continuar.');
       const usd = Number(f.usd.value);
-      try { await quickStart({ symbol: 'AUTO', autoMode: 'active', strategy: 'sma', usd, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'live', connectionId: f.conn.value,
-        maxOrderUsd: usd, maxDailyUsd: Math.min(d.limits.hardMaxDaily, usd * 12), maxPositions: 3, paperExchange: 'best', liveAck: true, enabled: true }); } catch (err) { setMsg($('#ds_m'), err.message); }
+      try { await quickStart({ symbol: 'AUTO', autoMode: 'pro', strategy: 'sma', usd, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'live', connectionId: f.conn.value,
+        maxOrderUsd: usd, maxDailyUsd: Math.min(d.limits.hardMaxDaily, usd * 12), maxPositions: 5, paperExchange: 'best', liveAck: true, enabled: true }); } catch (err) { setMsg($('#ds_m'), err.message); }
     });
   } catch (e) { el.innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
 }
@@ -357,6 +359,7 @@ async function tabBot(main) {
     <form id="bf" class="form">
       <label>Cripto (todas las listadas en Coinbase / Robinhood)<input name="symbol" list="symlist" value="${esc(cfg.symbol)}" autocomplete="off" autocapitalize="characters" spellcheck="false"><datalist id="symlist"><option value="AUTO">AUTO · el Cerebro elige</option>${(state.uni || state.me.symbols.map((s) => ({ s, cb: true, rh: null }))).map((x) => `<option value="${esc(x.s)}">${esc(x.s)}${x.cb ? ' · Coinbase' : ''}${x.rh ? ' · Robinhood' : ''}</option>`).join('')}</datalist><span class="muted" id="symhint" style="font-size:12px"></span></label>
       <label>Exchange (papel) / ruteo<select name="paperExchange">${opt('best', cfg.paperExchange, 'Mejor: el más barato por brecha de costo')}${opt('coinbase', cfg.paperExchange, 'Coinbase')}${opt('robinhood', cfg.paperExchange, 'Robinhood')}</select></label>
+      <label class="auto">Modo del Cerebro<select name="autoMode">${opt('pro', cfg.autoMode, 'Pro: varias operaciones cuando conviene (day trader)')}${opt('active', cfg.autoMode, 'Activo: tendencia + acumulación gradual')}${opt('validated', cfg.autoMode, 'Solo estrategias validadas (muy selectivo)')}</select></label>
       <label class="auto">Máx. criptos a la vez<input name="maxPositions" type="number" min="1" max="10" value="${esc(cfg.maxPositions ?? 3)}"></label>
       <label class="noauto">Estrategia<select name="strategy">${opt('dca', cfg.strategy, 'DCA: compra periódica')}${opt('sma', cfg.strategy, 'SMA: cruce de medias (1 h)')}${opt('rsi', cfg.strategy, 'RSI: sobreventa / sobrecompra (1 h)')}${opt('macd', cfg.strategy, 'MACD: cruce de momentum (1 h)')}</select></label>
       <label>Monto por compra (USD)<input name="usd" type="number" min="1" step="any" value="${esc(cfg.usd)}"></label>
@@ -422,7 +425,7 @@ async function tabBot(main) {
   $('#bf').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
-    const body = { symbol: f.symbol.value.trim().toUpperCase(), paperExchange: f.paperExchange.value, maxPositions: f.maxPositions.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
+    const body = { symbol: f.symbol.value.trim().toUpperCase(), autoMode: f.autoMode.value, paperExchange: f.paperExchange.value, maxPositions: f.maxPositions.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
       slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
       maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, sizing: f.sizing.checked ? 'balance' : 'fixed', enabled: f.enabled.checked };
     try { await api('PUT', '/api/bot', body); setMsg($('#bm'), 'Guardado.', true); } catch (err) { setMsg($('#bm'), err.message); }
@@ -723,7 +726,7 @@ function scannerHtml(sc) {
 }
 
 async function tabMercado(main) {
-  const [m, sc] = await Promise.all([api('GET', '/api/market'), api('GET', '/api/scanner').catch(() => null)]);
+  const [m, sc, nw] = await Promise.all([api('GET', '/api/market'), api('GET', '/api/scanner').catch(() => null), api('GET', '/api/news').catch(() => null)]);
   const g = m.global;
   const coins = m.coins.map((c) => `<tr><td><b>${esc(c.symbol.replace('-USD', ''))}</b></td><td class="r">${money(c.price, c.price < 10 ? 4 : 2)}</td><td class="r ${cls(c.ch24)}">${pc(c.ch24)}</td><td class="r ${cls(c.ch7)}">${pc(c.ch7)}</td><td class="r ${cls(c.ch30)}">${pc(c.ch30)}</td></tr>`).join('');
   const books = m.books.map((b) => `<tr><td><b>${esc(b.symbol)}</b></td><td class="r">${b.spreadPct.toFixed(3)} %</td><td class="r">${money(Math.min(b.bidDepthUsd, b.askDepthUsd), 0)}</td><td class="r">${b.volume24Usd ? money(b.volume24Usd, 0) : '—'}</td></tr>`).join('');
@@ -735,6 +738,7 @@ async function tabMercado(main) {
   </div>
   <div class="card" data-open><h2>Precios y tendencia</h2>${coins ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Precio</th><th class="r">24 h</th><th class="r">7 d</th><th class="r">30 d</th></tr></thead><tbody>${coins}</tbody></table></div>` : '<p class="muted">Sin datos de CoinGecko ahora mismo.</p>'}</div>
   <div class="card" data-open><h2>Ranking del Cerebro: todas las criptos grandes</h2>${scannerHtml(sc)}</div>
+  <div class="card"><h2>Noticias (freno de riesgo del bot)</h2>${nw && nw.items.length ? nw.items.slice(0, 8).map((i) => `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">${i.neg ? '<span class="neg">⚠</span> ' : ''}${esc(i.title)} ${i.coins.map((c) => `<span class="chip">${esc(c)}</span>`).join(' ')}</div>`).join('') : '<p class="muted">Sin titulares todavía.</p>'}<p class="muted" style="font-size:11px;margin:6px 0 0">Titulares públicos (CoinDesk, Cointelegraph). Solo detienen compras ante noticias negativas; no predicen precios.</p></div>
   <div class="card"><h2>Liquidez real (Coinbase Exchange)</h2>${books ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Spread</th><th class="r">Profundidad ±0.5 %</th><th class="r">Volumen 24 h</th></tr></thead><tbody>${books}</tbody></table></div>` : '<p class="muted">Sin libro de órdenes ahora mismo.</p>'}</div>
   <div class="card"><h2>Tendencia en CoinGecko</h2>${m.trending.length ? `<div class="row">${m.trending.map((t) => `<span class="chip">${esc(t.name)} ${esc(t.symbol.toUpperCase())}</span>`).join('')}</div>` : '<p class="muted">Sin datos.</p>'}</div>
   <p class="muted" style="font-size:12px">${esc(m.note)} Actualizado ${esc(ago(m.t))}.${m.errors.length ? ' Fuentes con problemas: ' + esc(m.errors.join('; ')) : ''}</p>`;

@@ -601,7 +601,7 @@ console.log('Todas las criptos, escáner y modo AUTO');
   seedUniverse(list);
   const un = (await A('GET', '/api/universe')).body;
   t('/api/universe lista todas las criptos de Coinbase con su disponibilidad', un.coinbase.includes('ADA-USD') && un.total >= 5 && un.symbols.find((x) => x.s === 'ADA-USD').cb === true);
-  const cfgBase = { strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100 };
+  const cfgBase = { autoMode: 'active', strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100 };
   t('el bot acepta una cripto fuera de la lista base si el exchange la lista', (await A('PUT', '/api/bot', { ...cfgBase, symbol: 'ADA-USD' })).status === 200);
   t('el bot rechaza criptos que el exchange no lista', (await A('PUT', '/api/bot', { ...cfgBase, symbol: 'FAKE-USD' })).status === 400);
   t('el bot acepta AUTO (el Cerebro elige)', (await A('PUT', '/api/bot', { ...cfgBase, symbol: 'AUTO', paperExchange: 'best' })).body.cfg?.paperExchange === 'best');
@@ -728,7 +728,7 @@ console.log('AUTO activo y tablero de inicio');
   await store.setSetting('scanner:latest', JSON.stringify({ t: Date.now(), scanned: 2, universe: 4, items: [
     { symbol: 'ADA-USD', label: 'SMA 5/20', qualified: false, cheaper: 'coinbase', gap_pct: 0.2, cfg: { strategy: 'sma', fast: 5, slow: 20, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: 2, bh: 5, drag: 1 }, robinhood: { ret: 1, bh: 5, drag: 1.2 } },
     { symbol: 'SOL-USD', label: 'SMA 5/20', qualified: false, cheaper: 'coinbase', gap_pct: 0.2, cfg: { strategy: 'sma', fast: 5, slow: 20, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: -2, bh: 5, drag: 1 }, robinhood: { ret: -3, bh: 5, drag: 1.2 } }] }));
-  await G('PUT', '/api/bot', { symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'coinbase', enabled: true, maxOrderUsd: 25, maxDailyUsd: 100 });
+  await G('PUT', '/api/bot', { autoMode: 'active', symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'coinbase', enabled: true, maxOrderUsd: 25, maxDailyUsd: 100 });
   await new Promise((r) => setTimeout(r, 400));
   await engine.runBot({ ...(await store.getBot(gId)), last_run: 0 }, Date.now() + 3000);
   const go = (await store.listOrders(gId)).filter((o) => o.status === 'ok');
@@ -741,7 +741,7 @@ console.log('AUTO activo y tablero de inicio');
   const G2 = client();
   await G2('POST', '/api/auth/register', { email: 'g2-acum@x.com', password: 'Clave-De-Gus2-12345', acceptTos: true });
   const g2 = (await G2('GET', '/api/me')).body.user.id;
-  await G2('PUT', '/api/bot', { symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'coinbase', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100 });
+  await G2('PUT', '/api/bot', { autoMode: 'active', symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'coinbase', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100 });
   await store.patchBot(g2, { cfg: { ...(await store.getBot(g2)).cfg, enabled: true } });
   await eng4.runBot({ ...(await store.getBot(g2)), last_run: 0 }, Date.now() + 1000);
   const acc = (await store.listOrders(g2)).filter((o) => o.status === 'ok');
@@ -782,6 +782,59 @@ console.log('Privacidad: cada quien solo ve lo suyo; solo el dueño ve agregados
   const codesAnon = []; for (const ep of ownerEps.concat(['/api/dashboard', '/api/exchange/live', '/api/bot/status'])) codesAnon.push((await nobody('GET', ep)).status);
   t('anónimo no accede a nada privado', codesAnon.every((c) => c === 401), codesAnon.join());
   await store.deleteConnection(xId, xConn.id);
+}
+
+console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
+{
+  const pro = await import('../lib/pro.js'); const news = await import('../lib/news.js');
+  const mkS = (a, b, d, n = 120) => Array.from({ length: n }, (_, i) => 100 * (1 + d * i) * (1 + a * Math.sin(i / b)));
+  const up = mkS(0.02, 2, 0.002);
+  const fU = pro.features(up); const rtC = pro.roundTripPct({ symbol: 'ADA-USD', exchange: 'coinbase', usd: 10, price: up.at(-1) });
+  t('pro: entra solo con tendencia + momentum + RSI sano y movimiento esperado mayor al costo', pro.entrySignal(fU, { rtPct: rtC }).ok === true);
+  t('pro: no entra si el costo se come el movimiento esperado (spread alto de Robinhood)', pro.entrySignal(fU, { rtPct: 3.5 }).ok === false && /costo/.test(pro.entrySignal(fU, { rtPct: 3.5 }).reason));
+  t('pro: en mercado bajista o modo defensivo exige más margen y reduce el tamaño', pro.entrySignal(fU, { rtPct: rtC, regime: 'bear' }).ok === false && pro.entrySignal(fU, { rtPct: 1.0, risk: 'defensivo' }).size === 0.5);
+  t('pro: en pausa no abre posiciones', pro.entrySignal(fU, { rtPct: 0.5, risk: 'pausa' }).ok === false);
+  const flat = Array.from({ length: 120 }, (_, i) => 100 + (i % 2));
+  t('pro: sin tendencia no entra', pro.entrySignal(pro.features(flat), { rtPct: 0.2 }).ok === false);
+  const fx = { px: 95, vol: 0.004, s10: 99, s30: 100, s50: 100, rsi: 40 };
+  t('pro: stop dinámico protege cuando cae bajo el máximo reciente', pro.exitSignal(fx, { avgCost: 98, heldHours: 5, highSince: 104, rtPct: 1.6 }).sell === true);
+  t('pro: mantiene si todo sigue bien', pro.exitSignal({ px: 104, vol: 0.004, s10: 103, s30: 100, s50: 99, rsi: 60 }, { avgCost: 100, heldHours: 5, highSince: 104, rtPct: 1.6 }).sell === false);
+  const losing = Array.from({ length: 10 }, (_, i) => [{ symbol: 'A-USD', side: 'buy', qty: 1, usd: 10, created_at: i * 2000 }, { symbol: 'A-USD', side: 'sell', qty: 1, usd: 9.5, created_at: i * 2000 + 1000 }]).flat();
+  t('autoajuste: tras una racha de pérdidas pasa a pausa; con pocas pérdidas, a defensivo; normal si va bien', pro.perfSummary(losing).risk === 'pausa' && pro.perfSummary(losing.slice(0, 10)).risk === 'defensivo' && pro.perfSummary([]).risk === 'normal');
+  const rss = `<rss><channel><item><title><![CDATA[Bitcoin ETF inflows rise]]></title><pubDate>${new Date().toUTCString()}</pubDate></item><item><title>Solana exchange hacked, $50M stolen</title><pubDate>${new Date().toUTCString()}</pubDate></item><item><title>Old news about Cardano ban</title><pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate></item></channel></rss>`;
+  const an = news.analyze(news.parseRss(rss));
+  t('noticias: detecta titulares negativos por cripto y descarta los viejos', an.risk.SOL === 1 && !an.risk.ADA && an.items.length === 2 && an.items.find((x) => /Bitcoin ETF/.test(x.title)).neg === false);
+  const nf = await news.fetchNews(async (u) => { if (/coindesk/.test(u)) return { ok: true, status: 200, text: async () => rss }; throw new Error('sin red'); });
+  t('noticias: si una fuente falla se ignora y se informa', nf.sources === 1 && nf.errors.length === 1 && nf.items.length === 2);
+
+  // Motor en modo pro (papel): compra con tendencia y luego vende al romperse
+  let cl = up; const feedP = { getPrice: async () => cl.at(-1), getCloses: async () => cl, getHistory: async () => cl };
+  const engP = createEngine({ store, adapters, feed: feedP, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
+  await store.setSetting('scanner:latest', JSON.stringify({ t: Date.now(), scanned: 1, universe: 4, items: [{ symbol: 'ADA-USD', label: 'x', qualified: false, cheaper: 'coinbase', gap_pct: 0, mcap: 1e10, cfg: { strategy: 'sma', fast: 5, slow: 20, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: -1, bh: 1, drag: 1 }, robinhood: { ret: -1, bh: 1, drag: 1 } }] }));
+  await store.setSetting('news:latest', JSON.stringify({ t: Date.now(), items: [], risk: {}, global_neg: 0, risk_off: false }));
+  const P = client();
+  await P('POST', '/api/auth/register', { email: 'p-pro@x.com', password: 'Clave-De-Pro-12345', acceptTos: true });
+  const pId = (await P('GET', '/api/me')).body.user.id;
+  await P('PUT', '/api/bot', { autoMode: 'pro', symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'best', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100, maxPositions: 3 });
+  await store.patchBot(pId, { cfg: { ...(await store.getBot(pId)).cfg, enabled: true } });
+  await engP.runBot({ ...(await store.getBot(pId)), last_run: 0 }, Date.now() + 1000);
+  const po = (await store.listOrders(pId)).filter((o) => o.status === 'ok');
+  t('pro (papel): compra una cripto en tendencia y explica por qué, en el exchange más barato', po.length === 1 && po[0].side === 'buy' && /^Pro:/.test(po[0].note) && /veces|× el costo/.test(po[0].note), JSON.stringify(po.map((o) => o.note)));
+  cl = Array.from({ length: 120 }, (_, i) => (i < 100 ? up[i] : up[99] * (1 - 0.01 * (i - 99))));
+  const engP2 = createEngine({ store, adapters, feed: feedP, encKey: env.ENCRYPTION_KEY, log: { error() {} } }); // sin caché de precios
+  await engP2.runBot({ ...(await store.getBot(pId)), last_run: 0 }, Date.now() + 5000);
+  const po2 = (await store.listOrders(pId)).filter((o) => o.status === 'ok');
+  t('pro (papel): vende cuando la tendencia se rompe o salta el stop dinámico', po2.length === 2 && po2.some((o) => o.side === 'sell' && /Pro:/.test(o.note)), JSON.stringify(po2.map((o) => o.side + o.note.slice(0, 40))));
+  await store.setSetting('news:latest', JSON.stringify({ t: Date.now(), items: [], risk: {}, global_neg: 4, risk_off: true }));
+  cl = up;
+  const P2 = client();
+  await P2('POST', '/api/auth/register', { email: 'p2-pro@x.com', password: 'Clave-De-Pro2-12345', acceptTos: true });
+  const p2 = (await P2('GET', '/api/me')).body.user.id;
+  await P2('PUT', '/api/bot', { autoMode: 'pro', symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'best', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100 });
+  await store.patchBot(p2, { cfg: { ...(await store.getBot(p2)).cfg, enabled: true } });
+  const engP3 = createEngine({ store, adapters, feed: feedP, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
+  await engP3.runBot({ ...(await store.getBot(p2)), last_run: 0 }, Date.now() + 9000);
+  t('pro: con noticias negativas de mercado no abre posiciones nuevas', (await store.listOrders(p2)).length === 0 && /noticias negativas/.test((await P2('GET', '/api/bot/status')).body.last?.reason || ''));
 }
 
 console.log('Exportación del Cerebro y del app');

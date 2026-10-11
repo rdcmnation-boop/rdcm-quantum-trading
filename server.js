@@ -6,6 +6,7 @@ import { createEngine } from './lib/engine.js';
 import { createDirector, getGuardrails } from './lib/agents.js';
 import { memoryStore, pgStore } from './lib/store.js';
 import { runScanner, getScanner } from './lib/scanner.js';
+import { fetchNews } from './lib/news.js';
 import { ADAPTERS, getPrice, getCloses, getHistory } from './lib/exchanges.js';
 
 const env = { ...process.env };
@@ -56,8 +57,12 @@ const scan = async () => {
   try { const sc = await getScanner(store); if (!sc || Date.now() - sc.t > 6 * 3600000) await runScanner({ store, feed }); } catch (e) { console.error('escáner', e.message); }
 };
 setTimeout(scan, 15000);
+// Noticias: titulares públicos cada 20 min; solo sirven de freno de riesgo para el modo Pro.
+const newsRun = async () => { try { const n = await fetchNews(); if (n.sources) await store.setSetting('news:latest', JSON.stringify(n)); } catch (e) { console.error('noticias', e.message); } };
+setTimeout(newsRun, 20000);
+const newsTimer = setInterval(newsRun, 20 * 60000);
 // Plan gratis de Render: se duerme sin visitas y el bot se detendría. Un ping propio al dominio público lo mantiene despierto.
 let keepTimer = null;
 if (env.RENDER_EXTERNAL_URL) keepTimer = setInterval(() => { fetch(`${env.RENDER_EXTERNAL_URL}/api/health`).catch(() => {}); }, 10 * 60000);
 const scanTimer = setInterval(scan, 30 * 60000);
-process.on('SIGTERM', () => { clearInterval(timer); clearInterval(autoTimer); clearInterval(scanTimer); if (keepTimer) clearInterval(keepTimer); server.close(() => process.exit(0)); });
+process.on('SIGTERM', () => { clearInterval(timer); clearInterval(autoTimer); clearInterval(scanTimer); clearInterval(newsTimer); if (keepTimer) clearInterval(keepTimer); server.close(() => process.exit(0)); });
