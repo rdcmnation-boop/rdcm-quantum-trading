@@ -410,14 +410,21 @@ function botViz(bn) {
     approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
 }
 function agentsViz(b) {
-  const nodes = b.agents.map((a) => ({ label: (a.label || a.name).split(' ')[0].slice(0, 10), kind: !a.available ? 'off' : a.enabled ? 'ok' : 'idle' }));
+  const st = new Map((b.agent_stats || []).map((x) => [x.name, x])); const lastNote = new Map();
+  for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) if (!lastNote.has(a.agent) && (a.notes || []).length) lastNote.set(a.agent, a.notes[0]);
+  const nodes = b.agents.map((a) => { const x = st.get(a.name) || {}; const mx = Math.max(1, ...b.agents.map((q) => (st.get(q.name) || {}).runs || 0)); return { label: (a.label || a.name).split(' ')[0].slice(0, 13), kind: !a.available ? 'off' : a.enabled ? 'ok' : 'idle', w: ((x.runs || 0) / mx) * 0.6 + Math.min(0.4, (x.created || 0) / 20), sub: lastNote.get(a.name) || `${x.runs || 0} corridas · ${x.created || 0} propuestas` }; });
   const stream = [];
   for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) for (const n of (a.notes || []).slice(0, 2)) stream.push({ t: r.t, text: `${a.agent}: ${n}` });
-  return { center: 'DIR', nodes, stream: stream.slice(0, 14), live: true, caption: 'Director + agentes',
+  return { center: 'DIR', nodes, pending: b.pending.length, city: true, stream: stream.slice(0, 14), live: true, caption: 'Director + agentes',
     stats: [['agentes activos', b.agents.filter((a) => a.enabled).length], ['pendientes tuyos', b.pending.length], ['versión', 'v' + b.brain_version], ['última corrida', ago(b.last_run)]],
     approval: b.pending.length ? `Solo tú apruebas: ${b.pending.length} propuesta(s) esperan tu decisión.` : 'Solo tú apruebas los cambios críticos. Nada pendiente ahora.' };
 }
 
+// Los agentes viven en una ciudad 3D; si el 3D falla, cae a la red de nodos.
+async function mountCity(r, d) {
+  if (!r) return;
+  try { const m = await import('/city3d.js'); if (!document.body.contains(r)) return; m.createCity3D($('canvas', r), d); r.classList.add('is3d'); } catch { brainViz(r, d); }
+}
 let vizCtl = null; let vizMode = '';
 // Con el bot en AUTO el Cerebro es un OVNI con IA en 3D que recorre el mapa de criptos; si no, la red de nodos. Si el 3D falla, cae a la red.
 async function mountViz(bn) {
@@ -868,7 +875,7 @@ async function tabCerebro(main) {
       <label class="full">Tipos permitidos<span class="row">${Object.keys(KIND_LABEL).map((k) => `<label class="check"><input type="checkbox" name="kind_${k}" ${g.allowedKinds.includes(k) ? 'checked' : ''}><span>${esc(KIND_LABEL[k])}</span></label>`).join('')}</span></label>
       <p class="muted full" style="font-size:12px">Protegido: ${g.protectedAreas.map((a) => `<code>${esc(a)}</code>`).join(' ')}</p>
       <button class="btn full" type="submit">Guardar</button><div class="msg full" id="gm"></div></form></details>`;
-  brainViz($('#ag_v'), agentsViz(b));
+  mountCity($('#ag_v'), agentsViz(b));
   $('#br_run').addEventListener('click', async (e) => {
     e.target.disabled = true; setMsg($('#br_m'), 'Corriendo agentes…', true);
     try { await api('POST', '/api/owner/brain/run'); await loadTab(); } catch (err) { setMsg($('#br_m'), err.message); e.target.disabled = false; }
