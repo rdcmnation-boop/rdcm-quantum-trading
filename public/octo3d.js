@@ -8,6 +8,9 @@ const hexRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16),
 const rgba = (h, a) => { const [r, g, b] = hexRgb(h); return `rgba(${r},${g},${b},${a})`; };
 const shade = (h, k) => { const [r, g, b] = hexRgb(h); const f = (v) => Math.max(0, Math.min(255, Math.round(v * k))); return `rgb(${f(r)},${f(g)},${f(b)})`; };
 
+// Motas de la piel del manto, fijas (generadas con una semilla para que no parpadeen).
+const SPECKS = (() => { let x = 12345; const rnd = () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; const a = []; for (let i = 0; i < 130; i++) { const r = Math.sqrt(rnd()) * 0.95; const t = rnd() * TAU; a.push({ x: Math.cos(t) * r * 0.9, y: Math.sin(t) * r, r: 0.012 + rnd() * 0.04, a: 0.1 + rnd() * 0.3, dark: rnd() > 0.35 }); } return a; })();
+
 export function createOcto3D(cv, d0) {
   const ctx = cv.getContext('2d'); const dpr = Math.min(2, window.devicePixelRatio || 1);
   const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -26,7 +29,7 @@ export function createOcto3D(cv, d0) {
     const dx = x - cam.fx; const dz = z - cam.fz; const dy = y - 0.6;
     const ca = Math.cos(cam.az); const sa = Math.sin(cam.az); const x1 = dx * ca - dz * sa; const z1 = dx * sa + dz * ca;
     const ce = Math.cos(cam.el); const se = Math.sin(cam.el); const y2 = dy * ce + z1 * se; const z2 = -dy * se + z1 * ce + cam.D;
-    const k = (W * 1.18) / Math.max(1.5, z2);
+    const k = (W * 1.34) / Math.max(1.5, z2);
     return { x: W / 2 + x1 * k, y: H * 0.56 - y2 * k, k, z: z2 };
   };
 
@@ -66,8 +69,8 @@ export function createOcto3D(cv, d0) {
     hud = { title: `Evaluando ${n.label}`, sub: row ? `${row.state}${row.score ? ` · puntaje ${row.score.toFixed(1)}` : ''}${row.note ? ` · ${row.note}` : ''}` : (n.sub || 'vigilando') };
   };
 
-  const spheres = []; // lista de esferas a dibujar con profundidad
-  const sphere = (x, y, z, r, col, a = 1, soft = false) => { const p = proj(x, y, z); spheres.push({ p, r: r * p.k, col, a, z: p.z, soft }); };
+  const ops = []; // todo lo que se dibuja con profundidad (esferas, partes del pulpo)
+  const sphere = (x, y, z, r, col, a = 1, soft = false) => { const p = proj(x, y, z); const sp = { p, r: r * p.k, col, a, z: p.z, soft }; ops.push({ z: p.z, d: () => drawSphere(sp) }); };
 
   const drawSphere = (s) => {
     const { p, r, col, a, soft } = s; if (r < 0.4) return;
@@ -128,7 +131,7 @@ export function createOcto3D(cv, d0) {
     }
     ctx.setLineDash([]);
     // islas (de lejos a cerca)
-    const labels = []; spheres.length = 0;
+    const labels = []; ops.length = 0;
     list.sort((a, b) => proj(b.x, 0, b.z).z - proj(a.x, 0, a.z).z);
     for (const n of list) {
       const col = COLORS[n.kind] || COLORS.idle; const pr = proj(n.x, 0, n.z); const h = 0.5 + n.w * 3.4; const pulse = 0.5 + 0.5 * Math.sin(sec * 2 + n.ph);
@@ -145,29 +148,60 @@ export function createOcto3D(cv, d0) {
     for (let i = rings.length - 1; i >= 0; i--) if (rings[i].dead) rings.splice(i, 1);
     // sombra del pulpo
     groundCircle(oct.x, oct.z, 1.2, 'rgba(0,0,0,.35)', null);
-    // pulpo: cabeza + 8 tentáculos de esferas
+    // pulpo realista: manto con textura, ojos con pupila horizontal y tentáculos cónicos con ventosas y puntas enroscadas
     const by = 2.1 + Math.sin(oct.bob * 2.2) * 0.22 + Math.min(0.8, spd * 0.12);
     const hx = Math.cos(oct.heading); const hz = Math.sin(oct.heading);
-    const body = '#ffd60a'; const arm = '#f4b400';
+    const headC = proj(oct.x, by + 0.2, oct.z);
+    { const ag = ctx.createRadialGradient(headC.x, headC.y + 20, 4, headC.x, headC.y + 20, headC.k * 3.6); ag.addColorStop(0, 'rgba(255,120,50,.2)'); ag.addColorStop(1, 'rgba(255,120,50,0)'); ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(headC.x, headC.y + 20, headC.k * 3.6, 0, TAU); ctx.fill(); }
+    const NSEG = 30; const reachCol = oct.mode === 'sell' ? '#ff5d4d' : '#4ade80';
     for (let i = 0; i < 8; i++) {
-      const th = (i / 8) * TAU + oct.heading * 0.35; const reachArm = oct.reach * (i % 2 === 0 ? 1 : 0.35);
-      for (let j = 0; j < 24; j++) {
-        const u = j / 23; const wob = Math.sin(sec * 3 - u * 5 + i) * 0.28 * u;
-        let px = oct.x + Math.cos(th + wob * 0.6) * (0.55 + 1.55 * u) - oct.vx * u * u * 0.55;
-        let pz = oct.z + Math.sin(th + wob * 0.6) * (0.55 + 1.55 * u) - oct.vz * u * u * 0.55;
-        let py = by - 0.45 - u * 1.25 + Math.sin(sec * 2.6 - u * 4 + i * 0.8) * 0.2 * u;
-        if (tg && reachArm > 0.01) { const w = Math.pow(u, 1.6) * reachArm; px += (tg.x - px) * w; pz += (tg.z - pz) * w; py += (1.1 + 0.4 * Math.sin(sec * 4 + i) - py) * w; }
-        sphere(px, Math.max(0.12, py), pz, 0.34 * (1 - u * 0.84) + 0.05, arm, 1, true);
+      const th = (i / 8) * TAU + oct.heading * 0.35; const reachArm = oct.reach * (i % 2 === 0 ? 1 : 0.35); const pts = []; let zs = 0;
+      for (let j = 0; j <= NSEG; j++) {
+        const u = j / NSEG; const wob = Math.sin(sec * 2.4 - u * 5 + i * 1.3) * 0.3 * u; const ang = th + wob * 0.5; const rr = 0.45 + 2.0 * u;
+        let px = oct.x + Math.cos(ang) * rr - oct.vx * u * u * 0.5; let pz = oct.z + Math.sin(ang) * rr - oct.vz * u * u * 0.5;
+        let py = by - 0.15 - u * 1.4 + Math.sin(sec * 2 - u * 4 + i) * 0.22 * u;
+        if (u > 0.66) { const c = (u - 0.66) / 0.34; px -= Math.cos(ang) * c * c * 0.75; pz -= Math.sin(ang) * c * c * 0.75; py += c * c * 1.0; } // punta enroscada
+        if (tg && reachArm > 0.01) { const w = Math.pow(u, 1.5) * reachArm; px += (tg.x - px) * w; pz += (tg.z - pz) * w; py += (1.2 + 0.4 * Math.sin(sec * 4 + i) - py) * w; }
+        const q = proj(px, Math.max(0.1, py), pz); q.u = u; pts.push(q); zs += q.z;
       }
+      const glow = tg && reachArm > 0.3 && oct.mode !== 'tour';
+      ops.push({ z: zs / pts.length, d: () => {
+        const N = pts.length - 1; const wid = (u) => 0.6 * Math.pow(1 - u, 0.85) + 0.05;
+        const nrm = (j) => { const a = pts[Math.max(0, j - 1)]; const b = pts[Math.min(N, j + 1)]; const dx = b.x - a.x; const dy = b.y - a.y; const L = Math.hypot(dx, dy) || 1; return [-dy / L, dx / L]; };
+        for (let j = 0; j < N; j++) {
+          const a = pts[j]; const b = pts[j + 1]; const na = nrm(j); const nb = nrm(j + 1); const wa = wid(a.u) * a.k / 2; const wb = wid(b.u) * b.k / 2;
+          const m = Math.pow(a.u, 1.4); const r = Math.round(150 + 90 * m); const g = Math.round(42 + 95 * m); const bl = Math.round(24 + 70 * m);
+          const f = `rgb(${r},${g},${bl})`; ctx.fillStyle = f; ctx.strokeStyle = f; ctx.lineWidth = 0.8;
+          ctx.beginPath(); ctx.moveTo(a.x + na[0] * wa, a.y + na[1] * wa); ctx.lineTo(b.x + nb[0] * wb, b.y + nb[1] * wb); ctx.lineTo(b.x - nb[0] * wb, b.y - nb[1] * wb); ctx.lineTo(a.x - na[0] * wa, a.y - na[1] * wa); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(255,205,175,.28)'; ctx.lineWidth = 1.1; ctx.beginPath(); // brillo húmedo
+        for (let j = 2; j < N - 1; j++) { const a = pts[j]; const n = nrm(j); const w = wid(a.u) * a.k * 0.28; if (j === 2) ctx.moveTo(a.x - n[0] * w, a.y - n[1] * w); else ctx.lineTo(a.x - n[0] * w, a.y - n[1] * w); } ctx.stroke();
+        for (let j = 4; j < N - 1; j += 2) { // ventosas pálidas
+          const a = pts[j]; const n = nrm(j); const w = wid(a.u) * a.k; const sd = (j % 4 === 0 ? 1 : -1) * 0.2; const rad = Math.max(0.8, w * 0.17);
+          ctx.fillStyle = 'rgba(248,216,184,.92)'; ctx.strokeStyle = 'rgba(110,40,22,.55)'; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.arc(a.x + n[0] * w * sd, a.y + n[1] * w * sd, rad, 0, TAU); ctx.fill(); ctx.stroke();
+        }
+        if (glow) { const e = pts[N]; const gg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 16); gg.addColorStop(0, rgba(reachCol, 0.85)); gg.addColorStop(1, rgba(reachCol, 0)); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(e.x, e.y, 16, 0, TAU); ctx.fill(); }
+      } });
     }
-    sphere(oct.x, by, oct.z, 1.0, body); sphere(oct.x, by + 0.55, oct.z, 0.75, body);
-    for (const sgn of [-1, 1]) { // ojos al frente
-      const ex = oct.x + hx * 0.72 + -hz * sgn * 0.38; const ez = oct.z + hz * 0.72 + hx * sgn * 0.38;
-      sphere(ex, by + 0.28, ez, 0.27, '#f7f5ea'); sphere(ex + hx * 0.2, by + 0.28, ez + hz * 0.2, 0.13, '#0b0b0e');
-    }
+    ops.push({ z: headC.z, d: () => { // manto
+      const R = headC.k * 1.18 * (1 + Math.sin(oct.bob * 2.2) * 0.025); const cx = headC.x; const cy = headC.y - R * 0.1; const tilt = -0.22 + Math.sin(sec * 0.8) * 0.04;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt);
+      ctx.beginPath(); ctx.ellipse(0, -R * 0.2, R * 0.9, R * 1.12, 0, 0, TAU);
+      const g = ctx.createRadialGradient(-R * 0.32, -R * 0.62, R * 0.08, 0, 0, R * 1.35); g.addColorStop(0, '#f7a87f'); g.addColorStop(0.32, '#df5e36'); g.addColorStop(0.78, '#a3321b'); g.addColorStop(1, '#5e180b'); ctx.fillStyle = g; ctx.fill(); ctx.clip();
+      for (const sp of SPECKS) { ctx.fillStyle = sp.dark ? `rgba(60,12,4,${sp.a})` : `rgba(255,196,160,${sp.a})`; ctx.beginPath(); ctx.arc(sp.x * R, -R * 0.2 + sp.y * R * 1.1, sp.r * R, 0, TAU); ctx.fill(); }
+      ctx.strokeStyle = 'rgba(70,14,5,.35)'; ctx.lineWidth = Math.max(1, R * 0.03); for (const k of [-0.55, 0.1, 0.62]) { ctx.beginPath(); ctx.ellipse(k * R * 0.9, R * 0.3, R * 0.22, R * 0.7, 0.3 * k, 0.2, 2.4); ctx.stroke(); }
+      ctx.restore();
+      for (const sgn of [-1, 1]) { // ojos con pupila horizontal
+        const ex = oct.x + hx * 0.78 + -hz * sgn * 0.42; const ez = oct.z + hz * 0.78 + hx * sgn * 0.42; const e = proj(ex, by + 0.12, ez); if (e.z > headC.z + 0.55) continue; const er = e.k * 0.27;
+        const sg = ctx.createRadialGradient(e.x - er * 0.25, e.y - er * 0.3, er * 0.1, e.x, e.y, er); sg.addColorStop(0, '#f6d27a'); sg.addColorStop(1, '#a8701c'); ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(e.x, e.y, er, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#0a0705'; ctx.beginPath(); ctx.ellipse(e.x, e.y, er * 0.66, er * 0.2, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(e.x - er * 0.32, e.y - er * 0.32, Math.max(0.8, er * 0.14), 0, TAU); ctx.fill();
+        ctx.strokeStyle = '#4a1408'; ctx.lineWidth = Math.max(1, er * 0.28); ctx.beginPath(); ctx.arc(e.x, e.y, er * 1.04, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+      }
+    } });
     for (const p of parts) { p.x += p.vx; p.y += p.vy; p.z += p.vz; p.vy -= 0.006; p.life -= dt * 0.9; if (p.y < 0.05) { p.y = 0.05; p.vy *= -0.4; } if (p.life > 0) sphere(p.x, p.y, p.z, 0.1, p.col, Math.min(1, p.life * 1.5)); }
     for (let i = parts.length - 1; i >= 0; i--) if (parts[i].life <= 0) parts.splice(i, 1);
-    spheres.sort((a, b) => b.z - a.z); for (const s of spheres) drawSphere(s);
+    ops.sort((a, b) => b.z - a.z); for (const o of ops) o.d();
     // etiquetas
     ctx.textAlign = 'center';
     for (const { n, top, col } of labels) { ctx.globalAlpha = n.al; pill(n.label, top.x, top.y - 16, col, true); if (n.sub) { ctx.font = '600 9px ui-monospace,Menlo,monospace'; ctx.fillStyle = rgba(col, 0.95); ctx.fillText(n.sub.split(' ')[0], top.x, top.y - 28); } ctx.globalAlpha = 1; }
