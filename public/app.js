@@ -294,66 +294,87 @@ function bindPrice() {
 }
 
 // ---- Cerebro en vivo: red de nodos animada con datos REALES (qué vigila, qué tiene, qué decidió). Sin cifras inventadas. ----
-function brainViz(root, d) {
+function brainViz(root, d0) {
   const cv = $('canvas', root); const ctx = cv.getContext('2d'); const dpr = Math.min(2, window.devicePixelRatio || 1);
   const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const COL = { held: '#4ade80', ok: '#ffd60a', idle: '#8a8776', off: '#4a4a44', hot: '#ff5d4d', buy: '#4ade80', keep: '#ffd60a', drop: '#ff5d4d' };
-  const oct = !!d.octopus; let W = 0; const H = oct ? 290 : 250;
-  const nodes = d.nodes.map((n, i) => ({ ...n, a: (i / d.nodes.length) * Math.PI * 2 - Math.PI / 2, ph: Math.random() * 6.28 }));
-  const parts = nodes.flatMap((n) => (n.kind === 'off' || n.kind === 'idle' && oct ? [] : Array.from({ length: n.kind === 'held' || n.kind === 'ok' || n.kind === 'buy' ? 3 : 1 }, (_, k) => ({ n, t: Math.random(), sp: (d.live ? 0.0035 : 0.0012) * (0.7 + Math.random() * 0.8), out: (n.kind === 'held' || n.kind === 'buy') && k === 0 }))));
-  cv.style.height = `${H}px`;
-  const size = () => { W = cv.clientWidth || 340; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
-  const pos = (n, t) => { const rx = W * (oct ? 0.31 : 0.38); const ry = H * 0.34; const w = Math.sin(t / 1400 + n.ph) * 3; return [W / 2 + Math.cos(n.a) * rx + w, H / 2 + Math.sin(n.a) * ry + w]; };
-  // Punto a lo largo del hilo (u de 0 en el centro a 1 en la cripto). El pulpo lo ondula como tentáculo.
+  let d = d0; let W = 0; let H = d.octopus ? 300 : 250; const nodes = new Map(); let parts = [];
+  const TAU = Math.PI * 2;
+  // Reparte los nodos alrededor (los más fuertes arriba) y conserva los que ya existen para que se deslicen en vez de saltar.
+  const layout = (nd) => {
+    const sorted = nd.nodes.map((n, i) => ({ ...n, i })).sort((x, y) => (y.w || 0) - (x.w || 0) || x.i - y.i);
+    const seen = new Set();
+    sorted.forEach((n, i) => {
+      const ta = (i / sorted.length) * TAU - Math.PI / 2; seen.add(n.label); const cur = nodes.get(n.label);
+      if (cur) Object.assign(cur, { kind: n.kind, sub: n.sub, tw: n.w || 0, ta, gone: false });
+      else nodes.set(n.label, { label: n.label, kind: n.kind, sub: n.sub, w: 0, tw: n.w || 0, a: ta, ta, ph: Math.random() * TAU, al: 0, gone: false });
+    });
+    for (const [k, n] of nodes) if (!seen.has(k)) n.gone = true;
+    parts = [...nodes.values()].filter((n) => !n.gone && n.kind !== 'off' && !(n.kind === 'idle' && d.octopus)).flatMap((n) => Array.from({ length: ['held', 'ok', 'buy'].includes(n.kind) ? 3 : 1 }, (_, k) => ({ n, t: Math.random(), sp: (nd.live ? 0.0035 : 0.0012) * (0.7 + Math.random() * 0.8), out: (n.kind === 'held' || n.kind === 'buy') && k === 0 })));
+  };
+  const size = () => { H = d.octopus ? 300 : 250; cv.style.height = `${H}px`; W = cv.clientWidth || 340; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+  const pos = (n, t) => { const rx = W * (d.octopus ? 0.29 : 0.38); const ry = H * 0.34; const w = Math.sin(t / 1400 + n.ph) * 3; return [W / 2 + Math.cos(n.a) * rx + w, H / 2 + Math.sin(n.a) * ry + w]; };
   const curve = (n, u, t) => {
     const cx = W / 2; const cy = H / 2; const [x, y] = pos(n, t); const qx = (cx + x) / 2 + (y - cy) * 0.12; const qy = (cy + y) / 2 - (x - cx) * 0.12;
     let px = (1 - u) * (1 - u) * cx + 2 * (1 - u) * u * qx + u * u * x; let py = (1 - u) * (1 - u) * cy + 2 * (1 - u) * u * qy + u * u * y;
-    if (oct) { const dx = x - cx; const dy = y - cy; const L = Math.hypot(dx, dy) || 1; const wv = Math.sin(u * 7 - t / 420 + n.ph) * 5 * Math.sin(u * Math.PI) * (n.kind === 'idle' ? 0.5 : 1); px += (-dy / L) * wv; py += (dx / L) * wv; }
+    if (d.octopus) { const dx = x - cx; const dy = y - cy; const L = Math.hypot(dx, dy) || 1; const wv = Math.sin(u * 7 - t / 420 + n.ph) * 5 * Math.sin(u * Math.PI) * (n.kind === 'idle' ? 0.5 : 1); px += (-dy / L) * wv; py += (dx / L) * wv; }
     return [px, py];
   };
   const frame = (t) => {
     if (!document.body.contains(cv)) return;
-    ctx.clearRect(0, 0, W, H); const cx = W / 2; const cy = H / 2;
-    for (const n of nodes) {
-      const col = COL[n.kind] || COL.idle; const w = oct ? 1 + 5 * Math.max(0, Math.min(1, n.w || 0)) : 1;
-      ctx.strokeStyle = n.kind === 'off' ? 'rgba(120,120,110,.18)' : oct ? col : 'rgba(255,214,10,.22)'; ctx.globalAlpha = oct ? (n.kind === 'idle' ? 0.28 : 0.85) : 1; ctx.lineCap = 'round'; ctx.lineWidth = oct ? Math.max(1, w) : 1;
+    ctx.clearRect(0, 0, W, H); const cx = W / 2; const cy = H / 2; const oct = !!d.octopus;
+    for (const [k, n] of nodes) { // animación suave hacia el objetivo
+      n.w += (n.tw - n.w) * 0.07; let da = n.ta - n.a; da = Math.atan2(Math.sin(da), Math.cos(da)); n.a += da * 0.06; n.al += ((n.gone ? 0 : 1) - n.al) * 0.08;
+      if (n.gone && n.al < 0.03) { nodes.delete(k); parts = parts.filter((p) => p.n !== n); }
+    }
+    for (const n of nodes.values()) {
+      const col = COL[n.kind] || COL.idle; const w = oct ? 1 + 6 * Math.max(0, Math.min(1, n.w)) : 1;
+      ctx.strokeStyle = n.kind === 'off' ? 'rgba(120,120,110,.18)' : oct ? col : 'rgba(255,214,10,.22)'; ctx.globalAlpha = n.al * (oct ? (n.kind === 'idle' ? 0.28 : 0.9) : 1); ctx.lineCap = 'round'; ctx.lineWidth = oct ? Math.max(1, w) : 1;
       ctx.beginPath(); for (let i = 0; i <= 26; i++) { const [px, py] = curve(n, i / 26, t); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); } ctx.stroke(); ctx.globalAlpha = 1;
     }
     for (const p of parts) {
-      p.t += p.sp; if (p.t > 1) p.t = 0; const u = p.out ? p.t : 1 - p.t; const [px, py] = curve(p.n, u, t);
-      ctx.fillStyle = p.out ? '#4ade80' : '#ffd60a'; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(px, py, oct ? 2.2 : 1.9, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1;
+      p.t += p.sp * (d.live ? 1 + (p.n.tw || 0) * 1.5 : 1); if (p.t > 1) p.t = 0; const u = p.out ? p.t : 1 - p.t; const [px, py] = curve(p.n, u, t);
+      ctx.fillStyle = p.out ? '#4ade80' : '#ffd60a'; ctx.globalAlpha = 0.9 * p.n.al; ctx.beginPath(); ctx.arc(px, py, oct ? 2.4 : 1.9, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
     }
-    for (const n of nodes) {
-      const [x, y] = pos(n, t); const c = COL[n.kind] || COL.idle; const r = n.kind === 'held' || n.kind === 'buy' ? 6 : 4.5;
-      if (n.kind !== 'off' && n.kind !== 'idle') { ctx.fillStyle = c; ctx.globalAlpha = 0.16; ctx.beginPath(); ctx.arc(x, y, r + 6 + Math.sin(t / 500 + n.ph) * 2, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; }
-      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
+    for (const n of nodes.values()) {
+      const [x, y] = pos(n, t); const c = COL[n.kind] || COL.idle; const r = (n.kind === 'held' || n.kind === 'buy' ? 6 : 4.5) * (0.6 + 0.4 * n.al);
+      ctx.globalAlpha = n.al;
+      if (n.kind !== 'off' && n.kind !== 'idle') { ctx.fillStyle = c; ctx.globalAlpha = 0.16 * n.al; ctx.beginPath(); ctx.arc(x, y, r + 6 + Math.sin(t / 500 + n.ph) * 2, 0, TAU); ctx.fill(); ctx.globalAlpha = n.al; }
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
       const right = Math.cos(n.a) > 0.25; const left = Math.cos(n.a) < -0.25; const mid = !right && !left;
-      ctx.fillStyle = n.kind === 'off' ? '#6b6a60' : '#d8d5c4'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.textAlign = right ? 'left' : left ? 'right' : 'center';
-      const tx = x + (right ? 10 : left ? -10 : 0); const ty = y + (mid ? (Math.sin(n.a) > 0 ? 18 : -12) : 4);
+      ctx.fillStyle = n.kind === 'off' ? '#6b6a60' : '#ece9d8'; ctx.font = '700 11px ui-monospace,Menlo,monospace'; ctx.textAlign = right ? 'left' : left ? 'right' : 'center';
+      const tx = x + (right ? 10 : left ? -10 : 0); const ty = y + (mid ? (Math.sin(n.a) > 0 ? 19 : -13) : 4);
       ctx.fillText(n.label, tx, ty);
-      if (n.sub) { ctx.fillStyle = c; ctx.globalAlpha = 0.85; ctx.font = '500 9px ui-monospace,Menlo,monospace'; ctx.fillText(n.sub, tx, ty + 11); ctx.globalAlpha = 1; }
+      if (n.sub) { ctx.fillStyle = c; ctx.globalAlpha = 0.9 * n.al; ctx.font = '600 9px ui-monospace,Menlo,monospace'; ctx.fillText(n.sub, tx, ty + 11); }
+      ctx.globalAlpha = 1;
     }
     const pr = 14 + Math.sin(t / 380) * (d.live ? 3 : 1);
-    const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, pr * 2.6); g.addColorStop(0, 'rgba(255,214,10,.55)'); g.addColorStop(1, 'rgba(255,214,10,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, pr * 2.6, 0, 6.28); ctx.fill();
+    const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, pr * 2.6); g.addColorStop(0, 'rgba(255,214,10,.55)'); g.addColorStop(1, 'rgba(255,214,10,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, pr * 2.6, 0, TAU); ctx.fill();
     if (oct) {
-      ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.ellipse(cx, cy - 2, 17, 15 + Math.sin(t / 500) * 1, 0, 0, 6.28); ctx.fill();
-      ctx.fillStyle = '#0b0b0e'; for (const ex of [-6, 6]) { ctx.beginPath(); ctx.arc(cx + ex, cy - 3, 3.2, 0, 6.28); ctx.fill(); }
-      ctx.fillStyle = '#ffd60a'; for (const ex of [-6, 6]) { ctx.beginPath(); ctx.arc(cx + ex + Math.sin(t / 900) * 0.8, cy - 4, 1, 0, 6.28); ctx.fill(); }
+      ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.ellipse(cx, cy - 2, 18, 16 + Math.sin(t / 500) * 1, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#0b0b0e'; for (const ex of [-6.5, 6.5]) { ctx.beginPath(); ctx.arc(cx + ex, cy - 3, 3.4, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#ffd60a'; for (const ex of [-6.5, 6.5]) { ctx.beginPath(); ctx.arc(cx + ex + Math.sin(t / 900) * 0.9, cy - 4, 1.1, 0, TAU); ctx.fill(); }
     } else {
-      ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, TAU); ctx.fill();
       ctx.fillStyle = '#0b0b0e'; ctx.font = '700 8px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillText(d.center, cx, cy + 3);
     }
     if (!still) requestAnimationFrame(frame);
   };
-  size(); new ResizeObserver(() => { size(); if (still) frame(0); }).observe(cv); requestAnimationFrame(frame);
+  size(); layout(d); for (const n of nodes.values()) { n.w = n.tw; n.a = n.ta; n.al = 1; }
+  new ResizeObserver(() => { size(); if (still) frame(0); }).observe(cv); requestAnimationFrame(frame);
+  return { update(nd) { const was = d.octopus; d = nd; if (was !== d.octopus) size(); layout(nd); if (still) frame(0); } };
 }
 const tagOf = (txt) => (/compra|buy|rota/i.test(txt) && !/vende|stop/i.test(txt) ? ['COMPRA', 'buy'] : /vend|stop|sell|rota:/i.test(txt) ? ['VENTA', 'sell'] : /mantiene|vigila|espera|pausa|descansa|freno|límite/i.test(txt) ? ['VIGILA', 'hold'] : ['NOTA', '']);
+const vizStat = (d) => d.stats.map((x) => `<div><b>${esc(x[1])}</b>${esc(x[0])}</div>`).join('');
+const vizRows = (d) => (d.rows && d.rows.length ? d.rows.map((r) => `<div class="br ${r.kind}"><b>${esc(r.sym)}</b><span>${esc(r.state)}</span><span class="num">${r.score ? r.score.toFixed(1) : '—'}</span><span class="num">${esc(r.note)}</span></div>`).join('') : '');
+const vizStream = (d) => d.stream.slice(0, 14).map((x) => { const [tg, c] = tagOf(x.text); return `<div><span class="tg ${c}">${tg}</span>${x.t ? `<span>${esc(ago(x.t))} · </span>` : ''}${esc(x.text)}</div>`; }).join('') || '<div>Esperando la primera decisión…</div>';
 function vizHtml(d, id) {
-  const lines = d.stream.slice(0, 14).map((x) => { const [tg, c] = tagOf(x.text); return `<div><span class="tg ${c}">${tg}</span>${x.t ? `<span>${esc(ago(x.t))} · </span>` : ''}${esc(x.text)}</div>`; }).join('') || '<div>Esperando la primera decisión…</div>';
   return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>
-    <div class="bstat">${d.stats.map((x) => `<div><b>${esc(x[1])}</b>${esc(x[0])}</div>`).join('')}</div>
-    ${d.rows && d.rows.length ? `<div class="brows">${d.rows.map((r) => `<div class="br ${r.kind}"><b>${esc(r.sym)}</b><span>${esc(r.state)}</span><span class="num">${r.score ? r.score.toFixed(1) : '—'}</span><span class="num">${esc(r.note)}</span></div>`).join('')}</div>` : ''}
-    <div class="bstream">${lines}</div><div class="bappr">${esc(d.approval)}</div></div>`;
+    <div class="bstat">${vizStat(d)}</div><div class="brows" ${d.rows && d.rows.length ? '' : 'hidden'}>${vizRows(d)}</div>
+    <div class="bstream">${vizStream(d)}</div><div class="bappr">${esc(d.approval)}</div></div>`;
+}
+function vizFill(root, d) {
+  $('.bcap', root).textContent = d.caption; $('.bstat', root).innerHTML = vizStat(d); const r = $('.brows', root); r.innerHTML = vizRows(d); r.hidden = !(d.rows && d.rows.length); $('.bstream', root).innerHTML = vizStream(d);
 }
 const agoS = (t) => { if (!t) return '—'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'ahora' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`; };
 const OSTATE = { compró: ['buy', 'compró'], listo: ['buy', 'listo p/comprar'], fuerte: ['held', 'fuerte'], mantiene: ['held', 'mantiene'], débil: ['drop', 'débil'], suelta: ['drop', 'suelta'], vendió: ['drop', 'vendió'], soltó: ['drop', 'soltó'] };
@@ -369,7 +390,7 @@ function botViz(bn) {
     for (const it of octo.items) {
       const [kind, txt] = OSTATE[it.state] || ['idle', it.state]; const l = base(it.symbol);
       const share = tot > 0 && hv.has(l) ? hv.get(l) / tot : 0;
-      add(l, kind, { w: it.held ? Math.max(0.25, share) : (it.score || 0) / mx * 0.6, sub: `${txt.split(' ')[0]}${it.held && it.gain_pct !== undefined ? ` ${it.gain_pct >= 0 ? '+' : ''}${it.gain_pct.toFixed(1)}%` : ''}` });
+      add(l, kind, { w: it.held ? Math.max(0.25, share) : (it.score || 0) / mx * 0.6, sub: `${txt.split(' ')[0]}${kind === 'held' && it.gain_pct !== undefined ? ` ${it.gain_pct >= 0 ? '+' : ''}${it.gain_pct.toFixed(1)}%` : ''}` });
     }
     held.forEach((l) => add(l, 'held', { w: 0.4, sub: 'tiene' }));
   } else { held.forEach((l) => add(l, 'held')); ok.forEach((l) => add(l, 'ok')); }
@@ -392,7 +413,10 @@ function agentsViz(b) {
     approval: b.pending.length ? `Solo tú apruebas: ${b.pending.length} propuesta(s) esperan tu decisión.` : 'Solo tú apruebas los cambios críticos. Nada pendiente ahora.' };
 }
 
-function mountViz(bn) { const r = $('#bz_v'); if (r) brainViz(r, botViz(bn)); }
+let vizCtl = null;
+function mountViz(bn) { const r = $('#bz_v'); if (r) vizCtl = brainViz(r, botViz(bn)); }
+// Actualiza el pulpo SIN recrearlo: los tentáculos se deslizan hacia sus nuevos pesos.
+function updateViz(bn) { const r = $('#bz_v'); if (!r) return; if (vizCtl && r.dataset.on === '1') { const d = botViz(bn); vizCtl.update(d); vizFill(r, d); } else { r.dataset.on = '1'; mountViz(bn); } }
 const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
   <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
@@ -400,12 +424,13 @@ const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde
   <div class="card" data-open id="pc"><h2>Gráfico de precio</h2><div id="pc_c">${priceCardHtml(bn)}</div></div>
   <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
 function startMyBot(bn) {
-  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); bindPrice(); mountViz(bn);
+  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); bindPrice(); mountViz(bn); { const r = $('#bz_v'); if (r) r.dataset.on = '1'; }
   const lr = $('#live_r'); if (lr) lr.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
-  let n = 0; let waiting = bn.enabled && !bn.last;
+  let n = 0; let waiting = bn.enabled && !bn.last; let on = bn.enabled;
   tabTimer = setInterval(async () => {
-    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); loadProfit(bn.mode); } if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
-    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); const zb = $('#bz_b'); if (zb) { zb.innerHTML = vizHtml(botViz(b), 'bz_v'); mountViz(b); } } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
+    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); loadProfit(bn.mode); }
+    if (!(waiting || (on && n % 2 === 0) || n % 8 === 0)) return; // con el bot encendido, el pulpo se actualiza cada ~8 s
+    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { if (!el.contains(document.activeElement)) { el.innerHTML = botNowHtml(b); bindBotNow(); } updateViz(b); } waiting = b.enabled && !b.last; on = b.enabled; } catch { /* reintenta en el próximo ciclo */ }
   }, 4000);
 }
 

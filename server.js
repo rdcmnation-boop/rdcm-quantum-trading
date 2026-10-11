@@ -43,7 +43,7 @@ try { setRobinhoodSpreads(JSON.parse(await store.getSetting('market:rhspread', '
 const server = http.createServer(app.handler);
 server.listen(PORT, '0.0.0.0', () => console.log(`Quantum Trading escuchando en :${PORT}`));
 
-const timer = setInterval(() => engine.tick().catch((e) => console.error('tick', e.message)), 60000);
+const timer = setInterval(() => engine.tick().catch((e) => console.error('tick', e.message)), 15000);
 // El Director corre solo cada N horas (ver límites del dueño). Solo PROPONE; nada se aplica sin tu aprobación.
 const autoTimer = setInterval(async () => {
   try {
