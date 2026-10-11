@@ -13,6 +13,7 @@ import { coinbaseJwt, robinhoodSign } from '../lib/exchanges.js';
 import { decide, validateCfg, positionFromOrders } from '../lib/strategy.js';
 import { rsi, macd, ema, bollinger, sma } from '../lib/indicators.js';
 import { backtest } from '../lib/backtest.js';
+import { simulateFill } from '../lib/costs.js';
 import { walkForward } from '../lib/ml.js';
 import { createDirector, PROTECTED_MIN } from '../lib/agents.js';
 import zlib from 'node:zlib';
@@ -138,6 +139,20 @@ console.log('ML');
   t('ML: rechaza entrenar con pocos datos', thr);
 }
 
+console.log('Costos reales por exchange');
+{
+  const cc = Array.from({ length: 600 }, (_, i) => 50000 + 3000 * Math.sin(i / 20) + i * 5);
+  const cfgC = { strategy: 'sma', fast: 5, slow: 20, usd: 50000, maxOrderUsd: 1e6, maxDailyUsd: 1e7, stopLossPct: 8, symbol: 'BTC-USD' };
+  const rc = backtest(cc, cfgC, { capital: 1e6, exchange: 'coinbase' });
+  const rr = backtest(cc, cfgC, { capital: 1e6, exchange: 'robinhood' });
+  t('backtest $1M con Coinbase: costos positivos y comisión > 0', rc.costs.feesUsd > 0 && rc.costs.totalUsd > 0 && rc.capital === 1e6);
+  t('Robinhood: sin comisión explícita pero con costo de spread', rr.costs.feesUsd === 0 && rr.costs.slippageUsd > 0);
+  const f1 = simulateFill({ side: 'buy', usd: 1000, price: 100, exchange: 'coinbase' });
+  const f2 = simulateFill({ side: 'buy', usd: 5e6, price: 100, exchange: 'coinbase' });
+  t('más tamaño = más deslizamiento', f2.slipPct > f1.slipPct && f1.price > 100);
+  t('comisión baja con el volumen de 30 días', simulateFill({ side: 'buy', usd: 1000, price: 100, exchange: 'coinbase', vol30d: 2e6 }).feePct < f1.feePct);
+  t('la venta se ejecuta por debajo del precio medio', simulateFill({ side: 'sell', usd: 1000, price: 100, exchange: 'robinhood' }).price < 100);
+}
 console.log('Backtest');
 {
   const up = Array.from({ length: 300 }, (_, i) => 100 + i * 0.5);
@@ -254,7 +269,8 @@ await store.patchBot(ra.body.user.id, { last_run: 0 });
 await engine.tick();
 t('DCA no repite antes del intervalo', (await A('GET', '/api/orders')).body.orders.length === 1);
 const pnl = (await A('GET', '/api/pnl')).body.positions;
-t('PnL calcula posición en papel', pnl.length === 1 && Math.abs(pnl[0].qty - 10 / 50000) < 1e-9 && pnl[0].price === 50000);
+t('PnL calcula posición en papel', pnl.length === 1 && pnl[0].qty < 10 / 50000 && pnl[0].qty > (10 / 50000) * 0.98 && pnl[0].price === 50000);
+t('papel realista: compra con deslizamiento y comisión (más caro que el precio de mercado)', oa[0].price > 50000 && oa[0].usd > 10 && /simulado/.test(oa[0].note));
 
 // trading real: compuertas
 t('live bloqueado si la plataforma no lo habilitó', (await A('PUT', '/api/bot', { ...cfgPaper, mode: 'live', connectionId: cid, liveAck: true })).status === 403);
@@ -316,6 +332,8 @@ t('auditoría registra eventos', (await store.listAudit(500)).some((e) => e.acti
 await A('POST', '/api/auth/login', { email: 'a@x.com', password: pw });
 const bt = await A('POST', '/api/backtest', { strategy: 'dca', symbol: 'BTC-USD', usd: 10, intervalMin: 60 });
 t('endpoint de backtest devuelve métricas (con sesión)', bt.status === 200 && 'sharpe' in bt.body.metrics);
+const bt1m = await A('POST', '/api/backtest', { strategy: 'sma', symbol: 'BTC-USD', usd: 10, intervalMin: 60, exchange: 'robinhood', capital: 99999999 });
+t('backtest API: capital virtual limitado a $1M y costos del exchange elegido', bt1m.status === 200 && bt1m.body.capital === 1000000 && bt1m.body.exchange === 'robinhood' && /Robinhood/.test(bt1m.body.cost_profile) && bt1m.body.costs);
 t('backtest exige sesión', (await nobody('POST', '/api/backtest', { strategy: 'dca' })).status === 401);
 
 

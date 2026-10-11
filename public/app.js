@@ -192,7 +192,11 @@ async function tabBot(main) {
     <div id="sg_out"></div><div class="msg" id="sg_m"></div>
   </div>
   <div class="card"><h2>Probar con historial (backtest)</h2>
-    <p class="muted" style="font-size:13px">Simula tu configuración sobre las últimas ~300 velas de 1 hora (unos 12 días) con comisión de 0.6 % por operación y la compara con comprar y mantener. Sirve para descartar estrategias malas; <b>no predice el futuro</b>.</p>
+    <p class="muted" style="font-size:13px">Simula tu configuración sobre las últimas ~300 velas de 1 hora (unos 12 días) con comisión por nivel de volumen, spread, impacto de mercado y latencia del exchange elegido, y la compara con comprar y mantener. Sirve para descartar estrategias malas; <b>no predice el futuro</b>.</p>
+    <div class="form" style="margin-bottom:10px">
+      <label>Simular en<select id="bt_ex"><option value="coinbase">Coinbase Advanced</option><option value="robinhood">Robinhood Crypto</option></select></label>
+      <label>Capital virtual<select id="bt_cap"><option value="1000">$1,000</option><option value="10000">$10,000</option><option value="100000">$100,000</option><option value="1000000">$1,000,000</option></select></label>
+    </div>
     <div class="row"><button class="btn ghost" id="bt_run" type="button">Correr backtest</button></div>
     <div id="bt_out" class="scroll"></div><div class="msg" id="bt_m"></div>
   </div>`;
@@ -236,7 +240,8 @@ async function tabBot(main) {
     setMsg($('#bt_m'), 'Calculando…', true);
     try {
       const r = await api('POST', '/api/backtest', { symbol: f.symbol.value, strategy: f.strategy.value, usd: f.usd.value,
-        intervalMin: f.intervalMin.value, fast: f.fast.value, slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, maxOrderUsd: f.maxOrderUsd.value, maxDailyUsd: f.maxDailyUsd.value });
+        intervalMin: f.intervalMin.value, fast: f.fast.value, slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, maxOrderUsd: f.maxOrderUsd.value, maxDailyUsd: f.maxDailyUsd.value,
+        exchange: $('#bt_ex').value, capital: $('#bt_cap').value });
       const m = r.metrics;
       const pct = (x) => (x === null ? '—' : `${x.toFixed(2)} %`);
       const n2 = (x) => (x === null ? '—' : x.toFixed(2));
@@ -246,11 +251,14 @@ async function tabBot(main) {
         <tr><td>Comprar y mantener</td><td class="r ${cls(m.buyHoldPct)}">${pct(m.buyHoldPct)}</td></tr>
         <tr><td>Caída máxima (max drawdown)</td><td class="r neg">${pct(m.maxDrawdownPct)}</td></tr>
         <tr><td>Sharpe / Sortino (anualizados)</td><td class="r">${n2(m.sharpe)} / ${n2(m.sortino)}</td></tr>
+        <tr><td>Comisiones pagadas</td><td class="r neg">${money(r.costs.feesUsd)}</td></tr>
+        <tr><td>Spread + impacto de mercado</td><td class="r neg">${money(r.costs.slippageUsd)}</td></tr>
+        <tr><td>Costo total / % del capital</td><td class="r neg">${money(r.costs.totalUsd)} / ${pct(r.costs.dragPct)}</td></tr>
         <tr><td>Compras / operaciones cerradas</td><td class="r">${m.buys} / ${m.closedTrades}</td></tr>
         <tr><td>Beta / alfa anual vs. el activo</td><td class="r">${n2(m.beta)} / ${pct(m.alphaAnnualPct)}</td></tr>
         <tr><td>Tiempo en posición</td><td class="r">${pct(m.exposurePct)}</td></tr>
         <tr><td>% ganadoras / factor de beneficio</td><td class="r">${pct(m.winRatePct)} / ${n2(m.profitFactor)}</td></tr></tbody></table>
-        <p class="muted" style="font-size:12px">Capital de referencia ${money(r.capital, 0)}, ${r.candles} velas, comisión ${r.feePct} %.</p>`;
+        <p class="muted" style="font-size:12px">Capital virtual ${money(r.capital, 0)} (sin dinero real), ${r.candles} velas. Costos: ${esc(r.cost_profile)}. Son estimaciones; verifica tarifas y spreads reales en tu exchange.</p>`;
     } catch (err) { setMsg($('#bt_m'), err.message); }
   });
   $('#kill').addEventListener('click', async () => {
