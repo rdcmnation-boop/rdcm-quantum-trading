@@ -250,3 +250,5 @@ th,td{padding:6px 5px;font-size:13px}
 .vl{display:flex;gap:8px;padding:5px 2px;font-size:12px;line-height:1.45}
 .vl em{color:var(--muted);font-style:normal}
 .vl.ok span:first-child{color:#4ade80}.vl.alerta span:first-child{color:#ff5d4d}.vl.info span:first-child{color:#ffd60a}
+
+.langsw{display:inline-flex;border:1px solid #ffd60a66;border-radius:999px;overflow:hidden;margin-right:8px;vertical-align:middle}.langsw button{background:transparent;color:#ffd60a;border:0;padding:4px 9px;font:700 11px system-ui;cursor:pointer;letter-spacing:.5px}.langsw button.on{background:#ffd60a;color:#000}.langsw.float{position:fixed;top:calc(env(safe-area-inset-top,0px) + 6px);right:8px;z-index:60;background:#000c;margin:0;box-shadow:0 0 10px #ffd60a33}

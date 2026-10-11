@@ -1,4 +1,5 @@
 // Ciudad futurista de los agentes. Motor 3D propio en canvas 2D (sin librerías, respeta la política de seguridad).
+import { tr } from '/i18n.js';
 // Cada edificio es un agente real (su altura sale de cuánto ha corrido y propuesto), la torre central es el Director,
 // y los drones viajan por las calles entre el Director y cada agente activo. Solo tú apruebas: cada propuesta pendiente
 // aparece como una baliza sobre la torre del Director.
@@ -12,7 +13,7 @@ const SKY = Array.from({ length: 46 }, () => { const a = rnd() * TAU; const r = 
 export function createCity3D(cv, d0, opt = {}) {
   const say = (t, hi) => { try { if (opt.onSay && t) opt.onSay(t, hi); } catch { /* sin voz */ } };
   let sel = -1; let A = [];
-  const ctx = cv.getContext('2d'); const dpr = Math.min(2, window.devicePixelRatio || 1); const H = 340; let W = 340; let d = d0; let alive = true; let last = performance.now();
+  const ctx = cv.getContext('2d'); { const _ft = ctx.fillText.bind(ctx); const _mt = ctx.measureText.bind(ctx); ctx.fillText = (t, ...r) => _ft(tr(String(t)), ...r); ctx.measureText = (t) => _mt(tr(String(t))); } const dpr = Math.min(2, window.devicePixelRatio || 1); const H = 340; let W = 340; let d = d0; let alive = true; let last = performance.now();
   const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const cam = { az: 0.5, el: 0.7, D: 27 }; let hud = { title: 'Ciudad de agentes', sub: 'esperando datos' }; let focus = 0; let focusUntil = 0;
   const size = () => { W = cv.clientWidth || 340; cv.style.height = `${H}px`; cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };

@@ -1,6 +1,8 @@
 // Interfaz de Quantum Trading. Sin librerías; todo dato dinámico pasa por esc() antes de insertarse.
 import { genEd25519 } from '/keygen.js';
 import { voice } from '/voice.js';
+import { initI18n, mountSwitch, tr, onLang, lang } from '/i18n.js';
+await initI18n(); mountSwitch(null);
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n, d = 2) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: d, maximumFractionDigits: d }));

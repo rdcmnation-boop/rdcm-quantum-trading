@@ -1,0 +1,20 @@
+#qsplash{position:fixed;inset:0;z-index:9999;background:radial-gradient(900px 600px at 50% 45%,#2a2000 0%,#060608 62%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .7s ease,transform .7s ease,filter .7s;overflow:hidden}
+#qsplash.out{opacity:0;transform:scale(1.18);filter:blur(6px);pointer-events:none}
+#qsplash:before{content:"";position:absolute;inset:-50%;background:conic-gradient(from 0deg,transparent 0 70%,#ffd60a22 80%,transparent 90%);animation:qspin 3.2s linear infinite}
+#qsplash .grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,214,10,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,214,10,.08) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(circle at 50% 45%,#000,transparent 65%);animation:qgrid 6s linear infinite}
+#qsplash svg{width:min(56vw,230px);height:auto;position:relative;filter:drop-shadow(0 0 18px #ffd60a) drop-shadow(0 0 48px #ff9f0a88);animation:qpulse 1.8s ease-in-out infinite}
+#qsplash .ring{fill:none;stroke:url(#qg);stroke-width:3;stroke-linecap:round;stroke-dasharray:420;stroke-dashoffset:420;animation:qdraw 1.5s .1s ease forwards}
+#qsplash .ring2{stroke-width:1.5;opacity:.5;animation-delay:.4s;stroke-dasharray:300;stroke-dashoffset:300}
+#qsplash .qq{fill:none;stroke:url(#qg);stroke-width:7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:300;stroke-dashoffset:300;animation:qdraw 1.4s .5s ease forwards}
+#qsplash .arrow{fill:none;stroke:#fff1a8;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:90;stroke-dashoffset:90;animation:qdraw .7s 1.5s ease forwards}
+#qsplash .nm{position:relative;font:900 clamp(24px,7vw,40px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.34em;color:#ffd60a;text-shadow:0 0 22px #ffd60a99;opacity:0;transform:translateY(10px);animation:qin .9s 1.2s ease forwards;padding-left:.34em}
+#qsplash .sb{position:relative;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.5em;color:#c9c6b5;opacity:0;animation:qin .9s 1.7s ease forwards;padding-left:.5em}
+#qsplash .bar{position:relative;width:min(60vw,220px);height:2px;background:#ffd60a22;border-radius:2px;overflow:hidden;opacity:0;animation:qin .5s 1.6s ease forwards}
+#qsplash .bar i{position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffd60a,transparent);animation:qbar 1.1s 1.7s ease-in-out infinite}
+@keyframes qspin{to{transform:rotate(360deg)}}
+@keyframes qgrid{to{background-position:0 44px}}
+@keyframes qdraw{to{stroke-dashoffset:0}}
+@keyframes qpulse{50%{transform:scale(1.04)}}
+@keyframes qin{to{opacity:1;transform:none}}
+@keyframes qbar{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+@media (prefers-reduced-motion:reduce){#qsplash:before,#qsplash .grid,#qsplash svg{animation:none}}

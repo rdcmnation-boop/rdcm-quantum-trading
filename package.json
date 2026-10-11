@@ -1,6 +1,6 @@
 {
   "name": "quantum-trading-platform",
-  "version": "19.12.0",
+  "version": "19.13.0",
   "description": "Quantum Trading: plataforma SaaS no-custodial de bots cripto (Coinbase, Robinhood) con login por cliente y consola de dueño",
   "main": "server.js",
   "type": "module",

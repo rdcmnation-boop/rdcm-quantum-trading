@@ -65,3 +65,22 @@ footer{padding-block:40px 60px;color:var(--mut);font-size:12.5px;border-top:1px 
 .rv{opacity:0;transform:translateY(22px);transition:.8s cubic-bezier(.2,.7,.2,1)}.rv.in{opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){.orb,.line1{animation:none;stroke-dashoffset:0}.rv{opacity:1;transform:none;transition:none}}
 @media (prefers-color-scheme:light){:root{}}
+
+.langsw{display:inline-flex;border:1px solid #ffd60a66;border-radius:999px;overflow:hidden;margin-right:8px;vertical-align:middle}.langsw button{background:transparent;color:#ffd60a;border:0;padding:4px 9px;font:700 11px system-ui;cursor:pointer;letter-spacing:.5px}.langsw button.on{background:#ffd60a;color:#000}.langsw.float{position:fixed;top:calc(env(safe-area-inset-top,0px) + 6px);right:8px;z-index:60;background:#000c;margin:0;box-shadow:0 0 10px #ffd60a33}
+/* Más bold y elegante */
+h1{font-size:clamp(44px,10.5vw,112px);font-weight:950;letter-spacing:-.055em;line-height:.95;max-width:13ch;text-shadow:0 0 60px #ffd60a1f}
+.grad{background-size:220% 100%;animation:shine 5s linear infinite}
+@keyframes shine{to{background-position:220% 0}}
+.hero .lead{font-weight:500;color:#cfcbb8}
+.tag{border-color:#ffd60a55;color:var(--c3);letter-spacing:.06em;font-weight:700;text-transform:uppercase;font-size:11px;box-shadow:0 0 28px -8px #ffd60a66}
+.btn{padding:15px 28px;font-size:16px;border-radius:14px;letter-spacing:.01em}
+.btn.pri{animation:glowbtn 2.6s ease-in-out infinite}
+@keyframes glowbtn{50%{box-shadow:0 0 0 8px #ffd60a1c,0 18px 60px -6px #ffd60acc}}
+.c{border-color:#ffd60a33;background:linear-gradient(160deg,rgba(28,24,6,.85),rgba(12,12,15,.85));transition:.3s}
+.c:hover{transform:translateY(-4px);border-color:var(--c1);box-shadow:0 0 40px -10px #ffd60a99}
+.c h3{font-weight:850;letter-spacing:-.02em}
+h2{font-weight:900;letter-spacing:-.04em}
+.eyebrow{font-size:13px;letter-spacing:.3em}
+.panel{border-color:#ffd60a44;box-shadow:0 30px 140px -30px #ffd60a77,inset 0 0 60px #ffd60a0d}
+.logo i{width:22px;height:22px;border-radius:6px;box-shadow:0 0 24px var(--c1);flex:none}
+.proof span{border-color:#ffd60a33;color:#e8e4cf}

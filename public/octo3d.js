@@ -1,4 +1,5 @@
 // Pulpo 3D sobre un mapa de criptos. Motor 3D propio en canvas 2D (proyección en perspectiva, orden por profundidad):
+import { tr } from '/i18n.js';
 // sin librerías ni WebGL, así funciona en cualquier teléfono y respeta la política de seguridad (solo scripts propios).
 // Todo lo que muestra sale de datos reales del bot: cada isla es una cripto, su altura es la fuerza de la señal y
 // el pulpo va evaluando una por una; cuando el bot compra o suelta, el pulpo va a esa isla y lo ejecuta a la vista.
@@ -16,7 +17,7 @@ const SPECKS = (() => { let x = 12345; const rnd = () => { x = (x * 16807) % 214
 
 export function createOcto3D(cv, d0, opt = {}) {
   const say = (t, hi) => { try { if (opt.onSay && t) opt.onSay(t, hi); } catch { /* sin voz */ } };
-  const ctx = cv.getContext('2d'); const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const ctx = cv.getContext('2d'); { const _ft = ctx.fillText.bind(ctx); const _mt = ctx.measureText.bind(ctx); ctx.fillText = (t, ...r) => _ft(tr(String(t)), ...r); ctx.measureText = (t) => _mt(tr(String(t))); } const dpr = Math.min(2, window.devicePixelRatio || 1);
   const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let d = d0; let W = 340; const H = 340;
   const isl = new Map(); // islas (criptos)

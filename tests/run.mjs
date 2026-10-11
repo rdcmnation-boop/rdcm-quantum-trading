@@ -988,6 +988,10 @@ try { execFileSync('node', [f, '--live'], { stdio: 'pipe' }); } catch (e) { refu
 t('el bot rechaza --live sin I_ACCEPT_RISK=yes', refused);
 t('el bot descargable no contiene llaves de nadie', !bundle.includes(secretPem));
 
+const dictEn = (await import('../public/i18n-en.js')).default;
+t('diccionario ES/EN: pares válidos con los mismos huecos', Array.isArray(dictEn) && dictEn.length > 800 && dictEn.every(([es, en]) => typeof es === 'string' && typeof en === 'string' && en && [...es.matchAll(/\{(\d+)\}/g)].map((m) => m[1]).sort().join() === [...en.matchAll(/\{(\d+)\}/g)].map((m) => m[1]).sort().join()));
+t('landing y legal cargan el selector de idioma y la entrada con logo', fs.readFileSync('public/landing.html', 'utf8').includes('/lang.js') && fs.readFileSync('public/legal.html', 'utf8').includes('/lang.js') && fs.readFileSync('public/landing.html', 'utf8').includes('/splash.js') && fs.readFileSync('public/index.html', 'utf8').includes('/splash.js'));
+
 server.close();
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);
