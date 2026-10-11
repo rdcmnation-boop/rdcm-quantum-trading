@@ -347,6 +347,8 @@ t('backtest exige sesión', (await nobody('POST', '/api/backtest', { strategy: '
 
 // ---------- Cerebro, Director y exportación ----------
 console.log('Cerebro y Director (el dueño decide)');
+const gDef = (await O2('GET', '/api/owner/brain')).body.guardrails;
+await O2('PUT', '/api/owner/guardrails', { autopilot: { enabled: false } }); // estas pruebas verifican el flujo manual
 const v0 = await store.getSetting('brain_version', '1');
 const run = await O2('POST', '/api/owner/brain/run');
 t('el Director corre todos los agentes disponibles', run.status === 200 && ['problem_processing', 'owner_analytics', 'trading_improvement', 'ml_models'].every((n) => run.body.summary.some((x) => x.agent === n)));
@@ -499,8 +501,8 @@ t('un cliente no ve el resumen del Director', (await A('GET', '/api/owner/briefi
 
 console.log('Piloto automático, deshacer y cumplimiento');
 {
-  const g0 = (await O2('GET', '/api/owner/brain')).body.guardrails;
-  t('piloto automático apagado por defecto y limitado a tipos de bajo riesgo', g0.autopilot.enabled === false && g0.autopilot.kinds.every((k) => ['model_update', 'strategy_defaults'].includes(k)));
+  const g0 = gDef;
+  t('piloto automático encendido por defecto (reversible) y limitado a tipos de bajo riesgo', g0.autopilot.enabled === true && g0.autopilot.kinds.every((k) => ['model_update', 'strategy_defaults'].includes(k)));
   const gset = await O2('PUT', '/api/owner/guardrails', { autopilot: { enabled: true, kinds: ['model_update', 'agent_toggle', 'risk_alert'] } });
   t('el piloto nunca puede incluir agentes, riesgo ni seguridad (se filtran)', gset.body.guardrails.autopilot.enabled === true && gset.body.guardrails.autopilot.kinds.join() === 'model_update');
   const vBefore = Number(await store.getSetting('brain_version', '1'));
@@ -690,12 +692,31 @@ console.log('Exchanges en vivo y reglas de Robinhood');
     posted.length = 0; posted.push({}, {});
     const r3 = await rhReal.marketSell(creds, { symbol: 'BTC-USD', qty: 0.001 });
     t('Robinhood: el motivo del error del exchange llega al cliente', r3.ok === false && /Insufficient buying power/.test(r3.error), JSON.stringify(r3));
+    // Si Robinhood dice a qué incremento redondear, se reintenta una vez con ese incremento
+    const bodies = []; const prevF = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const j = (o, ok = true, status = 200) => ({ ok, status, text: async () => JSON.stringify(o) });
+      if (String(url).includes('/trading_pairs/')) return j({ results: [] });
+      if (opts.method === 'POST') { bodies.push(JSON.parse(opts.body)); return bodies.length === 1 ? j({ errors: [{ detail: 'Your asset quantity has too much precision. Please round it to nearest 0.010000000000000000 and try placing your order again.' }] }, false, 400) : j({ id: 'o-2' }); }
+      return j({});
+    };
+    const r4 = await rhReal.marketSell(creds, { symbol: 'XRP-USD', qty: 12.3456 });
+    globalThis.fetch = prevF;
+    t('Robinhood: ante "too much precision" reintenta con el incremento indicado', r4.ok === true && bodies.length === 2 && bodies[1].market_order_config.asset_quantity === '12.34', JSON.stringify(bodies));
     const act = await rhReal.activity(creds);
     t('Robinhood: actividad reciente normalizada', act.length === 1 && act[0].symbol === 'DOGE-USD' && act[0].state === 'filled' && act[0].qty === 12 && r1 !== undefined);
   } finally { globalThis.fetch = realFetch; }
   const F = client();
   await F('POST', '/api/auth/register', { email: 'f-live@x.com', password: 'Clave-De-Fer-12345', acceptTos: true });
   t('/api/exchange/live sin conexiones devuelve lista vacía', (await F('GET', '/api/exchange/live')).body.exchanges.length === 0);
+  const dsh = (await F('GET', '/api/dashboard')).body;
+  t('tablero: separa dinero real de papel y trae lo que aprendió el Cerebro', dsh.real && dsh.paper && dsh.real.orders === 0 && dsh.brain && 'qualified' in dsh.brain && typeof dsh.brain.auto === 'boolean');
+  const Fid = (await F('GET', '/api/me')).body.user.id;
+  await store.addOrder({ user_id: Fid, mode: 'live', exchange: 'robinhood', symbol: 'DOGE-USD', side: 'buy', usd: 2, qty: 12, price: 0.16, status: 'error', note: 'too much precision' });
+  await store.addOrder({ user_id: Fid, mode: 'live', exchange: 'robinhood', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0002, price: 50000, status: 'ok' });
+  await store.addOrder({ user_id: Fid, mode: 'paper', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0002, price: 50000, status: 'ok' });
+  const dsh2 = (await F('GET', '/api/dashboard')).body;
+  t('tablero: lo real cuenta solo órdenes reales, muestra el error con su motivo y no mezcla con papel', dsh2.real.orders === 1 && dsh2.real.errors === 1 && dsh2.real.invested_now === 10 && /precision/.test(dsh2.real.last_error) && dsh2.paper.orders === 1);
   t('/api/exchange/live exige sesión', (await nobody('GET', '/api/exchange/live')).status === 401);
 }
 

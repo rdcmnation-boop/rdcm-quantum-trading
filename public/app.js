@@ -149,6 +149,28 @@ function botNowHtml(b) {
     ${b.recent.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${b.recent.slice(0, 6).map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} ${esc(o.symbol)} <span class="chip ${o.mode === 'live' ? 'live' : 'paper'}">${o.mode === 'live' ? 'REAL' : 'papel'}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : `<span class="neg">${esc(o.status)}</span>`}</td></tr>${o.status !== 'ok' && o.note ? `<tr><td colspan="4" class="neg" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.note)}</td></tr>` : ''}`).join('')}</tbody></table></div>` : ''}
     ${b.enabled ? '<p class="muted" style="font-size:11px;margin:6px 0 0">El bot trabaja mientras el servidor está despierto. En el plan gratis de Render se duerme sin visitas: usa UptimeRobot sobre /api/health.</p>' : ''}`;
 }
+const until = (t) => { if (!t) return '—'; const m = Math.round((t - Date.now()) / 60000); return m <= 0 ? 'en breve' : m < 60 ? `en ${m} min` : `en ${Math.round(m / 60)} h`; };
+function dashHtml(d) {
+  const r = d.real; const p = d.paper; const br = d.brain;
+  const none = !r.orders && !r.errors;
+  const rows = r.last.map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} <b>${esc(o.symbol.replace('-USD', ''))}</b> <span class="chip">${esc(o.exchange)}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : '<span class="neg">error</span>'}</td></tr>${o.note ? `<tr><td colspan="4" class="neg" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.note)}</td></tr>` : ''}`).join('');
+  return `<div class="real ${r.total > 0 ? 'up' : r.total < 0 ? 'down' : ''}">
+      <div class="row" style="justify-content:space-between"><span class="chip live">DINERO REAL</span><span class="muted" style="font-size:12px">${d.bot.enabled && d.bot.mode === 'live' ? '● bot real activo' : 'bot real apagado'}</span></div>
+      <div class="bigv ${cls(r.total)}">${none ? '$0.00' : money(r.total)}</div>
+      <div class="muted" style="font-size:12px">resultado total real · ${money(r.realized)} cerrado · ${r.unrealized === null ? '—' : money(r.unrealized)} abierto</div>
+      <div class="kpis" style="margin-top:8px"><div class="kpi"><div class="l">Invertido ahora</div><div class="v" style="font-size:16px">${money(r.invested_now)}</div></div>
+        <div class="kpi"><div class="l">Compras / ventas</div><div class="v" style="font-size:16px">${r.orders}</div><div class="s">${money(r.bought, 0)} / ${money(r.sold, 0)}</div></div>
+        <div class="kpi"><div class="l">Errores</div><div class="v ${r.errors ? 'neg' : ''}" style="font-size:16px">${r.errors}</div></div></div>
+      ${none ? '<p class="muted" style="margin:8px 0 0">Aún no hay operaciones reales. Ve a Bot → «Real: comprar ya» (con trading real activado en Ajustes).</p>' : ''}
+      ${r.holdings.length ? `<div class="row" style="margin-top:8px">${r.holdings.map((h) => `<span class="chip"><b>${esc(h.symbol.replace('-USD', ''))}</b> ${h.value !== null ? money(h.value) : '—'} · ${esc(h.venue || '')}</span>`).join(' ')}</div>` : ''}
+      ${rows ? `<div class="scroll" style="margin-top:6px"><table><tbody>${rows}</tbody></table></div>` : ''}
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Papel (sin dinero): <b class="${cls(p.total)}">${money(p.total)}</b> · ${p.orders} operaciones simuladas</div>
+    <div class="brainline"><b>Cerebro</b> ${br.auto ? '<span class="chip paper">aprende y se actualiza solo</span>' : ''}
+      <div class="muted" style="font-size:12px">Escáner ${esc(ago(br.scanner_t))}: ${br.qualified} validadas de ${br.scanned}${br.top.length ? ` (${esc(br.top.map((s) => s.replace('-USD', '')).join(', '))})` : ''} · mercado ${esc(br.regime ? br.regime.label : '—')} · próxima revisión ${esc(until(br.next_run))} · v${br.version}</div>
+      ${br.lessons.length ? `<div class="muted" style="font-size:12px">Último aprendizaje: ${esc(br.lessons[0].text)}</div>` : ''}</div>`;
+}
+
 function liveHtml(d) {
   if (!d || !d.exchanges.length) return '<p class="muted">Conecta Robinhood o Coinbase en <b>Conectar</b> y aquí verás tu saldo, tus órdenes reales y los precios en vivo.</p>';
   return d.exchanges.map((e) => {
@@ -158,6 +180,10 @@ function liveHtml(d) {
     return `<div class="c2" style="margin-bottom:8px"><div class="row" style="justify-content:space-between"><b>${esc(e.exchange === 'robinhood' ? 'Robinhood' : 'Coinbase')}</b><span class="muted" style="font-size:12px">${esc(e.label || '')}</span></div>
       <div class="row" style="margin:6px 0">${bal}</div>${q}${o}${e.errors.length ? `<div class="msg err" style="font-size:12px">${e.errors.map(esc).join('<br>')}</div>` : ''}</div>`;
   }).join('') + `<p class="muted" style="font-size:11px;margin:0">Datos leídos de tu exchange ${esc(ago(d.t))}. «vs Coinbase»: cuánto más caro (+) o barato (−) es comprar en Robinhood frente al precio de Coinbase ahora.</p>`;
+}
+async function refreshDash() {
+  const el = $('#dash_b'); if (!el) return;
+  try { el.innerHTML = dashHtml(await api('GET', '/api/dashboard')); } catch (e) { el.innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
 }
 async function refreshLive(force = false) {
   const el = $('#live_b'); if (!el) return;
@@ -176,6 +202,7 @@ async function tabResumen(main) {
     <td class="r">${num(p.qty, 8)}</td><td class="r">${money(p.cost)}</td><td class="r">${money(p.value)}</td>
     <td class="r ${cls(p.unrealized)}">${money(p.unrealized)}</td><td class="r ${cls(p.realized)}">${money(p.realized)}</td></tr>`).join('');
   main.innerHTML = `
+  <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
   <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>
   <div class="banner">El modo <b>papel</b> simula con precios reales y <b>no mueve dinero</b>. Lo simulado no garantiza resultados reales.</div>
@@ -188,10 +215,10 @@ async function tabResumen(main) {
     ${rows ? `<div class="scroll"><table><thead><tr><th>Modo</th><th>Par</th><th class="r">Cantidad</th><th class="r">Costo</th><th class="r">Valor</th><th class="r">No realizado</th><th class="r">Realizado</th></tr></thead><tbody>${rows}</tbody></table></div>`
       : '<p class="muted">Aún no hay órdenes. Configura tu bot en la pestaña Bot (empieza en modo papel).</p>'}
   </div>`;
-  bindBotNow(); refreshLive(); $('#live_r').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
+  bindBotNow(); refreshLive(); refreshDash(); $('#live_r').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
   let n = 0; let waiting = bn.enabled && !bn.last;
   tabTimer = setInterval(async () => {
-    n++; if (n % 8 === 0) refreshLive(); if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
+    n++; if (n % 8 === 0) { refreshLive(); refreshDash(); } if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
     try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
   }, 4000);
 }
@@ -291,6 +318,17 @@ async function tabBot(main) {
     <p class="muted" style="font-size:13px;margin:0 0 8px">El <b>Cerebro AUTO</b> prueba todas las criptos grandes con costos reales de Coinbase y Robinhood y solo compra las que pasan la prueba, en el exchange más barato. Empieza en papel (sin dinero).</p>
     <div class="row"><button class="btn" id="q_auto">▶ Cerebro AUTO · papel</button><button class="btn ghost" id="q_demo">Demo: BTC cada 15 min</button></div><div class="msg" id="qm"></div>
   </div>
+  <div class="card" data-open><h2>Real: comprar ya</h2>
+    ${live && connections.length ? `<p class="muted" style="font-size:13px;margin:0 0 8px">Compra con dinero REAL en tu exchange, una orden pequeña cada cierto tiempo (DCA), empezando de inmediato. Empieza con montos mínimos.</p>
+    <form id="rf" class="form">
+      <label>Exchange<select name="connectionId">${connections.map((c) => `<option value="${esc(c.id)}" ${c.exchange === 'robinhood' ? 'selected' : ''}>${esc(c.exchange)} · ${esc(c.label)}</option>`).join('')}</select></label>
+      <label>Cripto<input name="symbol" list="symlist" value="${cfg.symbol && cfg.symbol !== 'AUTO' ? esc(cfg.symbol) : 'BTC-USD'}" autocomplete="off" autocapitalize="characters"></label>
+      <label>USD por compra<input name="usd" type="number" min="1" step="any" value="5"></label>
+      <label>Cada (minutos)<input name="intervalMin" type="number" min="15" value="60"></label>
+      <label class="check full"><input type="checkbox" name="ack"><span>Entiendo que es dinero REAL, que puedo perder todo lo que invierta y que Quantum Trading no es asesor financiero.</span></label>
+      <div class="full row"><button class="btn" type="submit">▶ Comprar ya (real)</button></div><div class="msg full" id="rm"></div>
+    </form>` : `<p class="muted" style="font-size:13px;margin:0">${connections.length ? 'El trading real está apagado. Dueño: Más → Ajustes → Trading REAL → «Solo yo».' : 'Primero conecta tu exchange en <b>Conectar</b>.'}</p>`}
+  </div>
   <div class="card"><h2>Avanzado: elegir yo la cripto y la estrategia</h2>
     <form id="bf" class="form">
       <label>Cripto (todas las listadas en Coinbase / Robinhood)<input name="symbol" list="symlist" value="${esc(cfg.symbol)}" autocomplete="off" autocapitalize="characters" spellcheck="false"><datalist id="symlist"><option value="AUTO">AUTO · el Cerebro elige</option>${(state.uni || state.me.symbols.map((s) => ({ s, cb: true, rh: null }))).map((x) => `<option value="${esc(x.s)}">${esc(x.s)}${x.cb ? ' · Coinbase' : ''}${x.rh ? ' · Robinhood' : ''}</option>`).join('')}</datalist><span class="muted" id="symhint" style="font-size:12px"></span></label>
@@ -330,6 +368,16 @@ async function tabBot(main) {
     <div class="row"><button class="btn ghost" id="bt_run" type="button">Correr backtest</button></div>
     <div id="bt_out" class="scroll"></div><div class="msg" id="bt_m"></div>
   </div>`;
+  const rf = $('#rf');
+  if (rf) rf.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!rf.ack.checked) return setMsg($('#rm'), 'Marca la confirmación de riesgo para continuar.');
+    const usd = Number(rf.usd.value);
+    try {
+      await quickStart({ symbol: rf.symbol.value.trim().toUpperCase(), strategy: 'dca', usd, intervalMin: Number(rf.intervalMin.value), mode: 'live', connectionId: rf.connectionId.value,
+        maxOrderUsd: usd, maxDailyUsd: Math.min(state.me.limits.hardMaxDaily, usd * 24), paperExchange: 'coinbase', liveAck: true, enabled: true });
+    } catch (err) { setMsg($('#rm'), err.message); }
+  });
   $('#q_auto').addEventListener('click', () => quickStart(AUTO_PRESET).catch((e) => setMsg($('#qm'), e.message)));
   $('#q_demo').addEventListener('click', () => quickStart(DEMO_PRESET).catch((e) => setMsg($('#qm'), e.message)));
   const hint = () => {
