@@ -252,3 +252,14 @@ th,td{padding:6px 5px;font-size:13px}
 .vl.ok span:first-child{color:#4ade80}.vl.alerta span:first-child{color:#ff5d4d}.vl.info span:first-child{color:#ffd60a}
 
 .langsw{display:inline-flex;border:1px solid #ffd60a66;border-radius:999px;overflow:hidden;margin-right:8px;vertical-align:middle}.langsw button{background:transparent;color:#ffd60a;border:0;padding:4px 9px;font:700 11px system-ui;cursor:pointer;letter-spacing:.5px}.langsw button.on{background:#ffd60a;color:#000}.langsw.float{position:fixed;top:calc(env(safe-area-inset-top,0px) + 6px);right:8px;z-index:60;background:#000c;margin:0;box-shadow:0 0 10px #ffd60a33}
+
+/* Compacto y fino */
+.card{padding:12px 14px}
+.card h2{font-size:12px;letter-spacing:.14em}
+.bviz canvas{height:300px}
+.bviz .bstat div{padding:6px 8px}
+.bviz .bstat b{font-size:15px}
+.bviz .brows,.bviz .bstream{max-height:132px;overflow:auto}
+.bviz .bwhy{max-height:150px;overflow:auto}
+table td{padding-block:6px}
+.langsw.float{top:auto;right:auto;left:8px;bottom:calc(env(safe-area-inset-bottom,0px) + 74px);opacity:.88;transform:scale(.9);transform-origin:left bottom}

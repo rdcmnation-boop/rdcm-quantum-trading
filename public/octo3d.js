@@ -153,6 +153,18 @@ export function createOcto3D(cv, d0, opt = {}) {
     }
     for (const r of rings) { r.r += dt * 4; const a = Math.max(0, 1 - r.r / 5); if (a <= 0) r.dead = true; else groundCircle(r.x, r.z, r.r, null, rgba(r.col, a * 0.8), 2); }
     for (let i = rings.length - 1; i >= 0; i--) if (rings[i].dead) rings.splice(i, 1);
+    // red dorada: la nave atrapa todo el mapa (hilos hacia cada cripto, anillo que las une y cúpula de malla)
+    if (STYLE === 'ufo' && isl.size) {
+      const alt2 = 2.7 + Math.sin(oct.bob * 1.8) * 0.16; const uc = proj(oct.x, alt2, oct.z); const list = [...isl.values()].filter((n) => n.al > 0.2).map((n) => ({ n, p: proj(n.x, 0.15, n.z), ang: Math.atan2(n.z, n.x) })).sort((a, b) => a.ang - b.ang);
+      ops.push({ z: 99, d: () => {
+        ctx.save(); ctx.lineCap = 'round';
+        list.forEach((e, i) => { const nx = list[(i + 1) % list.length]; const pulse = 0.5 + 0.5 * Math.sin(sec * 2 + i);
+          ctx.strokeStyle = `rgba(255,214,10,${0.1 + 0.1 * pulse})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(uc.x, uc.y); ctx.quadraticCurveTo((uc.x + e.p.x) / 2, Math.min(uc.y, e.p.y) - 18, e.p.x, e.p.y - 6); ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,214,10,.16)'; ctx.beginPath(); ctx.moveTo(e.p.x, e.p.y); ctx.lineTo(nx.p.x, nx.p.y); ctx.stroke();
+          const u = ((sec * 0.5 + i / list.length) % 1); const px = uc.x + (e.p.x - uc.x) * u; const py = uc.y + (e.p.y - 6 - uc.y) * u - Math.sin(u * Math.PI) * 14;
+          ctx.fillStyle = 'rgba(255,241,168,.95)'; ctx.beginPath(); ctx.arc(px, py, 1.7, 0, TAU); ctx.fill(); });
+        ctx.restore(); } });
+    }
     // sombra del pulpo
     groundCircle(oct.x, oct.z, 1.2, 'rgba(0,0,0,.35)', null);
     if (STYLE === 'ufo') {
@@ -331,7 +343,7 @@ export function createOcto3D(cv, d0, opt = {}) {
     for (let i = floaters.length - 1; i >= 0; i--) if (floaters[i].life <= 0) floaters.splice(i, 1);
     // HUD
     ctx.fillStyle = 'rgba(8,8,11,.72)'; ctx.beginPath(); ctx.roundRect(8, 8, Math.min(W - 16, 300), 38, 8); ctx.fill();
-    ctx.textAlign = 'left'; ctx.fillStyle = '#ffd60a'; ctx.font = '700 11px ui-monospace,Menlo,monospace'; ctx.fillText(`● ${hud.title}`.toUpperCase(), 16, 24);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#ffd60a'; ctx.font = '700 11px ui-monospace,Menlo,monospace'; ctx.fillText(`● ${tr(hud.title)}`.toUpperCase(), 16, 24);
     ctx.fillStyle = '#c9c6b5'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.fillText(hud.sub.slice(0, 46), 16, 38);
     if (!still) requestAnimationFrame(frame);
   };

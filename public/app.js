@@ -150,11 +150,12 @@ function botNowHtml(b) {
     ${b.recent.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${b.recent.slice(0, 6).map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} ${esc(o.symbol)} <span class="chip ${o.mode === 'live' ? 'live' : 'paper'}">${o.mode === 'live' ? 'REAL' : 'papel'}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : `<span class="neg">${esc(o.status)}</span>`}</td></tr>${o.status !== 'ok' && o.note ? `<tr><td colspan="4" class="neg" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.note)}</td></tr>` : ''}`).join('')}</tbody></table></div>` : ''}
     ${b.enabled ? '<p class="muted" style="font-size:11px;margin:6px 0 0">El bot trabaja mientras el servidor está despierto. En el plan gratis de Render se duerme sin visitas; con un plan de pago de Render queda siempre despierto.</p>' : ''}`;
 }
+const friendlyNote = (n) => { const s = String(n || ''); if (/too much precision|nearest\s+[0-9.]+/i.test(s)) return 'Robinhood pidió redondear la cantidad de la orden. El bot ya lo corrige solo y reintenta.'; if (/insufficient|buying power|not enough/i.test(s)) return 'Saldo insuficiente en el exchange para esta orden.'; if (/429|too many requests|rate/i.test(s)) return 'El exchange pidió ir más despacio; el bot reintenta solo.'; return s.length > 140 ? `${s.slice(0, 137)}…` : s; };
 const until = (t) => { if (!t) return '—'; const m = Math.round((t - Date.now()) / 60000); return m <= 0 ? 'en breve' : m < 60 ? `en ${m} min` : `en ${Math.round(m / 60)} h`; };
 function dashHtml(d) {
   const r = d.real; const p = d.paper; const br = d.brain;
   const none = !r.orders && !r.errors;
-  const rows = r.last.map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} <b>${esc(o.symbol.replace('-USD', ''))}</b> <span class="chip">${esc(o.exchange)}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : o.old ? '<span class="muted">error antiguo</span>' : '<span class="neg">error</span>'}</td></tr>${o.note ? `<tr><td colspan="4" class="${o.old ? 'muted' : 'neg'}" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.old ? (/precision/i.test(o.note) ? 'Hace horas. Ahora el bot reintenta solo con el incremento que indica Robinhood (aún sin confirmar en vivo). ' : 'Hace horas. ') : '')}${esc(o.note)}</td></tr>` : ''}`).join('');
+  const rows = r.last.map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} <b>${esc(o.symbol.replace('-USD', ''))}</b> <span class="chip">${esc(o.exchange)}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : o.old ? '<span class="muted">error antiguo</span>' : '<span class="neg">error</span>'}</td></tr>${o.note ? `<tr><td colspan="4" class="${o.old ? 'muted' : 'neg'}" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.old ? (/precision/i.test(o.note) ? 'Hace horas. Ahora el bot reintenta solo con el incremento que indica Robinhood (aún sin confirmar en vivo). ' : 'Hace horas. ') : '')}${esc(friendlyNote(o.note))}</td></tr>` : ''}`).join('');
   const showStart = !(d.bot.enabled && d.bot.mode === 'live');
   const start = !showStart ? '' : d.can_live && d.connections.length ? `<form id="ds_f" class="startbox">
       <b>▶ Encender trading automático REAL</b>
@@ -410,7 +411,7 @@ const vizWhy = (d) => (d.thoughts || []).map((x) => `<div class="w ${x.k}"><b>${
 const briefBtn = (d) => (d.city && voice.supported ? '<button type="button" class="bbrief">🎙 Informe del Cerebro</button>' : '');
 const voiceLbl = () => (voice.on ? '🔊 Voz activa' : '🔈 Toca para oírlo');
 function vizHtml(d, id) {
-  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${briefBtn(d)}${(d.octopus || d.city) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
+  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${briefBtn(d)}${(d.octopus || d.city || d.ufo) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
     <div class="bstat">${vizStat(d)}</div><div class="brows" ${d.rows && d.rows.length ? '' : 'hidden'}>${vizRows(d)}</div>
     ${d.city ? '<div class="bdetail" hidden></div>' : ''}<div class="bwhy" ${d.thoughts && d.thoughts.length ? '' : 'hidden'}>${vizWhy(d)}</div><div class="bstream">${vizStream(d)}</div><div class="bappr">${esc(d.approval)}</div></div>`;
 }
@@ -442,7 +443,7 @@ function botViz(bn) {
   for (const o of bn.recent || []) if (o.status === 'ok') stream.push({ t: o.t, text: `${o.side === 'buy' ? 'compra' : 'vende'} ${base(o.symbol)} ${money(o.usd)}${o.mode === 'live' ? ' (REAL)' : ' (papel)'}` });
   const rg = octo && octo.regime ? ({ bull: 'alcista', bear: 'bajista', volatile: 'volátil', range: 'lateral', unknown: 'sin datos' }[octo.regime] || octo.regime) : null;
   const rows = octo ? octo.items.map((it) => ({ sym: base(it.symbol), state: (OSTATE[it.state] || [0, it.state])[1], kind: (OSTATE[it.state] || ['idle'])[0], score: it.score, why: it.why || '', note: it.held ? `${it.gain_pct >= 0 ? '+' : ''}${(it.gain_pct || 0).toFixed(2)} %` : it.edge ? `${it.edge.toFixed(1)}× costo` : '' })) : null;
-  return { center: 'IA', nodes, stream, rows, thoughts: octo ? (octo.thoughts || []) : [], ot: octo ? octo.t : 0, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? (octo ? 'Superintelligence · en vivo' : 'Cerebro · en vivo') : 'Cerebro · apagado',
+  return { center: 'IA', ufo: true, nodes, stream, rows, thoughts: octo ? (octo.thoughts || []) : [], ot: octo ? octo.t : 0, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? 'Superintelligence · en vivo' : 'Cerebro · apagado',
     stats: [['posiciones', held.length], ['validadas', ok.length], ['mercado', rg || '—'], ['revisó', agoS(bn.last_run)]],
     approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
 }
@@ -514,7 +515,7 @@ let vizCtl = null; let vizMode = '';
 // Con el bot en AUTO el Cerebro es un OVNI con IA en 3D que recorre el mapa de criptos; si no, la red de nodos. Si el 3D falla, cae a la red.
 async function mountViz(bn) {
   const r = $('#bz_v'); if (!r) return; const d = botViz(bn);
-  if (d.octopus) { try { const m = await import('/octo3d.js'); if (!document.body.contains(r)) return; vizCtl = m.createOcto3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi) }); bindVoice(r, d); vizMode = '3d'; r.dataset.on = '1'; r.classList.add('is3d'); return; } catch { /* usa la red */ } }
+  if (d.octopus || d.ufo) { try { const m = await import('/octo3d.js'); if (!document.body.contains(r)) return; vizCtl = m.createOcto3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi) }); bindVoice(r, d); vizMode = '3d'; r.dataset.on = '1'; r.classList.add('is3d'); return; } catch { /* usa la red */ } }
   vizCtl = brainViz(r, d); vizMode = '2d'; r.dataset.on = '1'; r.classList.remove('is3d');
 }
 // Voz: botón de activar/silenciar y narración de lo nuevo que decide el pulpo (solo lo que llegó después de abrir la pantalla).
@@ -531,17 +532,17 @@ function narrate(d) {
 // Actualiza SIN recrear: el pulpo sigue nadando y las islas se reacomodan según lo que el bot decide.
 function updateViz(bn) {
   const r = $('#bz_v'); if (!r) return; const d = botViz(bn);
-  if (vizCtl && r.dataset.on === '1' && vizMode === (d.octopus ? '3d' : '2d')) { vizCtl.update(d); vizFill(r, d); narrate(d); return; }
+  if (vizCtl && r.dataset.on === '1' && vizMode === ((d.octopus || d.ufo) ? '3d' : '2d')) { vizCtl.update(d); vizFill(r, d); narrate(d); return; }
   const c = $('canvas', r); if (c) c.replaceWith(c.cloneNode(false)); r.dataset.on = ''; vizFill(r, d); mountViz(bn);
 }
-const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
+const myBotCards = (bn) => `<div class="card" data-open id="bz"><h2>Cerebro en vivo</h2><div id="bz_b">${vizHtml(botViz(bn), 'bz_v')}</div></div>
+  <div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
   <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
-  <div class="card" data-open id="res"><h2>Resultados por periodo</h2><div id="res_b" class="muted">Calculando…</div></div>
-  <div class="card" data-open id="ver"><h2>Verificación con tu exchange</h2><div id="ver_b"><p class="muted" style="margin:0 0 8px">Compara lo que el bot anotó con lo que reporta tu exchange: saldos y órdenes.</p><button class="btn small" id="ver_go" type="button">Verificar ahora</button></div></div>
+  <div class="card" id="res"><h2>Resultados por periodo</h2><div id="res_b" class="muted">Calculando…</div></div>
+  <div class="card" id="ver"><h2>Verificación con tu exchange</h2><div id="ver_b"><p class="muted" style="margin:0 0 8px">Compara lo que el bot anotó con lo que reporta tu exchange: saldos y órdenes.</p><button class="btn small" id="ver_go" type="button">Verificar ahora</button></div></div>
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
-  <div class="card" data-open id="bz"><h2>Cerebro en vivo</h2><div id="bz_b">${vizHtml(botViz(bn), 'bz_v')}</div></div>
-  <div class="card" data-open id="pc"><h2>Gráfico de precio</h2><div id="pc_c">${priceCardHtml(bn)}</div></div>
-  <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
+  <div class="card" id="pc"><h2>Gráfico de precio</h2><div id="pc_c">${priceCardHtml(bn)}</div></div>
+  <div class="card"><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
 function startMyBot(bn) {
   bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); loadResults(); bindVerify(); bindPrice(); mountViz(bn);
   const lr = $('#live_r'); if (lr) lr.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });

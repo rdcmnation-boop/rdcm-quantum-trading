@@ -91,7 +91,7 @@ export function createCity3D(cv, d0, opt = {}) {
     // HUD: recorre los agentes y cuenta qué hace cada uno
     if (sec > focusUntil && A.length) { if (sel >= 0) sel = -1; focus = (focus + 1) % A.length; focusUntil = sec + 3.2; const a = A[focus]; say(a.say || `${a.label}. ${a.sub || ''}`, false); hud = { title: `${a.label}${a.kind === 'off' ? ' · apagado' : a.kind === 'ok' ? ' · activo' : ' · en pausa'}`, sub: a.sub || 'sin notas todavía' }; }
     ctx.fillStyle = 'rgba(8,8,11,.72)'; ctx.beginPath(); ctx.roundRect(8, 8, Math.min(W - 16, 330), 38, 8); ctx.fill();
-    ctx.textAlign = 'left'; ctx.fillStyle = '#ffd60a'; ctx.font = '700 11px ui-monospace,Menlo,monospace'; ctx.fillText(`● ${hud.title}`.toUpperCase().slice(0, 40), 16, 24);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#ffd60a'; ctx.font = '700 11px ui-monospace,Menlo,monospace'; ctx.fillText(`● ${tr(hud.title)}`.toUpperCase().slice(0, 40), 16, 24);
     ctx.fillStyle = '#c9c6b5'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.fillText(String(hud.sub).slice(0, 48), 16, 38);
     if (!still) requestAnimationFrame(frame);
   };
