@@ -62,7 +62,7 @@ function viewAuth() {
 
 // ============================ Estructura ============================
 const CLIENT_TABS = [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['exchanges', 'Exchanges'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
-const OWNER_TABS = [['o_hoy', 'Hoy'], ['o_cerebro', 'Cerebro'], ['o_launch', 'Lanzamiento'], ['o_overview', 'Analíticas'], ['o_clientes', 'Clientes'], ['o_export', 'Exportar'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
+const OWNER_TABS = [['o_hoy', 'Hoy'], ['o_cerebro', 'Cerebro'], ['o_launch', 'Lanzamiento'], ['o_clientes', 'Clientes'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
 
 function shell() {
   const owner = state.user.role === 'owner';
@@ -73,15 +73,19 @@ function shell() {
       <div class="brand"><small>${owner ? 'Consola del dueño' : 'RDCMNATION'}</small>Quantum Trading</div>
       <div class="who"><span title="${esc(state.user.email)}">${esc(state.user.email)}</span><button class="btn ghost small" id="out">Salir</button></div>
     </div>
-    <nav>${owner ? `${tabs(OWNER_TABS)}<span class="sep"></span>${tabs(CLIENT_TABS)}` : tabs(CLIENT_TABS)}</nav>
+    <nav>${owner ? `${tabs(OWNER_TABS)}<span class="sep"></span><button id="vc" class="${state.showClient ? 'on' : ''}">Vista cliente</button>` : tabs(CLIENT_TABS)}</nav>
+    ${owner && state.showClient ? `<nav>${tabs(CLIENT_TABS)}</nav>` : ''}
     <div id="main"></div>
     <p class="muted" style="font-size:12px">Quantum Trading es una herramienta de software. No es asesoría de inversión ni custodio de fondos. Operar cripto implica riesgo de perder todo el dinero. <a href="/legal.html" target="_blank" rel="noopener">Legal</a></p>
   </div>`;
-  document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => { state.tab = b.dataset.t; shell(); loadTab(); }));
+  document.querySelectorAll('nav button[data-t]').forEach((b) => b.addEventListener('click', () => { state.tab = b.dataset.t; shell(); loadTab(); }));
+  const vc = $('#vc'); if (vc) vc.addEventListener('click', () => { state.showClient = !state.showClient; if (state.showClient) state.tab = 'resumen'; else if (!state.tab.startsWith('o_')) state.tab = 'o_hoy'; shell(); loadTab(); });
   $('#out').addEventListener('click', async () => { try { await api('POST', '/api/auth/logout'); } catch { /* ya salió */ } state.user = null; state.me = null; render(); });
 }
 
+let tabTimer = null;
 async function loadTab() {
+  if (tabTimer) { clearInterval(tabTimer); tabTimer = null; }
   if (state.user.role === 'owner' && !state.user.totp && state.tab.startsWith('o_') && state.tab !== 'o_ajustes') { state.tab = 'o_ajustes'; shell(); }
   const main = $('#main');
   main.innerHTML = '<div class="card muted">Cargando…</div>';
@@ -94,12 +98,31 @@ async function loadTab() {
 }
 
 // ============================ Cliente ============================
+function botNowHtml(b) {
+  const actTxt = { buy: 'Comprar', sell: 'Vender', hold: 'Mantener' };
+  const l = b.last;
+  const fresh = b.last_run && Date.now() - b.last_run < 180000;
+  const status = !b.enabled ? '<span class="chip">Apagado</span>' : fresh ? '<span class="chip paper">● Activo</span>' : '<span class="chip">Esperando ciclo</span>';
+  const p = b.position;
+  return `<div class="row" style="justify-content:space-between"><div class="row"><b>${esc(b.symbol)}</b> ${status}<span class="chip ${b.mode === 'live' ? 'live' : 'paper'}">${b.mode === 'live' ? 'REAL' : 'PAPEL'}</span><span class="chip">${esc(String(b.strategy).toUpperCase())}</span></div>
+      <span class="muted" style="font-size:12px">revisó ${esc(ago(b.last_run))}</span></div>
+    <div class="botnow">${l ? `<span class="act ${esc(l.action)}">${esc(actTxt[l.action] || l.action)}</span> <span class="muted">${esc(l.reason)}</span>` : '<span class="muted">Aún sin decisiones. Enciende el bot en la pestaña Bot.</span>'}</div>
+    <div class="kpis" style="margin-top:8px">
+      <div class="kpi"><div class="l">Resultado total</div><div class="v ${cls(b.total)}">${money(b.total)}</div><div class="s">${money(b.realized)} cerrado</div></div>
+      <div class="kpi"><div class="l">Posición</div><div class="v" style="font-size:16px">${num(p.qty, 6)}</div><div class="s">${p.value !== null ? money(p.value) : '—'} · ${p.unrealized !== null ? `<span class="${cls(p.unrealized)}">${money(p.unrealized)}</span>` : ''}</div></div>
+      <div class="kpi"><div class="l">Curva</div>${spark(b.curve.length > 1 ? b.curve : null, 120, 34)}</div>
+    </div>
+    ${b.errors ? `<div class="msg err">${b.errors} error(es) seguidos del exchange</div>` : ''}
+    ${b.recent.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${b.recent.slice(0, 5).map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} ${esc(o.symbol)}</td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : `<span class="neg">${esc(o.status)}</span>`}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+}
+
 async function tabResumen(main) {
-  const [pnl, bot, conns] = await Promise.all([api('GET', '/api/pnl'), api('GET', '/api/bot'), api('GET', '/api/connections')]);
+  const [pnl, bot, conns, bn] = await Promise.all([api('GET', '/api/pnl'), api('GET', '/api/bot'), api('GET', '/api/connections'), api('GET', '/api/bot/status')]);
   const rows = pnl.positions.map((p) => `<tr><td><span class="chip ${esc(p.mode)}">${p.mode === 'live' ? 'REAL' : 'PAPEL'}</span></td><td>${esc(p.symbol)}</td>
     <td class="r">${num(p.qty, 8)}</td><td class="r">${money(p.cost)}</td><td class="r">${money(p.value)}</td>
     <td class="r ${cls(p.unrealized)}">${money(p.unrealized)}</td><td class="r ${cls(p.realized)}">${money(p.realized)}</td></tr>`).join('');
   main.innerHTML = `
+  <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
   <div class="banner">El modo <b>papel</b> simula operaciones con precios reales y <b>no mueve dinero</b>. Los resultados simulados no garantizan resultados reales.</div>
   <div class="kpis">
     <div class="kpi"><div class="l">Bot</div><div class="v">${bot.cfg.enabled ? 'Activo' : 'Apagado'}</div><div class="s">${esc(bot.cfg.strategy.toUpperCase())} · ${esc(bot.cfg.symbol)} · ${bot.cfg.mode === 'live' ? 'REAL' : 'papel'}</div></div>
@@ -110,42 +133,65 @@ async function tabResumen(main) {
     ${rows ? `<div class="scroll"><table><thead><tr><th>Modo</th><th>Par</th><th class="r">Cantidad</th><th class="r">Costo</th><th class="r">Valor</th><th class="r">No realizado</th><th class="r">Realizado</th></tr></thead><tbody>${rows}</tbody></table></div>`
       : '<p class="muted">Aún no hay órdenes. Configura tu bot en la pestaña Bot (empieza en modo papel).</p>'}
   </div>`;
+  tabTimer = setInterval(async () => { try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) el.innerHTML = botNowHtml(b); } catch { /* reintenta en el próximo ciclo */ } }, 30000);
 }
 
-const GUIDE = {
-  coinbase: ['Entra a Coinbase Developer Platform → API Keys → Create API key.', 'Permisos: <b>View</b> y <b>Trade</b>. <b>NO</b> actives Transfer/retiros.', 'Copia el <b>API key name</b> (empieza con <code>organizations/</code>) y la <b>Private key</b> completa (PEM).'],
-  robinhood: ['En Robinhood (web) → Cuenta → Configuración → Cripto → API Trading → crear credenciales.', 'Copia la <b>API key</b> y la <b>Private key</b> (base64).', 'La API de Robinhood Crypto no permite retiros.'],
+const EXCH = {
+  coinbase: { name: 'Coinbase', url: 'https://portal.cdp.coinbase.com/access/api',
+    steps: ['Abre Coinbase Developer Platform e inicia sesión.', 'Crea una API key nueva (Secret API key).', 'Permisos: marca solo <b>View</b> y <b>Trade</b>. <b>NO</b> marques Transfer/retiros.', 'Copia el <b>API key name</b> (empieza con <code>organizations/</code>) y la <b>Private key</b> completa.'],
+    idLabel: 'API key name', idHint: 'organizations/…/apiKeys/…', secLabel: 'Private key (bloque completo)', secHint: '-----BEGIN EC PRIVATE KEY-----…' },
+  robinhood: { name: 'Robinhood', url: 'https://robinhood.com/account/crypto',
+    steps: ['Abre tu cuenta de Robinhood en la web y entra a Cripto.', 'Crea credenciales de la API de Cripto (si no ves la opción, busca "API Trading").', 'Copia la <b>API key</b> y la <b>Private key</b> (una sola línea).', 'Esta API no permite retiros.'],
+    idLabel: 'API key', idHint: 'rh-api-…', secLabel: 'Private key (una línea)', secHint: 'base64, sin espacios' },
 };
 
 async function tabExchanges(main) {
   const { connections } = await api('GET', '/api/connections');
-  const rows = connections.map((c) => `<tr><td>${esc(c.exchange)}</td><td>${esc(c.label)}</td><td><code>${esc(String(c.key_id).slice(0, 18))}…</code></td>
-    <td>${c.can_transfer ? '<span class="neg">retiros ON</span>' : '<span class="pos">solo trading</span>'}</td>
-    <td class="r"><button class="btn ghost small" data-bal="${esc(c.id)}">Saldos</button> <button class="btn danger small" data-del="${esc(c.id)}">Quitar</button></td></tr>`).join('');
+  const rows = connections.map((c) => `<div class="step-row ok"><span class="dot">✓</span><div class="grow"><b>${esc(EXCH[c.exchange] ? EXCH[c.exchange].name : c.exchange)}</b> <span class="muted">${esc(c.label)}</span>
+    <div class="row" style="margin-top:4px"><span class="chip paper">🔒 cifrada</span><span class="chip">${c.can_transfer ? 'retiros ON' : 'solo trading'}</span></div></div>
+    <button class="btn ghost small" data-bal="${esc(c.id)}">Saldos</button><button class="btn danger small" data-del="${esc(c.id)}">Quitar</button></div>`).join('');
   main.innerHTML = `
-  <div class="card"><h2>Tus conexiones</h2>
-    ${rows ? `<div class="scroll"><table><thead><tr><th>Exchange</th><th>Nombre</th><th>Llave</th><th>Permisos</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Todavía no conectaste ningún exchange.</p>'}
-    <div id="bal" class="msg"></div>
+  <div class="card" data-open><h2>Mis conexiones (${connections.length})</h2>${rows || '<p class="muted">Aún no conectas ningún exchange. Es opcional: puedes usar el modo papel sin conectar nada.</p>'}<div id="bal" class="msg"></div></div>
+  <div class="card" data-open><h2>Conectar un exchange</h2>
+    <div class="row" id="ex_pick"><button class="btn small" data-ex="coinbase">Coinbase</button><button class="btn ghost small" data-ex="robinhood">Robinhood</button></div>
+    <div id="ex_wiz"></div>
   </div>
-  <div class="card" ${rows ? "" : "data-open"}><h2>Conectar un exchange</h2>
+  <details class="card acc"><summary><h2>¿Es seguro? Cómo protegemos tu llave</h2></summary><div class="accb"><ul class="lessons">
+    <li>Solo aceptamos llaves de <b>trading sin retiros</b>; si permite retirar, la rechazamos.</li>
+    <li>Tu llave se <b>cifra (AES-256)</b> antes de guardarse. Nadie la ve, ni el dueño.</li>
+    <li>Cada cuenta es aislada: ningún cliente puede ver datos de otro.</li>
+    <li>Puedes quitarla cuando quieras y se borra al instante.</li></ul></div></details>`;
+  let cur = 'coinbase';
+  const wiz = () => {
+    const e = EXCH[cur];
+    document.querySelectorAll('#ex_pick button').forEach((b) => b.classList.toggle('ghost', b.dataset.ex !== cur));
+    $('#ex_wiz').innerHTML = `
+    <details class="stepbox" open><summary>① Crea la llave en ${esc(e.name)}</summary><ol class="steps">${e.steps.map((x) => `<li>${x}</li>`).join('')}</ol>
+      <a class="btn ghost small" href="${esc(e.url)}" target="_blank" rel="noopener">Abrir ${esc(e.name)} ›</a>
+      <p class="muted" style="font-size:12px">Si el enlace cambió, busca "API" en tu cuenta de ${esc(e.name)}.</p></details>
+    <details class="stepbox" open><summary>② Pégala aquí</summary>
     <form id="cf" class="form">
-      <label>Exchange<select name="exchange"><option value="coinbase">Coinbase Advanced</option><option value="robinhood">Robinhood Crypto</option></select></label>
-      <label>Nombre (opcional)<input name="label" maxlength="60" placeholder="Mi cuenta"></label>
-      <label class="full">API key / key name<input name="keyId" required autocomplete="off"></label>
-      <label class="full">Private key<textarea name="secret" required autocomplete="off" spellcheck="false"></textarea></label>
-      <div class="full"><ol class="steps" id="guide"></ol></div>
-      <div class="full banner">Tu llave se cifra (AES-256) antes de guardarse y solo se usa para operar tu cuenta. <b>Rechazamos llaves con permiso de retiro.</b> Nadie en Quantum Trading puede verla.</div>
-      <button class="btn full" type="submit">Verificar y conectar</button><div class="msg full" id="cm"></div>
-    </form>
-  </div>`;
-  const showGuide = () => { $('#guide').innerHTML = GUIDE[$('#cf [name=exchange]').value].map((x) => `<li>${x}</li>`).join(''); };
-  $('#cf [name=exchange]').addEventListener('change', showGuide); showGuide();
-  $('#cf').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.target));
-    setMsg($('#cm'), 'Verificando con el exchange…', true);
-    try { await api('POST', '/api/connections', f); e.target.reset(); await loadTab(); } catch (err) { setMsg($('#cm'), err.message); }
-  });
+      <label class="full">${esc(e.idLabel)}<input name="keyId" required autocomplete="off" placeholder="${esc(e.idHint)}"></label>
+      <label class="full">${esc(e.secLabel)}<textarea name="secret" required autocomplete="off" spellcheck="false" placeholder="${esc(e.secHint)}"></textarea></label>
+      <label class="full">Nombre (opcional)<input name="label" maxlength="60" placeholder="Mi cuenta"></label>
+      <button class="btn full" type="submit">Verificar y conectar</button><div id="cm" class="full"></div>
+    </form></details>`;
+    $('#cf').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = Object.fromEntries(new FormData(ev.target));
+      $('#cm').innerHTML = '<div class="msg ok">Verificando con el exchange…</div>';
+      try {
+        const r = await api('POST', '/api/connections', { ...f, exchange: cur });
+        $('#cm').innerHTML = `<div class="checks">${r.checks.map((c) => `<div class="${c.ok ? 'pos' : 'neg'}">${c.ok ? '✓' : '✗'} ${esc(c.label)}</div>`).join('')}<div class="pos">✓ Guardada cifrada</div></div>`;
+        setTimeout(loadTab, 1200);
+      } catch (err) {
+        const d = err.data || {};
+        $('#cm').innerHTML = `<div class="checks">${(d.checks || []).map((c) => `<div class="${c.ok ? 'pos' : 'neg'}">${c.ok ? '✓' : '✗'} ${esc(c.label)}</div>`).join('')}<div class="neg"><b>${esc(err.message)}</b></div>${d.hint ? `<div class="muted">${esc(d.hint)}</div>` : ''}</div>`;
+      }
+    });
+  };
+  document.querySelectorAll('#ex_pick button').forEach((b) => b.addEventListener('click', () => { cur = b.dataset.ex; wiz(); }));
+  wiz();
   document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
     if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '¿Seguro?'; return; }
     try { await api('DELETE', `/api/connections/${b.dataset.del}`); await loadTab(); } catch (err) { setMsg($('#bal'), err.message); }
@@ -341,10 +387,13 @@ function spark(vals, w = 160, h = 40) {
 
 async function tabLaunch(main) {
   const r = await api('GET', '/api/owner/readiness');
-  const rows = r.items.map((i) => `<div class="step-row ${i.status}">
+  const goBtn = (g) => (!g ? '' : g.url ? `<a class="btn ghost small" href="${esc(g.url)}" target="_blank" rel="noopener">Abrir ›</a>` : `<button class="btn ghost small" data-go="${esc(g.tab)}">Ir ›</button>`);
+  const rows = r.items.map((i) => `<details class="step ${i.status}"><summary class="step-row ${i.status}">
     <span class="dot">${i.status === 'ok' ? '✓' : '○'}</span>
-    <div class="grow"><b>${esc(i.label)}</b>${i.status === 'todo' ? `<div class="muted" style="font-size:12px">${esc(i.step)}</div>` : ''}</div>
-    ${i.manual ? `<button class="btn ${i.status === 'ok' ? 'ghost' : ''} small" data-step="${esc(i.id)}" data-done="${i.status === 'ok' ? '0' : '1'}">${i.status === 'ok' ? 'Desmarcar' : 'Hecho'}</button>` : ''}</div>`).join('');
+    <div class="grow"><b>${esc(i.label)}</b></div><span class="muted">${i.status === 'todo' ? '▾' : ''}</span></summary>
+    <div class="stepb"><p class="muted" style="margin:0 0 8px">${esc(i.step)}</p>
+      ${i.help ? `<ol class="steps">${i.help.map((h) => `<li>${esc(h)}</li>`).join('')}</ol>` : ''}
+      <div class="row" style="margin-top:10px">${goBtn(i.go)}${i.manual ? `<button class="btn ${i.status === 'ok' ? 'ghost' : ''} small" data-step="${esc(i.id)}" data-done="${i.status === 'ok' ? '0' : '1'}">${i.status === 'ok' ? 'Desmarcar' : 'Marcar como hecho'}</button>` : ''}</div></div></details>`).join('');
   const todo = r.items.filter((i) => i.status === 'todo').length;
   main.innerHTML = `
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Listo para vender</h2><span class="chip ${r.score >= 80 ? 'paper' : ''}">${r.score} %</span></div>
@@ -352,6 +401,7 @@ async function tabLaunch(main) {
     <p class="muted" style="margin:8px 0 0;font-size:13px">${todo ? `Te faltan ${todo} paso${todo === 1 ? '' : 's'}.` : 'Todo marcado. Puedes lanzar.'} Trading real: <b>${r.live_trading ? 'ACTIVADO' : 'apagado'}</b> · Registro: <b>${r.registration_open ? 'abierto' : 'cerrado'}</b></p>
   </div>
   <div class="card">${rows}<div class="msg" id="lm"></div></div>`;
+  document.querySelectorAll('[data-go]').forEach((x) => x.addEventListener('click', () => { state.tab = x.dataset.go; if (!state.tab.startsWith('o_') && state.user.role === 'owner') state.showClient = true; shell(); loadTab(); }));
   document.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', async () => {
     try { await api('PUT', '/api/owner/readiness', { id: b.dataset.step, done: b.dataset.done === '1' }); await loadTab(); } catch (err) { setMsg($('#lm'), err.message); }
   }));
@@ -368,11 +418,14 @@ async function tabCerebro(main) {
     return `<div class="c2"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(sym)} · ${esc(ch.label)}</h3><span class="chip ${ch.validated ? 'paper' : ''}">${ch.validated ? 'validada' : 'sin validar'}</span></div>
       <div class="row" style="margin:8px 0">${spark(l && l.coinbase ? l.coinbase.equity : null)}<span class="muted" style="font-size:12px">${l ? `${(l.candles / 24).toFixed(1)} d en vivo` : 'día 0'}</span></div>
       <div class="scroll"><table><thead><tr><th></th><th class="r">Retorno</th><th class="r">Comprar y mant.</th><th class="r">Costo</th><th class="r">Ops</th></tr></thead><tbody>${row('Coinbase', l && l.coinbase)}${row('Robinhood', l && l.robinhood)}</tbody></table></div>
+      ${(() => { const lg = (l && l.coinbase && l.coinbase.log) || []; return lg.length ? `<details class="stepbox"><summary>Operaciones simuladas (${lg.length})</summary><div class="scroll"><table><thead><tr><th>Cuándo</th><th>Lado</th><th class="r">Precio</th><th class="r">USD</th><th class="r">P&amp;L</th></tr></thead><tbody>${lg.slice().reverse().map((x) => `<tr><td>${esc(ago(x.t))}</td><td>${x.side === 'buy' ? 'Compra' : 'Venta'}</td><td class="r">${money(x.price)}</td><td class="r">${money(x.usd, 0)}</td><td class="r ${cls(x.pnl)}">${x.pnl === null ? '—' : money(x.pnl, 0)}</td></tr>`).join('')}</tbody></table></div></details>` : ''; })()}
       <p class="muted" style="font-size:11px;margin:6px 0 0">Antes de congelar: ${pc(ch.val_return)} vs ${pc(ch.val_bh)} (validación)</p></div>`;
   }).join('');
-  const agents = b.agents.map((a) => { const lr = lastRun(a.name); return `<tr><td><b>${esc(a.label)}</b></td>
+  const st = Object.fromEntries((b.agent_stats || []).map((x) => [x.name, x]));
+  const agents = b.agents.map((a) => { const lr = lastRun(a.name); const x = st[a.name] || {}; return `<tr><td><b>${esc(a.label)}</b></td>
     <td>${a.available ? (a.enabled ? '<span class="pos">activo</span>' : 'apagado') : '<span class="muted">próximamente</span>'}</td>
-    <td class="muted" style="white-space:normal">${lr ? `${ago(lr.t)} · ${lr.error ? `<span class="neg">error</span>` : `${lr.created} prop.`}` : '—'}</td>
+    <td class="muted" style="white-space:normal">${lr ? `${ago(lr.t)}${lr.error ? ' · <span class="neg">error</span>' : ''}` : '—'}</td>
+    <td class="r muted" title="corridas / propuestas / aplicadas / rechazadas">${a.available ? `${x.runs || 0} · ${x.created || 0} · <span class="pos">${x.applied || 0}</span> · ${x.rejected || 0}` : ''}</td>
     <td class="r">${a.available ? `<button class="btn ghost small" data-ag="${esc(a.name)}" data-en="${a.enabled ? '0' : '1'}">${a.enabled ? 'Apagar' : 'Encender'}</button>` : ''}</td></tr>`; }).join('');
   const pend = b.pending.map((p) => `<div class="prop"><div class="row"><span class="chip">${esc(KIND_LABEL[p.kind] || p.kind)}</span><span class="muted" style="font-size:12px">${esc(p.agent || '')}</span></div>
     <div style="margin:6px 0"><b>${esc(p.title)}</b></div>
@@ -395,7 +448,7 @@ async function tabCerebro(main) {
   <div class="card"><h2>Laboratorio de papel · $1M virtual</h2><div class="grid">${labCards}</div>
     ${lessons ? `<h2 style="margin-top:14px">Lo que aprendió</h2><ul class="lessons">${lessons}</ul>` : ''}</div>
   <div class="card" ${b.pending.length ? "data-open" : ""}><h2>Por decidir (${b.pending.length})</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
-  <div class="card"><h2>Agentes</h2><div class="scroll"><table><tbody>${agents}</tbody></table></div><div class="msg" id="ag_m"></div></div>
+  <div class="card"><h2>Agentes</h2><p class="muted" style="font-size:11px;margin:0 0 6px">Estado · última corrida · corridas · propuestas · aplicadas · rechazadas</p><div class="scroll"><table><tbody>${agents}</tbody></table></div><div class="msg" id="ag_m"></div></div>
   <div class="card"><h2>Corridas</h2>${runs ? `<div class="scroll"><table><tbody>${runs}</tbody></table></div>` : '<p class="muted">Sin corridas.</p>'}</div>
   <details class="card"><summary><h2 style="display:inline">Modelos ML</h2></summary><div class="scroll"><table><thead><tr><th>Par</th><th>Estado</th><th>Precisión vs base</th></tr></thead><tbody>${models}</tbody></table></div></details>
   <details class="card"><summary><h2 style="display:inline">Historial (${b.history.length})</h2></summary>${hist ? `<div class="scroll"><table><tbody>${hist}</tbody></table></div>` : '<p class="muted">Vacío.</p>'}</details>
@@ -458,24 +511,39 @@ function accordionize(main) {
 }
 
 async function tabHoy(main) {
-  const b = await api('GET', '/api/owner/briefing');
+  const [b, br] = await Promise.all([api('GET', '/api/owner/briefing'), api('GET', '/api/owner/brain')]);
   const icon = { crit: '●', warn: '●', info: '○' };
+  const imp = b.items.filter((i) => i.level !== 'info'); const rest = b.items.filter((i) => i.level === 'info');
+  const li = (i) => `<button class="item ${esc(i.level)}" data-go="${esc(i.tab)}"><span class="lv">${icon[i.level] || '○'}</span><span class="grow">${esc(i.text)}</span><span class="muted">›</span></button>`;
+  const ap = br.guardrails.autopilot;
+  const recent = br.changes.slice(0, 5).map((c) => `<div class="step-row"><div class="grow"><b>${esc(c.label || c.kind)}</b> ${c.auto ? '<span class="chip paper">auto</span>' : ''}<div class="muted" style="font-size:12px">${esc(ago(c.t))} · ${esc(c.title)}</div></div>${c.undone ? '<span class="muted">deshecho</span>' : `<button class="btn ghost small" data-undo="${esc(c.id)}">Deshacer</button>`}</div>`).join('');
   main.innerHTML = `
   <div class="card hero-o ${esc(b.status)}">
     <div class="row" style="justify-content:space-between"><div><div class="muted" style="font-size:12px;letter-spacing:.1em;text-transform:uppercase">Resumen del Director</div><div class="big">${esc(b.headline)}</div></div>
-      <div class="row"><span class="chip">Cerebro v${b.brain_version}</span><span class="chip">${b.score} % listo</span><span class="chip">${b.pending} pend.</span></div></div>
-    <div class="row" style="margin-top:12px"><button class="btn" id="h_run">▶ Correr todo</button><button class="btn ghost" id="h_ack">Enterado (hallazgos)</button><span class="msg" id="h_m"></span></div>
+      <div class="row"><span class="chip">Cerebro v${b.brain_version}</span><span class="chip">${b.score} % listo</span></div></div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="h_run">▶ Correr todo</button><span class="msg" id="h_m"></span></div>
   </div>
-  <div class="card" style="padding:4px 12px">${b.items.map((i) => `<button class="item ${esc(i.level)}" data-go="${esc(i.tab)}"><span class="lv">${icon[i.level] || '○'}</span><span class="grow">${esc(i.text)}</span><span class="muted">›</span></button>`).join('')}</div>
-  <p class="muted" style="font-size:12px">Actualizado ${esc(ago(b.t))} · última corrida de agentes ${esc(ago(b.last_run))}</p>`;
-  document.querySelectorAll('[data-go]').forEach((x) => x.addEventListener('click', () => { state.tab = x.dataset.go; shell(); loadTab(); }));
+  ${imp.length ? `<div class="card" style="padding:4px 12px">${imp.map(li).join('')}</div>` : '<div class="card"><span class="pos">✓ Nada requiere tu atención.</span> <span class="muted">Los agentes siguen trabajando solos.</span></div>'}
+  <details class="card acc"><summary><h2>Todo lo demás (${rest.length})</h2></summary><div class="accb" style="padding-top:0">${rest.map(li).join('') || '<p class="muted">Nada.</p>'}</div></details>
+  <details class="card acc" ${ap.enabled ? 'open' : ''}><summary><h2>Piloto automático: ${ap.enabled ? '<span class="pos">ENCENDIDO</span>' : 'apagado'}</h2></summary><div class="accb">
+    <p class="muted" style="margin:0 0 10px">Si lo enciendes, el Cerebro aplica solo mejoras de <b>bajo riesgo</b> (estrategia sugerida y modelo de señal) que ya pasaron sus pruebas. <b>Nunca</b> toca riesgo, seguridad, agentes ni accesos, y todo se puede deshacer.</p>
+    <label class="check"><input type="checkbox" id="ap_sw" ${ap.enabled ? 'checked' : ''}><span><b>Piloto automático</b></span></label>
+    <div class="msg" id="ap_m"></div>
+    ${recent ? `<h2 style="margin-top:14px">Cambios recientes</h2>${recent}` : ''}</div></details>
+  <details class="card acc" id="nums"><summary><h2>Números del negocio (automáticos)</h2></summary><div class="accb" id="h_nums"><p class="muted">Toca para cargar…</p></div></details>
+  <p class="muted" style="font-size:12px">Actualizado ${esc(ago(b.t))} · última corrida ${esc(ago(b.last_run))}</p>`;
+  document.querySelectorAll('[data-go]').forEach((x) => x.addEventListener('click', () => { state.tab = x.dataset.go; if (!state.tab.startsWith('o_') && state.user.role === 'owner') state.showClient = true; shell(); loadTab(); }));
   $('#h_run').addEventListener('click', async (e) => {
     e.target.disabled = true; setMsg($('#h_m'), 'El Director está orquestando a los agentes…', true);
     try { await api('POST', '/api/owner/brain/run'); await loadTab(); } catch (err) { setMsg($('#h_m'), err.message); e.target.disabled = false; }
   });
-  $('#h_ack').addEventListener('click', async () => {
-    try { const r = await api('POST', '/api/owner/proposals/ack-info'); setMsg($('#h_m'), `${r.acknowledged} hallazgo(s) marcados`, true); setTimeout(loadTab, 700); } catch (err) { setMsg($('#h_m'), err.message); }
+  $('#ap_sw').addEventListener('change', async (e) => {
+    try { await api('PUT', '/api/owner/guardrails', { autopilot: { enabled: e.target.checked } }); setMsg($('#ap_m'), e.target.checked ? 'Piloto encendido.' : 'Piloto apagado.', true); setTimeout(loadTab, 600); } catch (err) { setMsg($('#ap_m'), err.message); e.target.checked = !e.target.checked; }
   });
+  document.querySelectorAll('[data-undo]').forEach((x) => x.addEventListener('click', async () => {
+    try { await api('POST', '/api/owner/brain/undo', { id: x.dataset.undo }); await loadTab(); } catch (err) { setMsg($('#ap_m'), err.message); }
+  }));
+  $('#nums').addEventListener('toggle', async () => { if ($('#nums').open && !$('#nums').dataset.l) { $('#nums').dataset.l = '1'; try { await tabOverview($('#h_nums')); } catch (err) { $('#h_nums').textContent = err.message; } } }, { once: false });
 }
 
 async function tabMercado(main) {
@@ -540,9 +608,20 @@ async function tabClientes(main) {
 }
 
 async function tabSeguridad(main) {
-  const { events } = await api('GET', '/api/owner/audit');
-  const rows = events.map((e) => `<tr><td>${esc(when(e.created_at))}</td><td>${esc(e.action)}</td><td>${esc(e.actor || '—')}</td><td>${esc(e.ip || '')}</td><td>${esc(e.detail || '')}</td></tr>`).join('');
-  main.innerHTML = `<div class="card"><h2>Registro de auditoría (últimos ${events.length})</h2><div class="scroll"><table><thead><tr><th>Fecha</th><th>Acción</th><th>Usuario</th><th>IP</th><th>Detalle</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  const [c, { events }] = await Promise.all([api('GET', '/api/owner/compliance'), api('GET', '/api/owner/audit')]);
+  const row = (x) => `<div class="step-row ${x.ok ? 'ok' : ''}"><span class="dot">${x.ok ? '✓' : '○'}</span><div class="grow">${esc(x.label)}${x.detail ? `<div class="muted" style="font-size:12px">${esc(x.detail)}</div>` : ''}</div></div>`;
+  const rows = events.map((e) => `<tr><td>${esc(ago(e.created_at))}</td><td>${esc(e.action)}</td><td>${esc(e.actor || '—')}</td><td>${esc(e.ip || '')}</td><td>${esc(e.detail || '')}</td></tr>`).join('');
+  main.innerHTML = `
+  <div class="card" data-open><div class="row" style="justify-content:space-between"><h2 style="margin:0">Cumplimiento (verificado en vivo)</h2><span class="chip ${c.score >= 80 ? 'paper' : ''}">${c.score} %</span></div>
+    <div class="meter"><i style="width:${c.score}%"></i></div>
+    ${c.live.map(row).join('')}
+    <div class="row" style="margin-top:12px"><a class="btn" href="/api/owner/export/compliance" download>⬇ Paquete para abogado</a></div>
+    <p class="muted" style="font-size:12px">Un archivo con controles, inventario de datos, proveedores y preguntas listas para tu abogado fintech.</p></div>
+  <details class="card acc"><summary><h2>Controles de diseño</h2></summary><div class="accb">${c.design.map(row).join('')}</div></details>
+  <details class="card acc"><summary><h2>Datos que guardamos y cómo se protegen</h2></summary><div class="accb scroll"><table><thead><tr><th>Dato</th><th>Para qué</th><th>Cifrado</th><th>Quién lo ve</th></tr></thead><tbody>${c.inventory.map((i) => `<tr><td style="white-space:normal">${esc(i.dato)}</td><td style="white-space:normal">${esc(i.para)}</td><td style="white-space:normal">${esc(i.cifrado)}</td><td style="white-space:normal">${esc(i.ve)}</td></tr>`).join('')}</tbody></table></div></details>
+  <details class="card acc"><summary><h2>Brechas conocidas (honesto)</h2></summary><div class="accb"><ul class="lessons">${c.gaps.map((g) => `<li>${esc(g)}</li>`).join('')}</ul></div></details>
+  <details class="card acc"><summary><h2>Preguntas para tu abogado</h2></summary><div class="accb"><ol class="steps">${c.questions.map((q) => `<li>${esc(q)}</li>`).join('')}</ol></div></details>
+  <details class="card acc"><summary><h2>Registro de auditoría</h2></summary><div class="accb scroll"><table><thead><tr><th>Cuándo</th><th>Acción</th><th>Usuario</th><th>IP</th><th>Detalle</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
 }
 
 async function tabAjustes(main) {
@@ -555,11 +634,13 @@ async function tabAjustes(main) {
     <label class="check" style="margin-top:10px"><input type="checkbox" id="s_reg" ${s.registration_open ? 'checked' : ''}><span><b>Registro abierto</b> (nuevos clientes pueden crear cuenta).</span></label>
     <div class="row" style="margin-top:12px"><button class="btn" id="s_save">Guardar</button></div><div class="msg" id="sm"></div>
   </div>` : ''}
+  <details class="card acc" id="expo"><summary><h2>Exportar Cerebro y app</h2></summary><div class="accb" id="expo_b"><p class="muted">Toca para cargar…</p></div></details>
   <div class="card"><h2>Verificación en dos pasos (2FA) para tu cuenta de dueño</h2>
     <p class="muted" style="font-size:13px">Estado: ${state.user.totp ? '<b class="pos">activada</b>' : '<b class="neg">desactivada</b>'}. Recomendado: actívala. Usa Google Authenticator, Authy o 1Password.</p>
     <div class="row"><button class="btn ghost" id="t_setup">${state.user.totp ? 'Cambiar 2FA' : 'Activar 2FA'}</button></div>
     <div id="t_box"></div>
   </div>`;
+  $('#expo').addEventListener('toggle', async () => { if ($('#expo').open && !$('#expo').dataset.l) { $('#expo').dataset.l = '1'; try { await tabExport($('#expo_b')); } catch (err) { $('#expo_b').textContent = err.message; } } });
   if (s) $('#s_save').addEventListener('click', async () => {
     try { await api('PUT', '/api/owner/settings', { live_trading: $('#s_live').checked, registration_open: $('#s_reg').checked }); setMsg($('#sm'), 'Guardado.', true); state.me = await api('GET', '/api/me'); } catch (err) { setMsg($('#sm'), err.message); }
   });

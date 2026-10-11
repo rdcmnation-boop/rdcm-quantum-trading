@@ -248,10 +248,14 @@ t('2FA: login con código malo falla', (await O2('POST', '/api/auth/login', { em
 t('2FA: login con código bueno', (await O2('POST', '/api/auth/login', { email: 'owner@test.com', password: env.OWNER_PASSWORD, totp: sec.totp(setup.body.secret) })).status === 200);
 
 // aislamiento de datos
-const secretPem = ['SECRET-PEM', 'XYZ', '123'].join('-');
-t('conexión riesgosa (permite retiros) rechazada', (await A('POST', '/api/connections', { exchange: 'robinhood', keyId: 'k', secret: secretPem })).status === 400);
+const secretPem = ['-----BEGIN EC PRIVATE KEY-----', ['SECRET-PEM', 'XYZ', '123'].join('-'), '-----END EC PRIVATE KEY-----'].join('\n');
+const riskyRes = await A('POST', '/api/connections', { exchange: 'robinhood', keyId: 'k', secret: 'A'.repeat(44) });
+t('conexión riesgosa (permite retiros) rechazada con explicación y verificaciones', riskyRes.status === 400 && /retiros/.test(riskyRes.body.error) && riskyRes.body.hint && riskyRes.body.checks.some((c) => c.id === 'nowithdraw' && c.ok === false));
+const badFmt = await A('POST', '/api/connections', { exchange: 'coinbase', keyId: 'abc', secret: 'xyz' });
+t('errores de copiado: mensaje simple antes de llamar al exchange', badFmt.status === 400 && /Coinbase/.test(badFmt.body.error) && badFmt.body.hint);
+t('Robinhood con llave mal copiada (espacios): explicación', (await A('POST', '/api/connections', { exchange: 'robinhood', keyId: 'k', secret: 'no es base64 con espacios' })).body.hint?.includes('base64'));
 const ca = await A('POST', '/api/connections', { exchange: 'coinbase', keyId: 'organizations/o/apiKeys/k', secret: secretPem });
-t('conexión segura aceptada', ca.status === 201);
+t('conexión segura aceptada, con las 3 verificaciones en verde y marcada como cifrada', ca.status === 201 && ca.body.checks.length === 3 && ca.body.checks.every((c) => c.ok) && ca.body.connection.encrypted === true);
 t('la respuesta no devuelve la llave secreta', !ca.text.includes(secretPem));
 t('la llave se guarda cifrada', !JSON.stringify((await store.getConnection(ra.body.user.id, ca.body.connection.id))).includes(secretPem));
 const cid = ca.body.connection.id;
@@ -434,6 +438,8 @@ t('estadísticas de propuestas', brain2.stats.total >= 1);
   const r = await runLab({ store, feed: feed2, now: later });
   const l = r.lab.latest['BTC-USD'];
   t('prueba hacia adelante: tras 10 días hay avance en ambos exchanges', l.candles >= 200 && l.coinbase && l.robinhood && Number.isFinite(l.coinbase.ret) && l.coinbase.equity.length > 5);
+  const lg = l.coinbase.log;
+  t('el laboratorio guarda las operaciones simuladas pequeñas con fecha, lado, precio y P&L', Array.isArray(lg) && lg.length >= 1 && lg.every((x) => x.t > 0 && x.price > 0 && ['buy', 'sell'].includes(x.side)));
   t('el laboratorio acumula fotos de avance', r.lab.snapshots.length >= 2);
   t('con 7+ días, el laboratorio puede proponer o informar (nunca aplica solo)', labProposals(r.lab).length >= 1 && labProposals(r.lab).every((p) => ['strategy_defaults', 'insight'].includes(p.kind)));
   const bd = (await store.getSetting('brain_version', '1'));
@@ -488,6 +494,53 @@ t('un cliente no ve el resumen del Director', (await A('GET', '/api/owner/briefi
   t('"enterado" en lote: solo hallazgos, sin cambiar la versión del Cerebro', ack.status === 200 && ack.body.acknowledged >= 1 && verBefore === (await store.getSetting('brain_version', '1')));
   t('el lote no toca propuestas que cambian algo', (await store.listProposals('pending', 200)).every((p) => ['strategy_defaults', 'agent_toggle', 'model_update'].includes(p.kind)));
   t('cliente no puede usar el lote', (await A('POST', '/api/owner/proposals/ack-info')).status === 403);
+}
+
+console.log('Piloto automático, deshacer y cumplimiento');
+{
+  const g0 = (await O2('GET', '/api/owner/brain')).body.guardrails;
+  t('piloto automático apagado por defecto y limitado a tipos de bajo riesgo', g0.autopilot.enabled === false && g0.autopilot.kinds.every((k) => ['model_update', 'strategy_defaults'].includes(k)));
+  const gset = await O2('PUT', '/api/owner/guardrails', { autopilot: { enabled: true, kinds: ['model_update', 'agent_toggle', 'risk_alert'] } });
+  t('el piloto nunca puede incluir agentes, riesgo ni seguridad (se filtran)', gset.body.guardrails.autopilot.enabled === true && gset.body.guardrails.autopilot.kinds.join() === 'model_update');
+  const vBefore = Number(await store.getSetting('brain_version', '1'));
+  const actBefore = await store.getSetting('model:active:ETH-USD', '');
+  await store.setSetting('model:active:ETH-USD', '');
+  await store.setSetting('model:candidate:ETH-USD', JSON.stringify({ model: { mean: [], sd: [], w: [], b: 0 }, metrics: { acc_test: 0.6, baseline_test: 0.5 }, trained_at: 1 }));
+  await store.addProposal({ agent: 'ml_models', kind: 'model_update', key: 'auto-eth', title: 'Activar ETH (prueba piloto)', detail: JSON.stringify({ action: { type: 'activate_model', symbol: 'ETH-USD' } }), evidence: '{}', touches: JSON.stringify(['models']) });
+  await director.run({ trigger: 'test-autopilot' });
+  const eth = await store.getSetting('model:active:ETH-USD', '');
+  t('con piloto encendido, el Director aplicó la mejora de bajo riesgo y subió la versión', eth && Number(await store.getSetting('brain_version', '1')) > vBefore);
+  const br = (await O2('GET', '/api/owner/brain')).body;
+  const ch = br.changes.find((c) => c.title.includes('prueba piloto'));
+  t('el cambio automático quedó registrado como auto y reversible', ch && ch.auto === true && ch.undone === false);
+  t('deshacer restaura el valor anterior', (await O2('POST', '/api/owner/brain/undo', { id: ch.id })).status === 200 && (await store.getSetting('model:active:ETH-USD', '')) === '');
+  t('no se puede deshacer dos veces', (await O2('POST', '/api/owner/brain/undo', { id: ch.id })).status === 404);
+  t('un cliente no puede deshacer ni cambiar el piloto', (await A('POST', '/api/owner/brain/undo', { id: ch.id })).status === 403 && (await A('PUT', '/api/owner/guardrails', { autopilot: { enabled: false } })).status === 403);
+  await store.addProposal({ agent: 'x', kind: 'agent_toggle', key: 'auto-toggle', title: 'apagar agente', detail: JSON.stringify({ action: { type: 'agent_enabled', agent: 'paper_lab', enabled: false } }), evidence: '{}', touches: '[]' });
+  await director.run({ trigger: 'test-autopilot-2' });
+  t('el piloto NO aplica cambios de agentes (siguen pendientes de tu aprobación)', (await store.listProposals('pending', 200)).some((p) => p.key === 'auto-toggle') && (await store.getSetting('agent:paper_lab:enabled', 'on')) === 'on');
+  await O2('PUT', '/api/owner/guardrails', { autopilot: { enabled: false } });
+  const cp = await O2('GET', '/api/owner/compliance');
+  t('cumplimiento: controles en vivo, inventario, proveedores y preguntas', cp.status === 200 && cp.body.live.length >= 8 && cp.body.inventory.length >= 4 && cp.body.questions.length >= 5);
+  t('cumplimiento: llaves cifradas, sin retiros y 2FA cifrado verificados', ['Llaves API de clientes cifradas en reposo (AES-256-GCM)', 'Ninguna llave guardada permite retiros', 'Secreto 2FA del dueño cifrado', 'Contraseñas guardadas solo como huella (scrypt)'].every((l) => cp.body.live.find((x) => x.label === l)?.ok));
+  const owner = (await store.listUsers()).find((u) => u.role === 'owner');
+  t('el secreto 2FA está cifrado en la base (no en texto plano)', String(owner.totp_secret).startsWith('v1.'));
+  const md = await fetch(base + '/api/owner/export/compliance', { headers: { Cookie: (await O2('GET', '/api/owner/compliance')).cookie } });
+  const mdt = await md.text();
+  t('paquete para abogado descargable (markdown) sin secretos', md.status === 200 && /Paquete para abogado/.test(mdt) && !mdt.includes('SECRET-PEM') && !mdt.includes('pass_hash'));
+  t('cliente no puede ver cumplimiento', (await A('GET', '/api/owner/compliance')).status === 403);
+}
+
+console.log('Estado del bot y operaciones pequeñas de los agentes');
+{
+  const st = await A('GET', '/api/bot/status');
+  t('estado del bot: modo, símbolo, última decisión con motivo, posición y resultado', st.status === 200 && st.body.symbol && st.body.last && st.body.last.reason && st.body.position && typeof st.body.realized === 'number' && Array.isArray(st.body.recent));
+  t('estado del bot: solo muestra órdenes propias (B no ve las de A)', (await B('GET', '/api/bot/status')).body.recent.every((o) => o.mode) && (await B('GET', '/api/bot/status')).body.recent.length === 0);
+  t('estado del bot exige sesión', (await nobody('GET', '/api/bot/status')).status === 401);
+  const bt = backtest(Array.from({ length: 400 }, (_, i) => 100 + 10 * Math.sin(i / 15)), { strategy: 'sma', fast: 5, slow: 20, usd: 100, maxOrderUsd: 1000, maxDailyUsd: 5000, stopLossPct: 8, symbol: 'BTC-USD' }, { capital: 10000, exchange: 'coinbase' });
+  t('backtest devuelve el registro de operaciones (compras y ventas con P&L)', bt.trades.length >= 2 && bt.trades.some((x) => x.side === 'buy') && bt.trades.some((x) => x.side === 'sell' && Number.isFinite(x.pnl)));
+  const as = (await O2('GET', '/api/owner/brain')).body.agent_stats;
+  t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 8 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
 }
 
 console.log('Exportación del Cerebro y del app');

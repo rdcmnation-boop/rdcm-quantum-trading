@@ -138,3 +138,16 @@ details.acc>summary:hover h2{color:var(--accent)}
 .item.info .lv{color:var(--accent)}
 .land .btn{box-shadow:var(--glow)}
 .land h1 .grad{color:var(--accent)}
+
+/* ---- pasos desplegables, asistente de conexión ---- */
+details.step{border-bottom:1px solid var(--line)}details.step:last-of-type{border-bottom:0}
+details.step>summary{list-style:none;cursor:pointer}details.step>summary::-webkit-details-marker{display:none}
+.stepb{padding:0 0 14px 38px}
+details.stepbox{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px;background:#0b0b0e}
+details.stepbox>summary{cursor:pointer;font-weight:700}
+.checks{display:grid;gap:4px;margin-top:8px;font-size:13px}
+nav .sep{align-self:stretch}
+
+.botnow{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#0b0b0e}
+.botnow .act{display:inline-block;font-weight:800;padding:2px 10px;border-radius:99px;margin-right:6px;background:var(--chip);border:1px solid var(--line)}
+.botnow .act.buy{color:var(--good);border-color:var(--good)}.botnow .act.sell{color:var(--bad);border-color:var(--bad)}.botnow .act.hold{color:var(--accent);border-color:#6b5300}
