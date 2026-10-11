@@ -353,7 +353,7 @@ t('el Director corre todos los agentes disponibles', run.status === 200 && ['pro
 t('los agentes NO cambian nada por sí solos', (await store.getSetting('default_cfg', null)) === null
   && (await store.getSetting('brain_version', '1')) === v0 && (await store.getSetting('model:active:BTC-USD', null)) === null);
 const brain = (await O2('GET', '/api/owner/brain')).body;
-t('Cerebro: 8 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 8 && brain.agents.filter((a) => !a.available).length === 2
+t('Cerebro: 9 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 9 && brain.agents.filter((a) => !a.available).length === 2
   && brain.agents.filter((a) => !a.available).every((a) => /Claude/.test(a.reason)));
 t('Cerebro: propuestas pendientes con evidencia', brain.pending.length > 0 && brain.pending.every((p) => p.evidence && p.title));
 const mlProp = brain.pending.find((p) => p.kind === 'model_update');
@@ -540,7 +540,7 @@ console.log('Estado del bot y operaciones pequeñas de los agentes');
   const bt = backtest(Array.from({ length: 400 }, (_, i) => 100 + 10 * Math.sin(i / 15)), { strategy: 'sma', fast: 5, slow: 20, usd: 100, maxOrderUsd: 1000, maxDailyUsd: 5000, stopLossPct: 8, symbol: 'BTC-USD' }, { capital: 10000, exchange: 'coinbase' });
   t('backtest devuelve el registro de operaciones (compras y ventas con P&L)', bt.trades.length >= 2 && bt.trades.some((x) => x.side === 'buy') && bt.trades.some((x) => x.side === 'sell' && Number.isFinite(x.pnl)));
   const as = (await O2('GET', '/api/owner/brain')).body.agent_stats;
-  t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 8 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
+  t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 9 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
 }
 
 console.log('Trading real: alcance solo-dueño e inicio inmediato');
@@ -574,10 +574,96 @@ console.log('Robinhood: generador de llaves');
   t('cada generación produce llaves distintas', k2.publicKey !== k.publicKey);
 }
 
+console.log('Todas las criptos, escáner y modo AUTO');
+{
+  const { seedUniverse, fetchCoinbaseProducts } = await import('../lib/universe.js');
+  const { runScanner } = await import('../lib/scanner.js');
+  const prods = [
+    { id: 'BTC-USD', quote_currency: 'USD', status: 'online' }, { id: 'ETH-USD', quote_currency: 'USD', status: 'online' },
+    { id: 'SOL-USD', quote_currency: 'USD', status: 'online' }, { id: 'ADA-USD', quote_currency: 'USD', status: 'online' },
+    { id: 'DEAD-USD', quote_currency: 'USD', status: 'online', trading_disabled: true }, { id: 'ETH-EUR', quote_currency: 'EUR', status: 'online' },
+    { id: 'USDT-USD', quote_currency: 'USD', status: 'online' }, { id: 'weird-usd', quote_currency: 'USD', status: 'online' },
+  ];
+  const book = { bids: [['100', '5']], asks: [['100.05', '5']] };
+  const f = async (url) => {
+    const j = (o) => ({ ok: true, status: 200, json: async () => o });
+    if (url.endsWith('/products')) return j(prods);
+    if (url.includes('coins/markets')) return j([{ symbol: 'btc', market_cap: 9e11 }, { symbol: 'eth', market_cap: 4e11 }, { symbol: 'usdt', market_cap: 1e11 }, { symbol: 'sol', market_cap: 8e10 }, { symbol: 'ada', market_cap: 3e10 }, { symbol: 'xyz', market_cap: 1e10 }]);
+    if (url.includes('/book')) return j(book);
+    if (url.includes('/stats')) return j({ volume: '1000', last: '100' });
+    throw new Error('url inesperada ' + url);
+  };
+  const list = await fetchCoinbaseProducts(f);
+  t('universo: solo pares USD en línea y operables (sin desactivados, EUR ni nombres raros)', JSON.stringify(list) === JSON.stringify(['ADA-USD', 'BTC-USD', 'ETH-USD', 'SOL-USD', 'USDT-USD']));
+  seedUniverse(list);
+  const un = (await A('GET', '/api/universe')).body;
+  t('/api/universe lista todas las criptos de Coinbase con su disponibilidad', un.coinbase.includes('ADA-USD') && un.total >= 5 && un.symbols.find((x) => x.s === 'ADA-USD').cb === true);
+  const cfgBase = { strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100 };
+  t('el bot acepta una cripto fuera de la lista base si el exchange la lista', (await A('PUT', '/api/bot', { ...cfgBase, symbol: 'ADA-USD' })).status === 200);
+  t('el bot rechaza criptos que el exchange no lista', (await A('PUT', '/api/bot', { ...cfgBase, symbol: 'FAKE-USD' })).status === 400);
+  t('el bot acepta AUTO (el Cerebro elige)', (await A('PUT', '/api/bot', { ...cfgBase, symbol: 'AUTO', paperExchange: 'best' })).body.cfg?.paperExchange === 'best');
+  t('AUTO no se puede backtestear como una sola cripto', (await A('POST', '/api/backtest', { ...cfgBase, symbol: 'AUTO' })).status === 400);
+
+  const feedS = { getHistory: async (sym, n) => series(n, sym === 'SOL-USD' ? 0.7 : 0.2, sym.length * 13 + sym.charCodeAt(0)) };
+  const sc = await runScanner({ store, feed: feedS, f, now: Date.now() });
+  t('escáner: recorre el top de CoinGecko ∩ lo listado, sin stablecoins ni pares inexistentes', sc.scanned === 4 && !sc.items.some((i) => i.symbol === 'USDT-USD' || i.symbol === 'XYZ-USD'), JSON.stringify(sc.items.map((i) => i.symbol)));
+  t('escáner: cada cripto trae costo y retorno en AMBOS exchanges y la brecha', sc.items.every((i) => Number.isFinite(i.coinbase.drag) && Number.isFinite(i.robinhood.drag) && ['coinbase', 'robinhood', 'igual'].includes(i.cheaper) && (i.cheaper === 'igual' || (i.cheaper === 'robinhood') === (i.gap_pct < 0))));
+  t('escáner: califica solo si gana a comprar-y-mantener en los dos exchanges', sc.items.every((i) => !i.qualified || (i.coinbase.ok && i.robinhood.ok)));
+  t('escáner: avisa que son costos estimados y muestra corta', /ESTIMADOS/.test(sc.warning));
+  const api = (await A('GET', '/api/scanner')).body;
+  t('/api/scanner entrega el ranking sin configuraciones internas', api.items.length === 4 && api.items.every((i) => i.cfg === undefined));
+
+  // Modo AUTO en papel con ruteo por costo
+  const E = client();
+  await E('POST', '/api/auth/register', { email: 'e-auto@x.com', password: 'Clave-De-Eva-12345', acceptTos: true });
+  const eId = (await E('GET', '/api/me')).body.user.id;
+  const mk = (qualified) => JSON.stringify({ t: Date.now(), scanned: 1, universe: 4, items: [{ symbol: 'ADA-USD', label: 'DCA', qualified, cheaper: 'robinhood', gap_pct: -0.4,
+    cfg: { strategy: 'dca', fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: 3, bh: 1, drag: 1 }, robinhood: { ret: 4, bh: 1, drag: 0.6 } }] });
+  await store.setSetting('scanner:latest', mk(false));
+  await E('PUT', '/api/bot', { ...cfgBase, symbol: 'AUTO', paperExchange: 'best', enabled: true });
+  await new Promise((r) => setTimeout(r, 400));
+  t('AUTO sin oportunidades validadas: no compra y lo explica', (await store.listOrders(eId)).length === 0 && /ninguna|Espera|no compra/i.test((await E('GET', '/api/bot/status')).body.last?.reason || ''));
+  await store.setSetting('scanner:latest', mk(true));
+  await engine.runBot({ ...(await store.getBot(eId)), last_run: 0 }, Date.now() + 5000);
+  const eo = (await store.listOrders(eId)).filter((o) => o.status === 'ok');
+  t('AUTO con una oportunidad validada: compra esa cripto en el exchange más barato (papel)', eo.length === 1 && eo[0].symbol === 'ADA-USD' && eo[0].exchange === 'robinhood' && /simulado en robinhood/.test(eo[0].note));
+  const stE = (await E('GET', '/api/bot/status')).body;
+  t('estado en AUTO: muestra posiciones por cripto y el resumen del escáner', stE.symbol === 'AUTO' && stE.holdings.length === 1 && stE.holdings[0].symbol === 'ADA-USD' && stE.holdings[0].venue === 'robinhood' && stE.scanner?.qualified?.[0]?.symbol === 'ADA-USD');
+  await engine.runBot({ ...(await store.getBot(eId)), last_run: 0 }, Date.now() + 10000);
+  t('AUTO no abre dos veces la misma cripto mientras la tiene (DCA: intervalo no cumplido)', (await store.listOrders(eId)).filter((o) => o.status === 'ok').length === 1);
+  // AUTO en real: el ruteo elige el exchange más barato, solo si el par existe ahí; si no, usa el otro.
+  {
+    const calls = [];
+    const mkAd = (name, pairs) => ({ ...good, name, pairs: async () => pairs, balances: async () => [{ asset: 'ADA', available: 1000, hold: 0 }, { asset: 'USD', available: 500, hold: 0 }],
+      marketBuy: async (_c, a) => { calls.push([name, 'buy', a.symbol]); return { ok: true, id: `${name}-1` }; }, marketSell: async (_c, a) => { calls.push([name, 'sell', a.symbol]); return { ok: true, id: `${name}-2` }; } });
+    const ad2 = { coinbase: mkAd('coinbase', ['ADA-USD']), robinhood: mkAd('robinhood', ['ADA-USD', 'BTC-USD']) };
+    const eng2 = createEngine({ store, adapters: ad2, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
+    const c1 = await store.addConnection({ user_id: eId, exchange: 'coinbase', label: 'cb', key_id: 'k1', secret_enc: sec.encrypt(env.ENCRYPTION_KEY, 's1'), can_trade: true, can_transfer: false });
+    const c2 = await store.addConnection({ user_id: eId, exchange: 'robinhood', label: 'rh', key_id: 'k2', secret_enc: sec.encrypt(env.ENCRYPTION_KEY, 's2'), can_trade: true, can_transfer: false });
+    await store.setSetting('live_trading', 'on');
+    const liveCfg = { ...cfgBase, symbol: 'AUTO', mode: 'live', paperExchange: 'best', enabled: true, liveAck: true, connectionId: c1.id, maxOrderUsd: 25, maxDailyUsd: 100 };
+    await store.saveBot(eId, liveCfg);
+    await store.setSetting('scanner:latest', mk(true));
+    await eng2.runBot({ ...(await store.getBot(eId)), last_run: 0 }, Date.now() + 20000);
+    t('AUTO real: compra en Robinhood (más barato) aunque la conexión principal sea Coinbase', calls.length === 1 && calls[0][0] === 'robinhood' && calls[0][1] === 'buy' && calls[0][2] === 'ADA-USD', JSON.stringify(calls));
+    const live = (await store.listOrders(eId)).filter((o) => o.mode === 'live' && o.status === 'ok');
+    t('AUTO real: la orden queda registrada con el exchange usado', live.length === 1 && live[0].exchange === 'robinhood');
+    // El par no existe en Robinhood → usa Coinbase
+    await store.setSetting(`rhpairs:${eId}`, JSON.stringify({ t: Date.now(), symbols: ['BTC-USD'], verified: true }));
+    for (const o of live) await store.addOrder({ ...o, side: 'sell', id: undefined, created_at: undefined, status: 'ok' });
+    await store.saveBot(eId, { ...liveCfg });
+    calls.length = 0;
+    await eng2.runBot({ ...(await store.getBot(eId)), last_run: 0 }, Date.now() + 400000000);
+    t('AUTO real: si el par no está en Robinhood, opera en Coinbase', calls.some((c) => c[0] === 'coinbase' && c[1] === 'buy') && !calls.some((c) => c[0] === 'robinhood' && c[1] === 'buy'), JSON.stringify(calls));
+    await store.setSetting('live_trading', 'off');
+    await store.deleteConnection(eId, c1.id); await store.deleteConnection(eId, c2.id);
+  }
+}
+
 console.log('Exportación del Cerebro y del app');
 const eb = await O2('GET', '/api/owner/export/brain');
 t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
-t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 8
+t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 9
   && eb.body.models['BTC-USD']?.active && eb.body.changelog.length >= 2 && eb.body.agent_audit.length > 0);
 t('el Cerebro exportado no contiene secretos', !eb.text.includes(secretPem) && !eb.text.includes('pass_hash') && !eb.text.includes('organizations/o/apiKeys'));
 const ea = await fetch(base + '/api/owner/export/app', { headers: { Cookie: eb.cookie } });
