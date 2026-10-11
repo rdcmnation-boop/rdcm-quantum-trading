@@ -10,9 +10,22 @@ import { createEngine } from '../lib/engine.js';
 import { memoryStore } from '../lib/store.js';
 import * as sec from '../lib/security.js';
 import { coinbaseJwt, robinhoodSign } from '../lib/exchanges.js';
-import { decide, validateCfg } from '../lib/strategy.js';
+import { decide, validateCfg, positionFromOrders } from '../lib/strategy.js';
+import { rsi, macd, ema, bollinger, sma } from '../lib/indicators.js';
 import { backtest } from '../lib/backtest.js';
+import { walkForward } from '../lib/ml.js';
+import { createDirector, PROTECTED_MIN } from '../lib/agents.js';
+import zlib from 'node:zlib';
 
+function rng(seed) {
+  return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+}
+function series(n, phi, seed) {
+  const r = rng(seed); let p = 100; let prev = 0; const out = [];
+  for (let i = 0; i < n; i++) { prev = phi * prev + (r() - 0.5) * 0.01; p *= Math.exp(prev); out.push(p); }
+  return out;
+}
 let pass = 0;
 let fail = 0;
 const t = (name, cond, extra = '') => {
@@ -74,6 +87,57 @@ console.log('Estrategias');
 }
 
 // ---------- integración HTTP ----------
+console.log('Análisis técnico y riesgo');
+{
+  const up = Array.from({ length: 40 }, (_, i) => 100 + i);
+  const down = Array.from({ length: 40 }, (_, i) => 200 - i);
+  t('RSI = 100 en alza continua', rsi(up) === 100);
+  t('RSI ~0 en baja continua', rsi(down) < 1);
+  const saw = Array.from({ length: 60 }, (_, i) => 100 + (i % 2 ? 1 : -1));
+  t('RSI ~50 en serrucho', Math.abs(rsi(saw) - 50) < 5);
+  t('RSI null con pocas velas', rsi([1, 2, 3]) === null);
+  t('SMA correcta', sma([1, 2, 3, 4], 2) === 3.5);
+  t('EMA tiene la longitud esperada', ema(up, 10).length === 31);
+  const mm = macd(Array.from({ length: 80 }, (_, i) => 100 + Math.sin(i / 5) * 5 + i * 0.1));
+  t('MACD entrega línea, señal e histograma', mm && Number.isFinite(mm.macd) && Number.isFinite(mm.signal) && Number.isFinite(mm.hist));
+  const bb = bollinger(up);
+  t('Bollinger: %B alto en alza fuerte', bb.pctB > 0.8 && bb.upper > bb.mean && bb.lower < bb.mean);
+  const pos = positionFromOrders([{ side: 'buy', qty: 1, usd: 100, ts: 1 }, { side: 'buy', qty: 1, usd: 200, ts: 2 }, { side: 'sell', qty: 1, usd: 180, ts: 3 }]);
+  t('costo promedio de la posición', pos.qty === 1 && pos.avgCost === 150 && pos.lastSellAt === 3);
+  const cfg = { strategy: 'sma', fast: 2, slow: 3, usd: 10, stopLossPct: 8, intervalMin: 60, rsiBuy: 30, rsiSell: 60, maxOrderUsd: 25 };
+  const sl = decide(cfg, { now: 1e9, price: 90, closes: [100, 100, 100, 100, 100, 90], position: 1, avgCost: 100 });
+  t('stop-loss vende al caer 8 % bajo el costo', sl.action === 'sell' && /Stop-loss/.test(sl.reason));
+  const noSl = decide({ ...cfg, stopLossPct: 15 }, { now: 1e9, price: 90, closes: [100, 100, 100, 100, 100, 90], position: 1, avgCost: 100 });
+t('stop-loss no se activa si la caída es menor al umbral', !/Stop-loss/.test(noSl.reason));
+  const dcaStop = decide({ ...cfg, strategy: 'dca' }, { now: 1e9, price: 50, closes: [], position: 1, avgCost: 100, lastBuyAt: 1e9 - 1000 });
+  t('DCA ignora el stop-loss (es acumulación)', dcaStop.action === 'hold');
+  const cool = decide({ ...cfg, strategy: 'rsi' }, { now: 1e9, closes: down, position: 0, lastSellAt: 1e9 - 3600000 });
+  t('enfriamiento evita recompra inmediata tras vender', cool.action === 'hold' && /Enfriamiento/.test(cool.reason));
+  t('RSI sobrevendido compra', decide({ ...cfg, strategy: 'rsi' }, { now: 1e9, closes: down, position: 0, lastSellAt: 0 }).action === 'buy');
+  t('RSI sobrecomprado vende', decide({ ...cfg, strategy: 'rsi' }, { now: 1e9, closes: up, position: 1, avgCost: 100, price: 139 }).action === 'sell');
+  t('validateCfg acepta rsi/macd', validateCfg({ strategy: 'rsi' }).ok && validateCfg({ strategy: 'macd' }).ok);
+  t('validateCfg rechaza stop-loss absurdo', !validateCfg({ stopLossPct: 80 }).ok);
+  t('validateCfg rechaza RSI incoherente', !validateCfg({ strategy: 'rsi', rsiBuy: 50, rsiSell: 52 }).ok);
+  const wave = Array.from({ length: 400 }, (_, i) => 100 + 15 * Math.sin(i / 10));
+  for (const strategy of ['sma', 'rsi', 'macd']) {
+    const r = backtest(wave, { ...cfg, strategy, fast: 3, slow: 10, rsiBuy: 35, rsiSell: 55 });
+    t(`backtest ${strategy}: alpha/beta/exposición calculados`, Number.isFinite(r.metrics.beta) && Number.isFinite(r.metrics.alphaAnnualPct) && r.metrics.exposurePct > 0);
+  }
+}
+
+console.log('ML');
+{
+  const wfAR = walkForward(series(1200, 0.6, 7));
+  t('ML: con señal real (autocorrelación) supera la línea base', wfAR.metrics.edge && wfAR.metrics.acc_test > 0.6);
+  const wfRW = walkForward(series(1200, 0, 11));
+  t('ML: en caminata aleatoria NO declara ventaja', !wfRW.metrics.edge, JSON.stringify(wfRW.metrics));
+  t('ML: reporta importancia, deriva y conjuntos separados', wfAR.importance.length === 7 && Number.isFinite(wfAR.drift.score)
+    && wfAR.metrics.n_train > wfAR.metrics.n_test && wfAR.metrics.n_test > 100);
+  let thr = false;
+  try { walkForward(series(200, 0, 1)); } catch { thr = true; }
+  t('ML: rechaza entrenar con pocos datos', thr);
+}
+
 console.log('Backtest');
 {
   const up = Array.from({ length: 300 }, (_, i) => 100 + i * 0.5);
@@ -95,16 +159,18 @@ console.log('Backtest');
 
 console.log('API (aislamiento, roles, seguridad)');
 const env = { NODE_ENV: 'test', SESSION_SECRET: 's'.repeat(40), ENCRYPTION_KEY: 'e'.repeat(40),
-  OWNER_EMAIL: 'Owner@Test.com', OWNER_PASSWORD: 'OwnerPass-12345', REG_LIMIT_PER_HOUR: '100' };
+  OWNER_EMAIL: 'Owner@Test.com', OWNER_PASSWORD: 'OwnerPass-12345', REG_LIMIT_PER_HOUR: '100', LOGIN_LIMIT_IP: '500' };
 const store = memoryStore();
 const good = { name: 'coinbase', label: 'Coinbase', check: async () => ({ ok: true, canTrade: true, canTransfer: false }),
   balances: async () => [{ asset: 'USD', available: 100, hold: 0 }],
   marketBuy: async () => ({ ok: true, id: 'ord-1' }), marketSell: async () => ({ ok: true, id: 'ord-2' }) };
 const risky = { ...good, name: 'robinhood', check: async () => ({ ok: true, canTrade: true, canTransfer: true }) };
 const adapters = { coinbase: good, robinhood: risky };
-const feed = { getPrice: async () => 50000, getCloses: async () => Array.from({ length: 60 }, (_, i) => 100 + i) };
+const feed = { getPrice: async () => 50000, getCloses: async () => Array.from({ length: 100 }, (_, i) => 100 + i),
+  getHistory: async (sym, n) => (sym === 'BTC-USD' ? series(n, 0.6, 7) : series(n, 0, 11)) };
 const engine = createEngine({ store, adapters, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
-const app = createApp({ store, env, adapters, feed, engine, log: { warn() {}, error() {} } });
+const director = createDirector({ store, feed });
+const app = createApp({ store, env, adapters, feed, engine, director, log: { warn() {}, error() {} } });
 await app.bootstrap();
 const server = http.createServer(app.handler);
 await new Promise((r) => server.listen(0, r));
@@ -121,6 +187,8 @@ function client() {
     return { status: r.status, body: j, text: txt, headers: r.headers, get cookie() { return cookie; }, set cookie(v) { cookie = v; } };
   };
 }
+let O2cookieVal = '';
+const O2cookie = () => O2cookieVal;
 const A = client(); const B = client(); const O = client(); const anon = client(); const nobody = client();
 const pw = 'Cliente-Pass-1234';
 
@@ -161,7 +229,7 @@ t('2FA: login con código malo falla', (await O2('POST', '/api/auth/login', { em
 t('2FA: login con código bueno', (await O2('POST', '/api/auth/login', { email: 'owner@test.com', password: env.OWNER_PASSWORD, totp: sec.totp(setup.body.secret) })).status === 200);
 
 // aislamiento de datos
-const secretPem = 'SECRET-PEM-XYZ-123';
+const secretPem = ['SECRET-PEM', 'XYZ', '123'].join('-');
 t('conexión riesgosa (permite retiros) rechazada', (await A('POST', '/api/connections', { exchange: 'robinhood', keyId: 'k', secret: secretPem })).status === 400);
 const ca = await A('POST', '/api/connections', { exchange: 'coinbase', keyId: 'organizations/o/apiKeys/k', secret: secretPem });
 t('conexión segura aceptada', ca.status === 201);
@@ -250,6 +318,134 @@ const bt = await A('POST', '/api/backtest', { strategy: 'dca', symbol: 'BTC-USD'
 t('endpoint de backtest devuelve métricas (con sesión)', bt.status === 200 && 'sharpe' in bt.body.metrics);
 t('backtest exige sesión', (await nobody('POST', '/api/backtest', { strategy: 'dca' })).status === 401);
 
+
+// ---------- Cerebro, Director y exportación ----------
+console.log('Cerebro y Director (el dueño decide)');
+const v0 = await store.getSetting('brain_version', '1');
+const run = await O2('POST', '/api/owner/brain/run');
+t('el Director corre todos los agentes disponibles', run.status === 200 && ['problem_processing', 'owner_analytics', 'trading_improvement', 'ml_models'].every((n) => run.body.summary.some((x) => x.agent === n)));
+t('los agentes NO cambian nada por sí solos', (await store.getSetting('default_cfg', null)) === null
+  && (await store.getSetting('brain_version', '1')) === v0 && (await store.getSetting('model:active:BTC-USD', null)) === null);
+const brain = (await O2('GET', '/api/owner/brain')).body;
+t('Cerebro: 6 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 6 && brain.agents.filter((a) => !a.available).length === 2
+  && brain.agents.filter((a) => !a.available).every((a) => /Claude/.test(a.reason)));
+t('Cerebro: propuestas pendientes con evidencia', brain.pending.length > 0 && brain.pending.every((p) => p.evidence && p.title));
+const mlProp = brain.pending.find((p) => p.kind === 'model_update');
+t('el ML propone activar el modelo solo cuando hay ventaja real (BTC sí, ETH no)', !!mlProp && mlProp.title.includes('BTC-USD')
+  && brain.pending.some((p) => p.kind === 'insight' && p.title.includes('ETH-USD') && /no supera/.test(p.title)));
+t('modelos: candidato guardado, ninguno activo todavía', brain.models.find((m) => m.symbol === 'BTC-USD').candidate && !brain.models.find((m) => m.symbol === 'BTC-USD').active);
+t('cliente no ve el Cerebro', (await A('GET', '/api/owner/brain')).status === 403);
+t('cliente no puede aprobar propuestas', (await A('POST', `/api/owner/proposals/${brain.pending[0].id}/decision`, { decision: 'approve' })).status === 403);
+t('cliente no puede correr el Director', (await A('POST', '/api/owner/brain/run')).status === 403);
+t('cliente no exporta el Cerebro', (await A('GET', '/api/owner/export/brain')).status === 403);
+t('cliente no exporta el app', (await A('GET', '/api/owner/export/app')).status === 403);
+t('anónimo no exporta', (await nobody('GET', '/api/owner/export/app')).status === 401);
+
+const ap = await O2('POST', `/api/owner/proposals/${mlProp.id}/decision`, { decision: 'approve', note: 'ok' });
+t('el dueño aprueba activar el modelo', ap.status === 200 && ap.body.changed === true);
+t('al aprobar sube la versión del Cerebro y se activa el modelo', Number(await store.getSetting('brain_version', '1')) === Number(v0) + 1
+  && !!(await store.getSetting('model:active:BTC-USD', null)));
+t('no se puede decidir dos veces la misma propuesta', (await O2('POST', `/api/owner/proposals/${mlProp.id}/decision`, { decision: 'approve' })).status === 404);
+const insightP = brain.pending.find((p) => p.kind === 'insight');
+t('el dueño rechaza una propuesta', (await O2('POST', `/api/owner/proposals/${insightP.id}/decision`, { decision: 'reject', note: 'no aplica' })).status === 200
+  && (await store.getProposal(insightP.id)).status === 'rejected');
+t('decisión inválida rechazada', (await O2('POST', `/api/owner/proposals/${insightP.id}/decision`, { decision: 'x' })).status === 400);
+
+const sig = await A('GET', '/api/signals?symbol=BTC-USD');
+t('señal informativa: indicadores técnicos', sig.status === 200 && Number.isFinite(sig.body.rsi) && sig.body.macd && sig.body.bollinger && sig.body.trend);
+t('señal informativa: modelo activo con explicación', sig.body.model && sig.body.model.prob_up > 0 && sig.body.model.prob_up < 1 && sig.body.model.why.length === 3);
+t('señal sin modelo activo (ETH) solo trae indicadores', (await A('GET', '/api/signals?symbol=ETH-USD')).body.model === null);
+t('señal rechaza símbolos no permitidos', (await A('GET', '/api/signals?symbol=EVIL')).status === 400);
+
+// aprobación que cambia los valores sugeridos para bots nuevos
+const pr = await store.addProposal({ agent: 'trading_improvement', kind: 'strategy_defaults', key: 't1', title: 'Usar RSI como sugerida',
+  detail: JSON.stringify({ action: { type: 'default_cfg', cfg: { strategy: 'rsi', rsiBuy: 30, rsiSell: 60 } } }), evidence: '{}', touches: JSON.stringify(['strategy_defaults']) });
+t('el valor sugerido no cambia antes de aprobar', (await B('GET', '/api/bot')).body.cfg.strategy === 'dca');
+t('el dueño aprueba nueva estrategia sugerida', (await O2('POST', `/api/owner/proposals/${pr.id}/decision`, { decision: 'approve' })).status === 200);
+t('los bots nuevos ven la estrategia aprobada', (await B('GET', '/api/bot')).body.cfg.strategy === 'rsi');
+t('los bots existentes no se tocan', (await A('GET', '/api/bot')).body.cfg.strategy === 'dca');
+
+// áreas protegidas y límites inviolables
+const prot = await store.addProposal({ agent: 'evil', kind: 'strategy_defaults', key: 't2', title: 'Cambiar reglas de seguridad',
+  detail: JSON.stringify({ action: { type: 'default_cfg', cfg: { strategy: 'sma' } } }), evidence: '{}', touches: JSON.stringify(['security']) });
+const pa = await O2('POST', `/api/owner/proposals/${prot.id}/decision`, { decision: 'approve' });
+t('una propuesta que toca un área protegida no se puede aprobar ni por el dueño', pa.status === 400 && (await store.getProposal(prot.id)).status === 'failed');
+const evilAgents = { evil: { label: 'x', available: true, description: '', async run() { return { proposals: [
+  { kind: 'strategy_defaults', key: 'e1', title: 'Cambiar reglas de riesgo', detail: {}, touches: ['risk_rules'] },
+  { kind: 'create_agent', key: 'e2', title: 'Crear un agente nuevo', detail: {}, touches: [] },
+  { kind: 'insight', key: 'e3', title: 'Tocar aislamiento de datos', detail: {}, touches: ['data_isolation'] },
+  { kind: 'insight', key: 'e4', title: 'Propuesta legítima', detail: {}, touches: [] }] }; } } };
+const evil = createDirector({ store, feed, agents: evilAgents });
+await evil.run({ trigger: 'test' });
+const pend = await store.listProposals('pending', 500);
+const blockedAudit = (await store.listAudit(500)).filter((a) => a.action === 'agent_blocked');
+t('un agente no puede proponer cambios en reglas de riesgo, aislamiento ni crear agentes', blockedAudit.length >= 3 && !pend.some((x) => ['e1', 'e2', 'e3'].includes(x.key)));
+t('sí admite una propuesta legítima (pero queda pendiente)', pend.some((x) => x.key === 'e4' && x.status === 'pending'));
+const gg = await O2('PUT', '/api/owner/guardrails', { protectedAreas: [], allowedKinds: ['insight'], maxPendingProposals: 5 });
+t('los límites del dueño no pueden quitar las áreas protegidas mínimas', PROTECTED_MIN.every((a) => gg.body.guardrails.protectedAreas.includes(a)));
+await store.updateProposal((await store.listProposals('pending', 500)).find((x) => x.key === 'e4').id, { status: 'rejected' });
+const evil2 = createDirector({ store, feed, agents: { e: { label: 'e', available: true, description: '', async run() { return { proposals: [{ kind: 'ops_alert', key: 'k9', title: 'No permitido ahora', detail: {}, touches: [] }] }; } } } });
+await evil2.run({ trigger: 'test' });
+t('el Director respeta los tipos permitidos por el dueño', !(await store.listProposals('pending', 500)).some((x) => x.key === 'k9'));
+await O2('PUT', '/api/owner/guardrails', { allowedKinds: ['strategy_defaults', 'agent_toggle', 'model_update', 'risk_alert', 'ops_alert', 'insight'], maxPendingProposals: 20 });
+t('el dueño apaga un agente', (await O2('PUT', '/api/owner/agents/trading_improvement', { enabled: false })).status === 200);
+const run2 = await O2('POST', '/api/owner/brain/run');
+t('un agente apagado no corre', !run2.body.summary.some((x) => x.agent === 'trading_improvement'));
+t('no se puede encender un agente no disponible', (await O2('PUT', '/api/owner/agents/ui_landing', { enabled: true })).status === 404);
+await O2('PUT', '/api/owner/agents/trading_improvement', { enabled: true });
+t('el Director corre solo si los datos fallan sin romperse', await (async () => {
+  const bad = createDirector({ store, feed: { getHistory: async () => { throw new Error('sin red'); } }, agents: { trading_improvement: (await import('../lib/agents.js')).AGENTS.trading_improvement } });
+  const r = await bad.run({ trigger: 'test' });
+  return Array.isArray(r);
+})());
+
+console.log('Exportación del Cerebro y del app');
+const eb = await O2('GET', '/api/owner/export/brain');
+t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
+t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 6
+  && eb.body.models['BTC-USD']?.active && eb.body.changelog.length >= 2 && eb.body.agent_audit.length > 0);
+t('el Cerebro exportado no contiene secretos', !eb.text.includes(secretPem) && !eb.text.includes('pass_hash') && !eb.text.includes('organizations/o/apiKeys'));
+const ea = await fetch(base + '/api/owner/export/app', { headers: { Cookie: eb.cookie } });
+const tgz = Buffer.from(await ea.arrayBuffer());
+t('exportar app: .tar.gz descargable', ea.status === 200 && /\.tar\.gz/.test(ea.headers.get('content-disposition')) && tgz.length > 5000);
+const tdir = fs.mkdtempSync(path.join(os.tmpdir(), 'qexp-'));
+const tf = path.join(tdir, 'app.tar.gz');
+fs.writeFileSync(tf, tgz);
+const listing = execFileSync('tar', ['-tzf', tf]).toString().split('\n');
+t('el .tar.gz es válido y trae código + BRAIN.json', ['quantum-trading/server.js', 'quantum-trading/lib/app.js', 'quantum-trading/lib/agents.js',
+  'quantum-trading/public/landing.html', 'quantum-trading/BRAIN.json', 'quantum-trading/render.yaml'].every((f) => listing.includes(f)));
+t('el .tar.gz no incluye node_modules ni .env', !listing.some((f) => /node_modules|\/\.env$/.test(f)));
+const brainInTar = execFileSync('tar', ['-xzOf', tf, 'quantum-trading/BRAIN.json']).toString();
+t('BRAIN.json dentro del .tar.gz es válido y sin secretos', JSON.parse(brainInTar).format === 'quantum-brain/1' && !brainInTar.includes(secretPem));
+t('el .tar.gz completo no contiene llaves de clientes', !zlib.gunzipSync(tgz).toString('latin1').includes(secretPem));
+
+console.log('Cuenta del cliente');
+const D = client();
+const dpw = 'Clave-De-Dante-123';
+await D('POST', '/api/auth/register', { email: 'd@x.com', password: dpw, acceptTos: true });
+const dId = (await D('GET', '/api/me')).body.user.id;
+await store.addOrder({ user_id: dId, mode: 'paper', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0002, price: 50000, status: 'ok' });
+t('cambiar contraseña exige la actual', (await D('POST', '/api/me/password', { current: 'mala-mala-mala', next: 'Nueva-Clave-12345' })).status === 400);
+t('cambiar contraseña exige una nueva fuerte', (await D('POST', '/api/me/password', { current: dpw, next: 'corta' })).status === 400);
+t('cambiar contraseña funciona y cierra la sesión', (await D('POST', '/api/me/password', { current: dpw, next: 'Nueva-Clave-12345' })).status === 200 && (await D('GET', '/api/me')).status === 401);
+t('la contraseña vieja ya no sirve', (await D('POST', '/api/auth/login', { email: 'd@x.com', password: dpw })).status === 401);
+t('la nueva contraseña sí', (await D('POST', '/api/auth/login', { email: 'd@x.com', password: 'Nueva-Clave-12345' })).status === 200);
+const ex = await D('GET', '/api/me/export');
+t('exportar mis datos: incluye mis órdenes y nada de otros', ex.status === 200 && ex.body.profile.email === 'd@x.com' && ex.body.orders.length === 1 && !ex.text.includes('a@x.com') && !ex.text.includes('pass_hash'));
+t('el dueño no puede cambiar su clave por la API', (await O2('POST', '/api/me/password', { current: env.OWNER_PASSWORD, next: 'Otra-Clave-Larga-99' })).status === 400);
+t('borrar cuenta exige la contraseña', (await D('DELETE', '/api/me', { password: 'mala-mala-mala' })).status === 400);
+t('el dueño no puede borrarse', (await O2('DELETE', '/api/me', { password: env.OWNER_PASSWORD })).status === 400);
+t('borrar cuenta funciona', (await D('DELETE', '/api/me', { password: 'Nueva-Clave-12345' })).status === 200);
+t('tras borrar, no puede entrar y sus datos desaparecen', (await D('POST', '/api/auth/login', { email: 'd@x.com', password: 'Nueva-Clave-12345' })).status === 401
+  && (await store.listOrders(dId)).length === 0 && !(await store.getUserById(dId)));
+t('la auditoría se conserva sin identificar al usuario borrado', (await store.listAudit(500)).every((a) => a.user_id !== dId) && (await store.listAudit(500)).some((a) => a.action === 'account_deleted'));
+
+console.log('Landing');
+const land = await (await fetch(base + '/')).text();
+t('"/" sirve la landing', /Crear cuenta gratis/.test(land) && /Beta gratuita/.test(land));
+t('la landing no inventa rendimiento, testimonios ni cifras', !/%\s*(anual|mensual|de retorno)|testimonio|garantizad[oa]s? (ganancias|rendimiento)/i.test(land.replace(/no garantizamos ganancias/gi, '')));
+t('"/app" sirve la aplicación', /\/app\.js/.test(await (await fetch(base + '/app')).text()));
+
 // bot descargable
 console.log('Bot descargable');
 const bundle = buildBotBundle();
@@ -263,6 +459,7 @@ fs.writeFileSync(f, bundle);
 let syntaxOk = true;
 try { execFileSync('node', ['--check', f]); } catch { syntaxOk = false; }
 t('el bot descargable tiene sintaxis válida', syntaxOk);
+t('el bot descargable incluye los indicadores', /function rsi\(/.test(bundle) && /function macd\(/.test(bundle));
 t('el bot descargable corre (--version)', execFileSync('node', [f, '--version']).toString().trim() === '1.0.0');
 t('el bot descargable muestra ayuda', /Modo papel/.test(execFileSync('node', [f, '--help']).toString()));
 let refused = false;

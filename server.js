@@ -2,8 +2,9 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { createApp } from './lib/app.js';
 import { createEngine } from './lib/engine.js';
+import { createDirector, getGuardrails } from './lib/agents.js';
 import { memoryStore, pgStore } from './lib/store.js';
-import { ADAPTERS, getPrice, getCloses } from './lib/exchanges.js';
+import { ADAPTERS, getPrice, getCloses, getHistory } from './lib/exchanges.js';
 
 const env = { ...process.env };
 const prod = env.NODE_ENV === 'production';
@@ -28,13 +29,22 @@ if (env.DATABASE_URL) {
   store = memoryStore();
 }
 
-const feed = { getPrice, getCloses };
+const feed = { getPrice, getCloses, getHistory };
 const engine = createEngine({ store, adapters: ADAPTERS, feed, encKey: env.ENCRYPTION_KEY });
-const app = createApp({ store, env, adapters: ADAPTERS, feed, engine });
+const director = createDirector({ store, feed });
+const app = createApp({ store, env, adapters: ADAPTERS, feed, engine, director });
 await app.bootstrap();
 
 const server = http.createServer(app.handler);
 server.listen(PORT, '0.0.0.0', () => console.log(`Quantum Trading escuchando en :${PORT}`));
 
 const timer = setInterval(() => engine.tick().catch((e) => console.error('tick', e.message)), 60000);
-process.on('SIGTERM', () => { clearInterval(timer); server.close(() => process.exit(0)); });
+// El Director corre solo cada N horas (ver límites del dueño). Solo PROPONE; nada se aplica sin tu aprobación.
+const autoTimer = setInterval(async () => {
+  try {
+    const g = await getGuardrails(store);
+    const last = Number(await store.getSetting('director_last_run', '0')) || 0;
+    if (Date.now() - last >= g.autoRunHours * 3600000) await director.run({ trigger: 'auto' });
+  } catch (e) { console.error('director', e.message); }
+}, 30 * 60000);
+process.on('SIGTERM', () => { clearInterval(timer); clearInterval(autoTimer); server.close(() => process.exit(0)); });

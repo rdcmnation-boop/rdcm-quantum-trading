@@ -26,7 +26,8 @@ async function botMain() {
 Uso: node quantum-bot.mjs [--live] [--once]
 Configura con variables de entorno o un archivo .env:
   EXCHANGE=coinbase|robinhood   KEY_ID=...   SECRET=...  (o SECRET_FILE=ruta)
-  SYMBOL=BTC-USD  STRATEGY=dca|sma  USD=10  INTERVAL_MIN=1440  FAST=20  SLOW=50
+  SYMBOL=BTC-USD  STRATEGY=dca|sma|rsi|macd  USD=10  INTERVAL_MIN=1440  FAST=20  SLOW=50
+  RSI_BUY=30  RSI_SELL=60  STOP_LOSS_PCT=8 (no aplica a dca)
   MAX_ORDER_USD=25  MAX_DAILY_USD=100
 Modo papel por defecto. Dinero real: --live y I_ACCEPT_RISK=yes.
 Usa llaves de SOLO trading (sin retiros). Esto no es asesoría financiera.`);
@@ -42,6 +43,7 @@ Usa llaves de SOLO trading (sin retiros). Esto no es asesoría financiera.`);
   const cfgIn = {
     mode: live ? 'live' : 'paper', symbol: e.SYMBOL || 'BTC-USD', strategy: e.STRATEGY || 'dca',
     usd: e.USD || 10, intervalMin: e.INTERVAL_MIN || 1440, fast: e.FAST || 20, slow: e.SLOW || 50,
+    rsiBuy: e.RSI_BUY || 30, rsiSell: e.RSI_SELL || 60, stopLossPct: e.STOP_LOSS_PCT ?? 8,
     maxOrderUsd: e.MAX_ORDER_USD || 25, maxDailyUsd: e.MAX_DAILY_USD || 100, enabled: true, liveAck: live,
   };
   const v = validateCfg(cfgIn, { symbols: SYMBOLS });
@@ -71,11 +73,11 @@ Usa llaves de SOLO trading (sin retiros). Esto no es asesoría financiera.`);
   async function step() {
     const now = Date.now();
     const price = await getPrice(cfg.symbol);
-    const closes = cfg.strategy === 'sma' ? await getCloses(cfg.symbol) : [];
+    const closes = cfg.strategy === 'dca' ? [] : await getCloses(cfg.symbol);
     const mine = state.orders.filter((o) => o.symbol === cfg.symbol && o.status === 'ok');
-    const lastBuy = mine.filter((o) => o.side === 'buy').sort((a, b) => b.t - a.t)[0];
-    const position = mine.reduce((s, o) => s + (o.side === 'buy' ? o.qty : -o.qty), 0);
-    const d = decide(cfg, { closes, now, lastBuyAt: lastBuy ? lastBuy.t : 0, position });
+    const pos = positionFromOrders(mine.map((o) => ({ side: o.side, qty: o.qty, usd: o.usd, ts: o.t })));
+    const position = pos.qty;
+    const d = decide(cfg, { closes, now, price, lastBuyAt: pos.lastBuyAt, lastSellAt: pos.lastSellAt, position, avgCost: pos.avgCost });
     if (d.action === 'hold') { console.log(new Date().toISOString(), 'mantener:', d.reason); return; }
 
     let usd = d.action === 'buy' ? Math.min(d.usd, cfg.maxOrderUsd) : 0;

@@ -62,3 +62,20 @@ code{background:var(--chip);padding:1px 6px;border-radius:5px;font-size:13px;wor
 .legal h1{font-size:24px}.legal h2{font-size:18px;text-transform:none;letter-spacing:0;color:var(--fg);margin-top:28px}
 .legal p,.legal li{color:var(--fg)}
 .steps{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:13px}
+/* ---- landing ---- */
+.land{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+.land header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.land .hero{display:flex;flex-direction:column;gap:18px;padding-block:24px}
+.land h1{font-size:clamp(28px,6vw,46px);line-height:1.1;letter-spacing:-.02em;max-width:18ch;margin:0}
+.land .lead{font-size:clamp(16px,2.4vw,19px);color:var(--muted);max-width:60ch;margin:0}
+.land .cta{display:flex;gap:10px;flex-wrap:wrap}
+.land .btn{display:inline-block;text-decoration:none}
+.land .pills{display:flex;gap:8px;flex-wrap:wrap}
+.land h2{font-size:clamp(20px,3.4vw,28px);text-transform:none;letter-spacing:-.01em;color:var(--fg);margin:0 0 14px}
+.land .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px}
+.land .step b.n{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--accent-fg);margin-bottom:8px}
+.land .card p{margin:6px 0 0;color:var(--muted);font-size:14px}
+.land details{border-bottom:1px solid var(--line);padding:12px 0}
+.land summary{cursor:pointer;font-weight:600}
+.land details p{color:var(--muted);margin:8px 0 0}
+.land footer{color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:16px}
