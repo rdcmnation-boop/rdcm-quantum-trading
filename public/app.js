@@ -51,7 +51,7 @@ function viewAuth() {
     try {
       const r = await api('POST', reg ? '/api/auth/register' : '/api/auth/login',
         reg ? { email: f.email, password: f.password, acceptTos: f.tos === 'on' } : { email: f.email, password: f.password, totp: f.totp });
-      state.user = r.user; state.needTotp = false; state.tab = r.user.role === 'owner' ? 'o_launch' : 'resumen';
+      state.user = r.user; state.needTotp = false; state.tab = r.user.role === 'owner' ? 'o_hoy' : 'resumen';
       await boot();
     } catch (err) {
       if (err.data && err.data.need_totp) { state.needTotp = true; viewAuth(); $('#m').textContent = err.message; $('#m').className = 'msg err'; return; }
@@ -61,8 +61,8 @@ function viewAuth() {
 }
 
 // ============================ Estructura ============================
-const CLIENT_TABS = [['resumen', 'Resumen'], ['exchanges', 'Exchanges'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
-const OWNER_TABS = [['o_launch', 'Lanzamiento'], ['o_cerebro', 'Cerebro'], ['o_overview', 'Analíticas'], ['o_clientes', 'Clientes'], ['o_export', 'Exportar'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
+const CLIENT_TABS = [['resumen', 'Resumen'], ['mercado', 'Mercado'], ['exchanges', 'Exchanges'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
+const OWNER_TABS = [['o_hoy', 'Hoy'], ['o_cerebro', 'Cerebro'], ['o_launch', 'Lanzamiento'], ['o_overview', 'Analíticas'], ['o_clientes', 'Clientes'], ['o_export', 'Exportar'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
 
 function shell() {
   const owner = state.user.role === 'owner';
@@ -86,9 +86,10 @@ async function loadTab() {
   const main = $('#main');
   main.innerHTML = '<div class="card muted">Cargando…</div>';
   try {
-    const fn = { resumen: tabResumen, exchanges: tabExchanges, bot: tabBot, ordenes: tabOrdenes, descargar: tabDescargar, cuenta: tabCuenta,
+    const fn = { resumen: tabResumen, exchanges: tabExchanges, bot: tabBot, ordenes: tabOrdenes, descargar: tabDescargar, cuenta: tabCuenta, mercado: tabMercado, o_hoy: tabHoy,
       o_launch: tabLaunch, o_cerebro: tabCerebro, o_export: tabExport, o_overview: tabOverview, o_clientes: tabClientes, o_seguridad: tabSeguridad, o_ajustes: tabAjustes }[state.tab];
     await fn(main);
+    accordionize(main);
   } catch (e) { main.innerHTML = `<div class="card"><span class="neg">${esc(e.message)}</span></div>`; }
 }
 
@@ -126,7 +127,7 @@ async function tabExchanges(main) {
     ${rows ? `<div class="scroll"><table><thead><tr><th>Exchange</th><th>Nombre</th><th>Llave</th><th>Permisos</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Todavía no conectaste ningún exchange.</p>'}
     <div id="bal" class="msg"></div>
   </div>
-  <div class="card"><h2>Conectar un exchange</h2>
+  <div class="card" ${rows ? "" : "data-open"}><h2>Conectar un exchange</h2>
     <form id="cf" class="form">
       <label>Exchange<select name="exchange"><option value="coinbase">Coinbase Advanced</option><option value="robinhood">Robinhood Crypto</option></select></label>
       <label>Nombre (opcional)<input name="label" maxlength="60" placeholder="Mi cuenta"></label>
@@ -393,7 +394,7 @@ async function tabCerebro(main) {
   <div class="row"><button class="btn" id="br_run">▶ Correr agentes ahora</button><span class="msg" id="br_m"></span></div>
   <div class="card"><h2>Laboratorio de papel · $1M virtual</h2><div class="grid">${labCards}</div>
     ${lessons ? `<h2 style="margin-top:14px">Lo que aprendió</h2><ul class="lessons">${lessons}</ul>` : ''}</div>
-  <div class="card"><h2>Por decidir (${b.pending.length})</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
+  <div class="card" ${b.pending.length ? "data-open" : ""}><h2>Por decidir (${b.pending.length})</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
   <div class="card"><h2>Agentes</h2><div class="scroll"><table><tbody>${agents}</tbody></table></div><div class="msg" id="ag_m"></div></div>
   <div class="card"><h2>Corridas</h2>${runs ? `<div class="scroll"><table><tbody>${runs}</tbody></table></div>` : '<p class="muted">Sin corridas.</p>'}</div>
   <details class="card"><summary><h2 style="display:inline">Modelos ML</h2></summary><div class="scroll"><table><thead><tr><th>Par</th><th>Estado</th><th>Precisión vs base</th></tr></thead><tbody>${models}</tbody></table></div></details>
@@ -432,6 +433,66 @@ async function tabExport(main) {
     <div class="row"><a class="btn" href="/api/owner/export/brain" download>Descargar Cerebro (JSON)</a><a class="btn ghost" href="/api/owner/export/app" download>Descargar app completo (.tar.gz)</a></div>
     <p class="muted" style="font-size:13px">El Cerebro incluye límites, agentes, modelos, propuestas y bitácora. El .tar.gz trae el código y BRAIN.json. Ninguno contiene contraseñas, llaves API ni datos individuales de clientes. Guárdalos como respaldo antes de cambios grandes.</p>
   </div>`;
+}
+
+
+// Todas las tarjetas con título se vuelven secciones que se despliegan al tocar. La primera (o las marcadas data-open) abre sola.
+function accordionize(main) {
+  let i = 0;
+  [...main.children].forEach((c) => {
+    if (!c.classList.contains('card') || c.tagName === 'DETAILS') return;
+    const h = c.firstElementChild;
+    if (!h || h.tagName !== 'H2') return;
+    const d = document.createElement('details');
+    d.className = 'card acc';
+    if (c.hasAttribute('data-open') || i === 0) d.open = true;
+    const sm = document.createElement('summary');
+    sm.append(h);
+    const body = document.createElement('div');
+    body.className = 'accb';
+    while (c.firstChild) body.append(c.firstChild);
+    d.append(sm, body);
+    c.replaceWith(d);
+    i++;
+  });
+}
+
+async function tabHoy(main) {
+  const b = await api('GET', '/api/owner/briefing');
+  const icon = { crit: '●', warn: '●', info: '○' };
+  main.innerHTML = `
+  <div class="card hero-o ${esc(b.status)}">
+    <div class="row" style="justify-content:space-between"><div><div class="muted" style="font-size:12px;letter-spacing:.1em;text-transform:uppercase">Resumen del Director</div><div class="big">${esc(b.headline)}</div></div>
+      <div class="row"><span class="chip">Cerebro v${b.brain_version}</span><span class="chip">${b.score} % listo</span><span class="chip">${b.pending} pend.</span></div></div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="h_run">▶ Correr todo</button><button class="btn ghost" id="h_ack">Enterado (hallazgos)</button><span class="msg" id="h_m"></span></div>
+  </div>
+  <div class="card" style="padding:4px 12px">${b.items.map((i) => `<button class="item ${esc(i.level)}" data-go="${esc(i.tab)}"><span class="lv">${icon[i.level] || '○'}</span><span class="grow">${esc(i.text)}</span><span class="muted">›</span></button>`).join('')}</div>
+  <p class="muted" style="font-size:12px">Actualizado ${esc(ago(b.t))} · última corrida de agentes ${esc(ago(b.last_run))}</p>`;
+  document.querySelectorAll('[data-go]').forEach((x) => x.addEventListener('click', () => { state.tab = x.dataset.go; shell(); loadTab(); }));
+  $('#h_run').addEventListener('click', async (e) => {
+    e.target.disabled = true; setMsg($('#h_m'), 'El Director está orquestando a los agentes…', true);
+    try { await api('POST', '/api/owner/brain/run'); await loadTab(); } catch (err) { setMsg($('#h_m'), err.message); e.target.disabled = false; }
+  });
+  $('#h_ack').addEventListener('click', async () => {
+    try { const r = await api('POST', '/api/owner/proposals/ack-info'); setMsg($('#h_m'), `${r.acknowledged} hallazgo(s) marcados`, true); setTimeout(loadTab, 700); } catch (err) { setMsg($('#h_m'), err.message); }
+  });
+}
+
+async function tabMercado(main) {
+  const m = await api('GET', '/api/market');
+  const g = m.global;
+  const coins = m.coins.map((c) => `<tr><td><b>${esc(c.symbol.replace('-USD', ''))}</b></td><td class="r">${money(c.price, c.price < 10 ? 4 : 2)}</td><td class="r ${cls(c.ch24)}">${pc(c.ch24)}</td><td class="r ${cls(c.ch7)}">${pc(c.ch7)}</td><td class="r ${cls(c.ch30)}">${pc(c.ch30)}</td></tr>`).join('');
+  const books = m.books.map((b) => `<tr><td><b>${esc(b.symbol)}</b></td><td class="r">${b.spreadPct.toFixed(3)} %</td><td class="r">${money(Math.min(b.bidDepthUsd, b.askDepthUsd), 0)}</td><td class="r">${b.volume24Usd ? money(b.volume24Usd, 0) : '—'}</td></tr>`).join('');
+  main.innerHTML = `
+  <div class="kpis">
+    <div class="kpi"><div class="l">Régimen</div><div class="v" style="font-size:20px">${esc(m.regime.label)}</div><div class="s">BTC 7/30 d</div></div>
+    <div class="kpi"><div class="l">Dominancia BTC</div><div class="v" style="font-size:20px">${g && g.btcDom !== null ? g.btcDom.toFixed(1) + ' %' : '—'}</div><div class="s">del mercado cripto</div></div>
+    <div class="kpi"><div class="l">Mercado 24 h</div><div class="v ${g ? cls(g.mcap24) : ''}" style="font-size:20px">${g ? pc(g.mcap24) : '—'}</div><div class="s">capitalización total</div></div>
+  </div>
+  <div class="card" data-open><h2>Precios y tendencia</h2>${coins ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Precio</th><th class="r">24 h</th><th class="r">7 d</th><th class="r">30 d</th></tr></thead><tbody>${coins}</tbody></table></div>` : '<p class="muted">Sin datos de CoinGecko ahora mismo.</p>'}</div>
+  <div class="card"><h2>Liquidez real (Coinbase Exchange)</h2>${books ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Spread</th><th class="r">Profundidad ±0.5 %</th><th class="r">Volumen 24 h</th></tr></thead><tbody>${books}</tbody></table></div>` : '<p class="muted">Sin libro de órdenes ahora mismo.</p>'}</div>
+  <div class="card"><h2>Tendencia en CoinGecko</h2>${m.trending.length ? `<div class="row">${m.trending.map((t) => `<span class="chip">${esc(t.name)} ${esc(t.symbol.toUpperCase())}</span>`).join('')}</div>` : '<p class="muted">Sin datos.</p>'}</div>
+  <p class="muted" style="font-size:12px">${esc(m.note)} Actualizado ${esc(ago(m.t))}.${m.errors.length ? ' Fuentes con problemas: ' + esc(m.errors.join('; ')) : ''}</p>`;
 }
 
 // ============================ Dueño ============================

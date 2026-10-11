@@ -184,8 +184,12 @@ const adapters = { coinbase: good, robinhood: risky };
 const feed = { getPrice: async () => 50000, getCloses: async () => Array.from({ length: 100 }, (_, i) => 100 + i),
   getHistory: async (sym, n) => (sym === 'BTC-USD' ? series(n, 0.6, 7) : series(n, 0, 11)) };
 const engine = createEngine({ store, adapters, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
-const director = createDirector({ store, feed });
-const app = createApp({ store, env, adapters, feed, engine, director, log: { warn() {}, error() {} } });
+const fakeMarket = async () => ({ t: Date.now(), regime: { code: 'range', label: 'Lateral' }, sources: { coingecko: true, coinbase_exchange: true },
+  gecko: { ok: true, errors: [], global: { mcap: 2.1e12, vol24: 8e10, btcDom: 54.2, ethDom: 12.1, mcap24: 0.8 }, coins: [{ symbol: 'BTC-USD', price: 50000, ch24: 1.2, ch7: 2.5, ch30: 4.1, vol24: 2e10, mcap: 1e12, athChg: -20 }], trending: [{ name: 'Solana', symbol: 'SOL' }] },
+  books: [{ symbol: 'BTC-USD', bid: 49990, ask: 50010, mid: 50000, spreadPct: 0.04, bidDepthUsd: 3e6, askDepthUsd: 3e6, volume24Usd: 9e8 }],
+  calibration: { coinbase: { halfSpreadPct: { 'BTC-USD': 0.02 }, advUsd: { 'BTC-USD': 9e8 } }, t: Date.now() } });
+const director = createDirector({ store, feed, market: fakeMarket });
+const app = createApp({ store, env, adapters, feed, engine, director, market: fakeMarket, log: { warn() {}, error() {} } });
 await app.bootstrap();
 const server = http.createServer(app.handler);
 await new Promise((r) => server.listen(0, r));
@@ -345,7 +349,7 @@ t('el Director corre todos los agentes disponibles', run.status === 200 && ['pro
 t('los agentes NO cambian nada por sí solos', (await store.getSetting('default_cfg', null)) === null
   && (await store.getSetting('brain_version', '1')) === v0 && (await store.getSetting('model:active:BTC-USD', null)) === null);
 const brain = (await O2('GET', '/api/owner/brain')).body;
-t('Cerebro: 7 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 7 && brain.agents.filter((a) => !a.available).length === 2
+t('Cerebro: 8 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 8 && brain.agents.filter((a) => !a.available).length === 2
   && brain.agents.filter((a) => !a.available).every((a) => /Claude/.test(a.reason)));
 t('Cerebro: propuestas pendientes con evidencia', brain.pending.length > 0 && brain.pending.every((p) => p.evidence && p.title));
 const mlProp = brain.pending.find((p) => p.kind === 'model_update');
@@ -446,10 +450,50 @@ t('un cliente no ve la lista de lanzamiento', (await A('GET', '/api/owner/readin
 const ov2 = (await O2('GET', '/api/owner/overview')).body;
 t('embudo real de clientes', ov2.funnel.length === 5 && ov2.funnel[0].n >= 1 && ov2.funnel.every((f) => f.n <= ov2.funnel[0].n));
 
+console.log('Mercado, resumen del Director y lote de hallazgos');
+{
+  const { classifyRegime, fetchGecko, fetchBook, calibrationFrom } = await import('../lib/market.js');
+  const { setCalibration, getCalibration } = await import('../lib/costs.js');
+  t('régimen: alcista, bajista, volátil, lateral y sin datos', classifyRegime({ btc7: 3, btc30: 20, mcap24: 1 }).code === 'bull' && classifyRegime({ btc7: -3, btc30: -20, mcap24: 1 }).code === 'bear'
+    && classifyRegime({ btc7: 12, btc30: 2, mcap24: 1 }).code === 'volatile' && classifyRegime({ btc7: 1, btc30: 2, mcap24: 1 }).code === 'range' && classifyRegime({ btc7: null, btc30: null }).code === 'unknown');
+  const jf = (map) => async (url) => { const k = Object.keys(map).find((x) => url.includes(x)); if (!k) return { ok: false, status: 404, json: async () => ({}) }; return { ok: true, status: 200, json: async () => map[k] }; };
+  const g = await fetchGecko(jf({ '/global': { data: { total_market_cap: { usd: 2e12 }, market_cap_percentage: { btc: 50 }, market_cap_change_percentage_24h_usd: -1 } },
+    '/coins/markets': [{ id: 'bitcoin', current_price: 100, price_change_percentage_24h_in_currency: 1, price_change_percentage_7d_in_currency: 2, price_change_percentage_30d_in_currency: 3, total_volume: 5, market_cap: 9 }, { id: 'otra-cosa', current_price: 1 }],
+    '/search/trending': { coins: [{ item: { name: 'X', symbol: 'x' } }] } }));
+  t('CoinGecko: parsea global, mercados (solo pares permitidos) y tendencia', g.ok && g.global.btcDom === 50 && g.coins.length === 1 && g.coins[0].symbol === 'BTC-USD' && g.coins[0].ch7 === 2 && g.trending[0].name === 'X');
+  const gBad = await fetchGecko(async () => { throw new Error('sin red'); });
+  t('CoinGecko caído: no inventa nada y reporta errores', gBad.ok === false && gBad.errors.length === 3 && !gBad.coins);
+  const bk = await fetchBook('BTC-USD', jf({ '/book': { bids: [['99.9', '10', 1], ['99', '5', 1]], asks: [['100.1', '10', 1], ['101', '5', 1]] }, '/stats': { volume: '1000', last: '100' } }));
+  t('libro Coinbase: spread, profundidad ±0.5 % y volumen en USD', Math.abs(bk.spreadPct - 0.2) < 0.01 && bk.bidDepthUsd > 900 && bk.bidDepthUsd < 1100 && bk.volume24Usd === 100000);
+  t('libro vacío o caído devuelve null', (await fetchBook('BTC-USD', async () => { throw new Error('x'); })) === null);
+  const before = simulateFill({ side: 'buy', usd: 1000, price: 100, symbol: 'BTC-USD', exchange: 'coinbase' }).slipPct;
+  setCalibration(calibrationFrom([bk]));
+  const after = simulateFill({ side: 'buy', usd: 1000, price: 100, symbol: 'BTC-USD', exchange: 'coinbase' }).slipPct;
+  t('la calibración con datos reales cambia el costo simulado de Coinbase (no el de Robinhood)', after !== before && getCalibration() && simulateFill({ side: 'buy', usd: 1000, price: 100, exchange: 'robinhood' }).slipPct > 0.2);
+  setCalibration(null);
+}
+const mk = await A('GET', '/api/market');
+t('mercado: endpoint con régimen, global y libro (requiere sesión)', mk.status === 200 && mk.body.regime.code === 'range' && mk.body.global.btcDom === 54.2 && mk.body.books.length === 1 && (await nobody('GET', '/api/market')).status === 401);
+const brief = await O2('GET', '/api/owner/briefing');
+t('resumen del Director: titular, prioridades ordenadas y destino de cada ítem', brief.status === 200 && brief.body.headline && brief.body.items.length >= 4 && brief.body.items.every((i) => i.tab && i.text)
+  && brief.body.items.map((i) => ({ crit: 0, warn: 1, info: 2 }[i.level])).every((v, i, a) => i === 0 || a[i - 1] <= v));
+t('el resumen incluye mercado y laboratorio reales', brief.body.items.some((i) => /Mercado/.test(i.text)) && brief.body.items.some((i) => /Laboratorio/.test(i.text)));
+t('un cliente no ve el resumen del Director', (await A('GET', '/api/owner/briefing')).status === 403);
+{
+  const mkt = (await store.getSetting('market:snapshot', null));
+  t('el agente de mercado guardó instantánea e historial', mkt && JSON.parse(mkt).regime.code === 'range' && JSON.parse(await store.getSetting('market:history', '[]')).length >= 1);
+  await store.addProposal({ agent: 'test', kind: 'insight', key: 'k-ack', title: 'hallazgo de prueba', detail: '{}', evidence: '{}', touches: '[]' });
+  const verBefore = await store.getSetting('brain_version', '1');
+  const ack = await O2('POST', '/api/owner/proposals/ack-info');
+  t('"enterado" en lote: solo hallazgos, sin cambiar la versión del Cerebro', ack.status === 200 && ack.body.acknowledged >= 1 && verBefore === (await store.getSetting('brain_version', '1')));
+  t('el lote no toca propuestas que cambian algo', (await store.listProposals('pending', 200)).every((p) => ['strategy_defaults', 'agent_toggle', 'model_update'].includes(p.kind)));
+  t('cliente no puede usar el lote', (await A('POST', '/api/owner/proposals/ack-info')).status === 403);
+}
+
 console.log('Exportación del Cerebro y del app');
 const eb = await O2('GET', '/api/owner/export/brain');
 t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
-t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 7
+t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 8
   && eb.body.models['BTC-USD']?.active && eb.body.changelog.length >= 2 && eb.body.agent_audit.length > 0);
 t('el Cerebro exportado no contiene secretos', !eb.text.includes(secretPem) && !eb.text.includes('pass_hash') && !eb.text.includes('organizations/o/apiKeys'));
 const ea = await fetch(base + '/api/owner/export/app', { headers: { Cookie: eb.cookie } });

@@ -1,6 +1,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { createApp } from './lib/app.js';
+import { setCalibration } from './lib/costs.js';
 import { createEngine } from './lib/engine.js';
 import { createDirector, getGuardrails } from './lib/agents.js';
 import { memoryStore, pgStore } from './lib/store.js';
@@ -34,6 +35,7 @@ const engine = createEngine({ store, adapters: ADAPTERS, feed, encKey: env.ENCRY
 const director = createDirector({ store, feed });
 const app = createApp({ store, env, adapters: ADAPTERS, feed, engine, director });
 await app.bootstrap();
+try { setCalibration(JSON.parse(await store.getSetting('market:calibration', 'null'))); } catch { /* sin calibración previa */ }
 
 const server = http.createServer(app.handler);
 server.listen(PORT, '0.0.0.0', () => console.log(`Quantum Trading escuchando en :${PORT}`));
