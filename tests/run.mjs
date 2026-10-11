@@ -655,6 +655,13 @@ console.log('Todas las criptos, escáner y modo AUTO');
     calls.length = 0;
     await eng2.runBot({ ...(await store.getBot(eId)), last_run: 0 }, Date.now() + 400000000);
     t('AUTO real: si el par no está en Robinhood, opera en Coinbase', calls.some((c) => c[0] === 'coinbase' && c[1] === 'buy') && !calls.some((c) => c[0] === 'robinhood' && c[1] === 'buy'), JSON.stringify(calls));
+    // Saldo disponible: reparte lo que hay (USD 100 simulados) entre posiciones libres, bajo el tope por orden
+    for (const o of (await store.listOrders(eId)).filter((x) => x.mode === 'live')) await store.addOrder({ ...o, side: 'sell', id: undefined, created_at: undefined, status: 'ok' });
+    await store.saveBot(eId, { ...liveCfg, sizing: 'balance', maxOrderUsd: 25, usd: 10, maxPositions: 4 });
+    let sized = null; ad2.coinbase.marketBuy = async (_c, a) => { sized = a.usd; return { ok: true, id: 'x' }; };
+    await store.setSetting(`rhpairs:${eId}`, JSON.stringify({ t: Date.now(), symbols: ['BTC-USD'], verified: true }));
+    await eng2.runBot({ ...(await store.getBot(eId)), last_run: 0 }, Date.now() + 900000000);
+    t('saldo disponible: la compra se dimensiona con el saldo (100/4 = ~24.75) y respeta el tope', sized !== null && sized > 24 && sized <= 25, String(sized));
     await store.setSetting('live_trading', 'off');
     await store.deleteConnection(eId, c1.id); await store.deleteConnection(eId, c2.id);
   }

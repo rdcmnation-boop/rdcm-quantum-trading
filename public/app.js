@@ -292,6 +292,7 @@ async function tabBot(main) {
       <label class="real">Conexión para operar<select name="connectionId"><option value="">— elegir —</option>${connections.map((c) => opt(c.id, cfg.connectionId, `${c.exchange} · ${c.label}`)).join('')}</select></label>
       <label class="real">Tope por orden (USD, máx. ${money(state.me.limits.hardMaxOrder, 0)})<input name="maxOrderUsd" type="number" min="1" step="any" value="${esc(cfg.maxOrderUsd)}"></label>
       <label class="real">Tope diario de compras (USD, máx. ${money(state.me.limits.hardMaxDaily, 0)})<input name="maxDailyUsd" type="number" min="1" step="any" value="${esc(cfg.maxDailyUsd)}"></label>
+      <label class="check full real"><input type="checkbox" name="sizing" ${cfg.sizing === 'balance' ? 'checked' : ''}><span>Usar el saldo disponible en mi exchange (se reparte entre posiciones y nunca pasa los topes de abajo)</span></label>
       <label class="check full real"><input type="checkbox" name="liveAck" ${cfg.liveAck ? 'checked' : ''}><span>Entiendo que el modo REAL usa mi dinero, que puedo perder todo lo que invierta, que los resultados pasados o simulados no garantizan resultados futuros y que Quantum Trading no es asesor financiero.</span></label>
       <label class="check full"><input type="checkbox" name="enabled" ${cfg.enabled ? 'checked' : ''}><span><b>Bot encendido</b></span></label>
       <div class="full row"><button class="btn" type="submit">Guardar</button><button class="btn danger" type="button" id="kill">Apagar ya</button></div>
@@ -335,7 +336,7 @@ async function tabBot(main) {
     const f = e.target;
     const body = { symbol: f.symbol.value.trim().toUpperCase(), paperExchange: f.paperExchange.value, maxPositions: f.maxPositions.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
       slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
-      maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, enabled: f.enabled.checked };
+      maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, sizing: f.sizing.checked ? 'balance' : 'fixed', enabled: f.enabled.checked };
     try { await api('PUT', '/api/bot', body); setMsg($('#bm'), 'Guardado.', true); } catch (err) { setMsg($('#bm'), err.message); }
   });
   $('#sg_run').addEventListener('click', async () => {
