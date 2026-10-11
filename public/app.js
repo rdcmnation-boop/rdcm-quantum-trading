@@ -131,7 +131,7 @@ function botNowHtml(b) {
   const fresh = b.last_run && Date.now() - b.last_run < 180000;
   const status = !b.enabled ? '<span class="chip">Apagado</span>' : fresh ? '<span class="chip paper">● Activo</span>' : '<span class="chip">Esperando ciclo</span>';
   const p = b.position;
-  const cta = b.enabled ? '' : `<div class="row" style="margin:8px 0"><button class="btn" id="bn_auto">▶ Encender Cerebro (papel)</button><button class="btn ghost" id="bn_demo">Demo: compra cada 15 min</button></div>`;
+  const cta = b.enabled ? `<div class="row" style="margin:6px 0"><button class="btn danger small" id="bn_off">Apagar</button></div>` : `<div class="row" style="margin:8px 0"><button class="btn" id="bn_auto">▶ Encender Cerebro (papel)</button><button class="btn ghost" id="bn_demo">Demo: compra cada 15 min</button></div>`;
   const hold = (b.holdings || []).map((h) => `<tr><td><b>${esc(h.symbol.replace('-USD', ''))}</b> <span class="chip">${esc(h.venue || '')}</span></td><td class="r">${num(h.qty, 6)}</td><td class="r">${h.value !== null ? money(h.value) : '—'}</td><td class="r ${cls(h.unrealized)}">${h.unrealized !== null ? money(h.unrealized) : '—'}</td></tr>`).join('');
   const sc = b.scanner;
   return `<div class="row" style="justify-content:space-between"><div class="row"><b>${auto ? 'Cerebro AUTO' : esc(b.symbol)}</b> ${status}<span class="chip ${b.mode === 'live' ? 'live' : 'paper'}">${b.mode === 'live' ? 'REAL' : 'PAPEL'}</span>${auto ? '' : `<span class="chip">${esc(String(b.strategy).toUpperCase())}</span>`}</div>
@@ -146,10 +146,25 @@ function botNowHtml(b) {
     </div>
     ${hold ? `<div class="scroll" style="margin-top:6px"><table><thead><tr><th>Posición</th><th class="r">Cant.</th><th class="r">Valor</th><th class="r">No realiz.</th></tr></thead><tbody>${hold}</tbody></table></div>` : ''}
     ${b.errors ? `<div class="msg err">${b.errors} error(es) seguidos del exchange</div>` : ''}
-    ${b.recent.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${b.recent.slice(0, 5).map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} ${esc(o.symbol)}</td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : `<span class="neg">${esc(o.status)}</span>`}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${b.recent.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${b.recent.slice(0, 6).map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} ${esc(o.symbol)} <span class="chip ${o.mode === 'live' ? 'live' : 'paper'}">${o.mode === 'live' ? 'REAL' : 'papel'}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : `<span class="neg">${esc(o.status)}</span>`}</td></tr>${o.status !== 'ok' && o.note ? `<tr><td colspan="4" class="neg" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.note)}</td></tr>` : ''}`).join('')}</tbody></table></div>` : ''}
     ${b.enabled ? '<p class="muted" style="font-size:11px;margin:6px 0 0">El bot trabaja mientras el servidor está despierto. En el plan gratis de Render se duerme sin visitas: usa UptimeRobot sobre /api/health.</p>' : ''}`;
 }
+function liveHtml(d) {
+  if (!d || !d.exchanges.length) return '<p class="muted">Conecta Robinhood o Coinbase en <b>Conectar</b> y aquí verás tu saldo, tus órdenes reales y los precios en vivo.</p>';
+  return d.exchanges.map((e) => {
+    const bal = e.balances.length ? e.balances.map((b) => `<span class="chip"><b>${esc(b.asset)}</b> ${num(b.available, 6)}${b.usd !== null ? ` ≈ ${money(b.usd)}` : ''}</span>`).join(' ') : '<span class="muted">sin saldo visible</span>';
+    const q = e.quotes.length ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Compra</th><th class="r">Venta</th><th class="r">Spread</th><th class="r">vs Coinbase</th></tr></thead><tbody>${e.quotes.map((x) => `<tr><td><b>${esc(x.symbol.replace('-USD', ''))}</b></td><td class="r">${money(x.ask, x.ask < 10 ? 4 : 2)}</td><td class="r">${money(x.bid, x.bid < 10 ? 4 : 2)}</td><td class="r">${x.spread_pct.toFixed(2)} %</td><td class="r ${x.gap_pct > 0.1 ? 'neg' : x.gap_pct < -0.1 ? 'pos' : ''}">${x.gap_pct === null ? '—' : pc(x.gap_pct, 2)}</td></tr>`).join('')}</tbody></table></div>` : '';
+    const o = e.orders.length ? `<div class="scroll"><table><tbody>${e.orders.slice(0, 6).map((x) => `<tr><td>${esc(ago(x.t))}</td><td>${x.side === 'buy' ? 'Compra' : 'Venta'} <b>${esc(String(x.symbol).replace('-USD', ''))}</b></td><td class="r">${x.qty ? num(x.qty, 6) : '—'}</td><td class="r">${x.price ? money(x.price, x.price < 10 ? 4 : 2) : '—'}</td><td>${esc(x.state)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted" style="font-size:12px;margin:4px 0">Sin órdenes recientes en el exchange.</p>';
+    return `<div class="c2" style="margin-bottom:8px"><div class="row" style="justify-content:space-between"><b>${esc(e.exchange === 'robinhood' ? 'Robinhood' : 'Coinbase')}</b><span class="muted" style="font-size:12px">${esc(e.label || '')}</span></div>
+      <div class="row" style="margin:6px 0">${bal}</div>${q}${o}${e.errors.length ? `<div class="msg err" style="font-size:12px">${e.errors.map(esc).join('<br>')}</div>` : ''}</div>`;
+  }).join('') + `<p class="muted" style="font-size:11px;margin:0">Datos leídos de tu exchange ${esc(ago(d.t))}. «vs Coinbase»: cuánto más caro (+) o barato (−) es comprar en Robinhood frente al precio de Coinbase ahora.</p>`;
+}
+async function refreshLive(force = false) {
+  const el = $('#live_b'); if (!el) return;
+  try { el.innerHTML = liveHtml(await api('GET', `/api/exchange/live${force ? '?force=1' : ''}`)); } catch (e) { el.innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+}
 function bindBotNow() {
+  const off = $('#bn_off'); if (off) off.addEventListener('click', async () => { try { await api('POST', '/api/bot/kill'); state.tab = 'resumen'; loadTab(); } catch (e) { alert(e.message); } });
   const a = $('#bn_auto'); const d = $('#bn_demo');
   if (a) a.addEventListener('click', () => quickStart(AUTO_PRESET).catch((e) => alert(e.message)));
   if (d) d.addEventListener('click', () => quickStart(DEMO_PRESET).catch((e) => alert(e.message)));
@@ -162,7 +177,8 @@ async function tabResumen(main) {
     <td class="r ${cls(p.unrealized)}">${money(p.unrealized)}</td><td class="r ${cls(p.realized)}">${money(p.realized)}</td></tr>`).join('');
   main.innerHTML = `
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
-  <div class="banner">El modo <b>papel</b> simula operaciones con precios reales y <b>no mueve dinero</b>. Los resultados simulados no garantizan resultados reales.</div>
+  <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>
+  <div class="banner">El modo <b>papel</b> simula con precios reales y <b>no mueve dinero</b>. Lo simulado no garantiza resultados reales.</div>
   <div class="kpis">
     <div class="kpi"><div class="l">Bot</div><div class="v">${bot.cfg.enabled ? 'Activo' : 'Apagado'}</div><div class="s">${bot.cfg.symbol === 'AUTO' ? 'Cerebro AUTO' : esc(bot.cfg.strategy.toUpperCase()) + ' · ' + esc(bot.cfg.symbol)} · ${bot.cfg.mode === 'live' ? 'REAL' : 'papel'}</div></div>
     <div class="kpi"><div class="l">Exchanges conectados</div><div class="v">${conns.connections.length}</div><div class="s">solo llaves de trading</div></div>
@@ -172,10 +188,10 @@ async function tabResumen(main) {
     ${rows ? `<div class="scroll"><table><thead><tr><th>Modo</th><th>Par</th><th class="r">Cantidad</th><th class="r">Costo</th><th class="r">Valor</th><th class="r">No realizado</th><th class="r">Realizado</th></tr></thead><tbody>${rows}</tbody></table></div>`
       : '<p class="muted">Aún no hay órdenes. Configura tu bot en la pestaña Bot (empieza en modo papel).</p>'}
   </div>`;
-  bindBotNow();
+  bindBotNow(); refreshLive(); $('#live_r').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
   let n = 0; let waiting = bn.enabled && !bn.last;
   tabTimer = setInterval(async () => {
-    n++; if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
+    n++; if (n % 8 === 0) refreshLive(); if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
     try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
   }, 4000);
 }

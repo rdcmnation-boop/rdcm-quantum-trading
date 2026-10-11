@@ -358,7 +358,8 @@ t('Cerebro: 9 agentes, 2 marcados como no disponibles (requieren LLM)', brain.ag
 t('Cerebro: propuestas pendientes con evidencia', brain.pending.length > 0 && brain.pending.every((p) => p.evidence && p.title));
 const mlProp = brain.pending.find((p) => p.kind === 'model_update');
 t('el ML propone activar el modelo solo cuando hay ventaja real (BTC sí, ETH no)', !!mlProp && mlProp.title.includes('BTC-USD')
-  && brain.pending.some((p) => p.kind === 'insight' && p.title.includes('ETH-USD') && /no supera/.test(p.title)));
+  && brain.history.some((p) => p.kind === 'insight' && p.title.includes('ETH-USD') && /no supera/.test(p.title) && p.status === 'applied'));
+t('el Director archiva solo los hallazgos informativos (no quedan pendientes)', !brain.pending.some((p) => p.kind === 'insight'));
 t('modelos: candidato guardado, ninguno activo todavía', brain.models.find((m) => m.symbol === 'BTC-USD').candidate && !brain.models.find((m) => m.symbol === 'BTC-USD').active);
 t('cliente no ve el Cerebro', (await A('GET', '/api/owner/brain')).status === 403);
 t('cliente no puede aprobar propuestas', (await A('POST', `/api/owner/proposals/${brain.pending[0].id}/decision`, { decision: 'approve' })).status === 403);
@@ -372,7 +373,7 @@ t('el dueño aprueba activar el modelo', ap.status === 200 && ap.body.changed ==
 t('al aprobar sube la versión del Cerebro y se activa el modelo', Number(await store.getSetting('brain_version', '1')) === Number(v0) + 1
   && !!(await store.getSetting('model:active:BTC-USD', null)));
 t('no se puede decidir dos veces la misma propuesta', (await O2('POST', `/api/owner/proposals/${mlProp.id}/decision`, { decision: 'approve' })).status === 404);
-const insightP = brain.pending.find((p) => p.kind === 'insight');
+const insightP = await store.addProposal({ agent: 'x', kind: 'ops_alert', key: 'rej-test', title: 'alerta de prueba', detail: '{}', evidence: '{}', touches: '[]' });
 t('el dueño rechaza una propuesta', (await O2('POST', `/api/owner/proposals/${insightP.id}/decision`, { decision: 'reject', note: 'no aplica' })).status === 200
   && (await store.getProposal(insightP.id)).status === 'rejected');
 t('decisión inválida rechazada', (await O2('POST', `/api/owner/proposals/${insightP.id}/decision`, { decision: 'x' })).status === 400);
@@ -400,7 +401,7 @@ const evilAgents = { evil: { label: 'x', available: true, description: '', async
   { kind: 'strategy_defaults', key: 'e1', title: 'Cambiar reglas de riesgo', detail: {}, touches: ['risk_rules'] },
   { kind: 'create_agent', key: 'e2', title: 'Crear un agente nuevo', detail: {}, touches: [] },
   { kind: 'insight', key: 'e3', title: 'Tocar aislamiento de datos', detail: {}, touches: ['data_isolation'] },
-  { kind: 'insight', key: 'e4', title: 'Propuesta legítima', detail: {}, touches: [] }] }; } } };
+  { kind: 'ops_alert', key: 'e4', title: 'Propuesta legítima', detail: {}, touches: [] }] }; } } };
 const evil = createDirector({ store, feed, agents: evilAgents });
 await evil.run({ trigger: 'test' });
 const pend = await store.listProposals('pending', 500);
@@ -665,6 +666,37 @@ console.log('Todas las criptos, escáner y modo AUTO');
     await store.setSetting('live_trading', 'off');
     await store.deleteConnection(eId, c1.id); await store.deleteConnection(eId, c2.id);
   }
+}
+
+console.log('Exchanges en vivo y reglas de Robinhood');
+{
+  const { robinhood: rhReal } = await import('../lib/exchanges.js');
+  const seed = crypto.randomBytes(32).toString('base64');
+  const creds = { keyId: 'rh-test', secret: seed };
+  const realFetch = globalThis.fetch; const posted = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    const j = (o, ok = true, status = 200) => ({ ok, status, text: async () => JSON.stringify(o) });
+    if (String(url).includes('/ticker')) return j({ price: '0.16' });
+    if (String(url).includes('/trading_pairs/')) return j({ results: [{ symbol: 'DOGE-USD', asset_increment: '1', min_order_size: '1', max_order_size: '1000000', status: 'tradable' }, { symbol: 'BTC-USD', asset_increment: '0.00000001', min_order_size: '0.00001', status: 'tradable' }], next: null });
+    if (String(url).includes('/orders/') && opts.method === 'POST') { posted.push(JSON.parse(opts.body)); return posted.length === 3 ? j({ errors: [{ detail: 'Insufficient buying power' }] }, false, 400) : j({ id: 'o-1' }); }
+    if (String(url).includes('/orders/')) return j({ results: [{ id: 'o1', symbol: 'DOGE-USD', side: 'buy', state: 'filled', filled_asset_quantity: '12', average_price: '0.16', created_at: '2026-10-11T15:00:00Z' }] });
+    return j({});
+  };
+  try {
+    const r1 = await rhReal.marketBuy(creds, { symbol: 'DOGE-USD', usd: 2 }).catch((e) => ({ ok: false, error: e.message }));
+    t('Robinhood: la cantidad se redondea al incremento del par (DOGE entero)', posted.length === 1 && /^\d+$/.test(posted[0].market_order_config.asset_quantity), JSON.stringify(posted));
+    const r2 = await rhReal.marketSell(creds, { symbol: 'DOGE-USD', qty: 0.4 });
+    t('Robinhood: por debajo del mínimo del par no envía la orden y explica por qué', r2.ok === false && /mínimo/.test(r2.error) && posted.length === 1, JSON.stringify(r2));
+    posted.length = 0; posted.push({}, {});
+    const r3 = await rhReal.marketSell(creds, { symbol: 'BTC-USD', qty: 0.001 });
+    t('Robinhood: el motivo del error del exchange llega al cliente', r3.ok === false && /Insufficient buying power/.test(r3.error), JSON.stringify(r3));
+    const act = await rhReal.activity(creds);
+    t('Robinhood: actividad reciente normalizada', act.length === 1 && act[0].symbol === 'DOGE-USD' && act[0].state === 'filled' && act[0].qty === 12 && r1 !== undefined);
+  } finally { globalThis.fetch = realFetch; }
+  const F = client();
+  await F('POST', '/api/auth/register', { email: 'f-live@x.com', password: 'Clave-De-Fer-12345', acceptTos: true });
+  t('/api/exchange/live sin conexiones devuelve lista vacía', (await F('GET', '/api/exchange/live')).body.exchanges.length === 0);
+  t('/api/exchange/live exige sesión', (await nobody('GET', '/api/exchange/live')).status === 401);
 }
 
 console.log('Exportación del Cerebro y del app');

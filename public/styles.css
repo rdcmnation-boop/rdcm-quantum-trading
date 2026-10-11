@@ -161,3 +161,13 @@ body{padding-bottom:84px}
 .sheet{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55);display:flex;align-items:flex-end}.sheet[hidden]{display:none}
 .sheetb{width:100%;max-width:520px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0;padding:14px 16px calc(78px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px rgba(0,0,0,.6)}
 .who .chip{font-size:12px;color:var(--accent);border-color:#3a3400}
+
+/* ---- Más compacto ---- */
+.wrap{gap:8px}.card,section.card{padding:11px 12px;border-radius:12px}
+details.card.acc>summary{padding:11px 12px}details.card.acc>summary h2{font-size:12px;letter-spacing:.12em}
+.accb{padding:0 12px 12px}
+.kpis{gap:6px}.kpi{padding:8px 10px}.kpi .l{font-size:10px}.kpi .v{font-size:19px}.kpi .s{font-size:11px}
+.top{margin-bottom:0}.brand{font-size:17px}
+th,td{padding:6px 5px;font-size:13px}
+.banner{padding:8px 10px;font-size:12px}
+.btn.small{padding:5px 10px;font-size:12px}
