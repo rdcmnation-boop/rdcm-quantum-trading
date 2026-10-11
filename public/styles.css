@@ -216,3 +216,4 @@ th,td{padding:6px 5px;font-size:13px}
 .bviz .br{display:grid;grid-template-columns:52px 1fr 40px 76px;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #15150f;color:var(--muted)}
 .bviz .br:last-child{border-bottom:0}.bviz .br b{color:var(--fg)}.bviz .br .num{text-align:right;font-variant-numeric:tabular-nums}
 .bviz .br.buy span:nth-child(2){color:var(--good)}.bviz .br.held span:nth-child(2){color:var(--accent)}.bviz .br.drop span:nth-child(2){color:var(--bad)}
+.bviz.is3d .bcap{display:none}

@@ -413,10 +413,19 @@ function agentsViz(b) {
     approval: b.pending.length ? `Solo tú apruebas: ${b.pending.length} propuesta(s) esperan tu decisión.` : 'Solo tú apruebas los cambios críticos. Nada pendiente ahora.' };
 }
 
-let vizCtl = null;
-function mountViz(bn) { const r = $('#bz_v'); if (r) vizCtl = brainViz(r, botViz(bn)); }
-// Actualiza el pulpo SIN recrearlo: los tentáculos se deslizan hacia sus nuevos pesos.
-function updateViz(bn) { const r = $('#bz_v'); if (!r) return; if (vizCtl && r.dataset.on === '1') { const d = botViz(bn); vizCtl.update(d); vizFill(r, d); } else { r.dataset.on = '1'; mountViz(bn); } }
+let vizCtl = null; let vizMode = '';
+// Con el bot en AUTO el Cerebro es un pulpo 3D que recorre el mapa de criptos; si no, la red de nodos. Si el 3D falla, cae a la red.
+async function mountViz(bn) {
+  const r = $('#bz_v'); if (!r) return; const d = botViz(bn);
+  if (d.octopus) { try { const m = await import('/octo3d.js'); if (!document.body.contains(r)) return; vizCtl = m.createOcto3D($('canvas', r), d); vizMode = '3d'; r.dataset.on = '1'; r.classList.add('is3d'); return; } catch { /* usa la red */ } }
+  vizCtl = brainViz(r, d); vizMode = '2d'; r.dataset.on = '1'; r.classList.remove('is3d');
+}
+// Actualiza SIN recrear: el pulpo sigue nadando y las islas se reacomodan según lo que el bot decide.
+function updateViz(bn) {
+  const r = $('#bz_v'); if (!r) return; const d = botViz(bn);
+  if (vizCtl && r.dataset.on === '1' && vizMode === (d.octopus ? '3d' : '2d')) { vizCtl.update(d); vizFill(r, d); return; }
+  const c = $('canvas', r); if (c) c.replaceWith(c.cloneNode(false)); r.dataset.on = ''; vizFill(r, d); mountViz(bn);
+}
 const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
   <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
@@ -424,7 +433,7 @@ const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde
   <div class="card" data-open id="pc"><h2>Gráfico de precio</h2><div id="pc_c">${priceCardHtml(bn)}</div></div>
   <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
 function startMyBot(bn) {
-  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); bindPrice(); mountViz(bn); { const r = $('#bz_v'); if (r) r.dataset.on = '1'; }
+  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); bindPrice(); mountViz(bn);
   const lr = $('#live_r'); if (lr) lr.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
   let n = 0; let waiting = bn.enabled && !bn.last; let on = bn.enabled;
   tabTimer = setInterval(async () => {
