@@ -871,6 +871,8 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   await createEngine({ store, adapters, feed: feedR, encKey: env.ENCRYPTION_KEY, log: { error() {} } }).runBot({ ...(await store.getBot(rId)), last_run: 0 }, Date.now() + 4 * H);
   const r2 = (await store.listOrders(rId)).filter((o) => o.status === 'ok');
   t('rotación: con el cupo lleno cambia la cripto que pierde fuerza por otra con mejor señal', r1.length === 1 && r1[0].symbol === 'DOGE-USD' && r2.length === 3 && r2.some((o) => o.side === 'sell' && o.symbol === 'DOGE-USD' && /rota/.test(o.note)) && r2.some((o) => o.side === 'buy' && o.symbol === 'ADA-USD'), JSON.stringify(r2.map((o) => o.side + o.symbol + o.note.slice(0, 50))));
+  const ost = (await R('GET', '/api/bot/status')).body.octopus;
+  t('pulpo: guarda qué tentáculo suelta y cuál compra, solo para su dueño', ost && ost.items.some((x) => x.symbol === 'DOGE-USD' && x.state === 'suelta') && ost.items.some((x) => x.symbol === 'ADA-USD' && x.state === 'compró') && !JSON.stringify((await P('GET', '/api/bot/status')).body.octopus).includes('DOGE-USD'), JSON.stringify(ost && ost.items));
 }
 
 { const h = await fetch(base + '/api/health', { method: 'HEAD' }); t('HEAD /api/health responde 200 (monitores como UptimeRobot usan HEAD)', h.status === 200); }

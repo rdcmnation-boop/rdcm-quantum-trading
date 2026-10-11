@@ -297,32 +297,52 @@ function bindPrice() {
 function brainViz(root, d) {
   const cv = $('canvas', root); const ctx = cv.getContext('2d'); const dpr = Math.min(2, window.devicePixelRatio || 1);
   const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const COL = { held: '#4ade80', ok: '#ffd60a', idle: '#8a8776', off: '#4a4a44', hot: '#ff5d4d' };
-  let W = 0; const H = 250; const nodes = d.nodes.map((n, i) => ({ ...n, a: (i / d.nodes.length) * Math.PI * 2 - Math.PI / 2, ph: Math.random() * 6.28 }));
-  const parts = nodes.flatMap((n) => (n.kind === 'off' ? [] : Array.from({ length: n.kind === 'held' || n.kind === 'ok' ? 3 : 1 }, (_, k) => ({ n, t: Math.random(), sp: (d.live ? 0.0035 : 0.0012) * (0.7 + Math.random() * 0.8), out: n.kind === 'held' && k === 0 }))));
+  const COL = { held: '#4ade80', ok: '#ffd60a', idle: '#8a8776', off: '#4a4a44', hot: '#ff5d4d', buy: '#4ade80', keep: '#ffd60a', drop: '#ff5d4d' };
+  const oct = !!d.octopus; let W = 0; const H = oct ? 290 : 250;
+  const nodes = d.nodes.map((n, i) => ({ ...n, a: (i / d.nodes.length) * Math.PI * 2 - Math.PI / 2, ph: Math.random() * 6.28 }));
+  const parts = nodes.flatMap((n) => (n.kind === 'off' || n.kind === 'idle' && oct ? [] : Array.from({ length: n.kind === 'held' || n.kind === 'ok' || n.kind === 'buy' ? 3 : 1 }, (_, k) => ({ n, t: Math.random(), sp: (d.live ? 0.0035 : 0.0012) * (0.7 + Math.random() * 0.8), out: (n.kind === 'held' || n.kind === 'buy') && k === 0 }))));
+  cv.style.height = `${H}px`;
   const size = () => { W = cv.clientWidth || 340; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
-  const pos = (n, t) => { const rx = W * 0.38; const ry = H * 0.36; const w = Math.sin(t / 1400 + n.ph) * 3; return [W / 2 + Math.cos(n.a) * rx + w, H / 2 + Math.sin(n.a) * ry + w]; };
+  const pos = (n, t) => { const rx = W * (oct ? 0.31 : 0.38); const ry = H * 0.34; const w = Math.sin(t / 1400 + n.ph) * 3; return [W / 2 + Math.cos(n.a) * rx + w, H / 2 + Math.sin(n.a) * ry + w]; };
+  // Punto a lo largo del hilo (u de 0 en el centro a 1 en la cripto). El pulpo lo ondula como tentáculo.
+  const curve = (n, u, t) => {
+    const cx = W / 2; const cy = H / 2; const [x, y] = pos(n, t); const qx = (cx + x) / 2 + (y - cy) * 0.12; const qy = (cy + y) / 2 - (x - cx) * 0.12;
+    let px = (1 - u) * (1 - u) * cx + 2 * (1 - u) * u * qx + u * u * x; let py = (1 - u) * (1 - u) * cy + 2 * (1 - u) * u * qy + u * u * y;
+    if (oct) { const dx = x - cx; const dy = y - cy; const L = Math.hypot(dx, dy) || 1; const wv = Math.sin(u * 7 - t / 420 + n.ph) * 5 * Math.sin(u * Math.PI) * (n.kind === 'idle' ? 0.5 : 1); px += (-dy / L) * wv; py += (dx / L) * wv; }
+    return [px, py];
+  };
   const frame = (t) => {
     if (!document.body.contains(cv)) return;
     ctx.clearRect(0, 0, W, H); const cx = W / 2; const cy = H / 2;
-    for (const n of nodes) { const [x, y] = pos(n, t); ctx.strokeStyle = n.kind === 'off' ? 'rgba(120,120,110,.18)' : 'rgba(255,214,10,.22)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo((cx + x) / 2 + (y - cy) * 0.12, (cy + y) / 2 - (x - cx) * 0.12, x, y); ctx.stroke(); }
+    for (const n of nodes) {
+      const col = COL[n.kind] || COL.idle; const w = oct ? 1 + 5 * Math.max(0, Math.min(1, n.w || 0)) : 1;
+      ctx.strokeStyle = n.kind === 'off' ? 'rgba(120,120,110,.18)' : oct ? col : 'rgba(255,214,10,.22)'; ctx.globalAlpha = oct ? (n.kind === 'idle' ? 0.28 : 0.85) : 1; ctx.lineCap = 'round'; ctx.lineWidth = oct ? Math.max(1, w) : 1;
+      ctx.beginPath(); for (let i = 0; i <= 26; i++) { const [px, py] = curve(n, i / 26, t); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); } ctx.stroke(); ctx.globalAlpha = 1;
+    }
     for (const p of parts) {
-      p.t += p.sp; if (p.t > 1) p.t = 0; const [x, y] = pos(p.n, t); const u = p.out ? p.t : 1 - p.t;
-      const qx = (cx + x) / 2 + (y - cy) * 0.12; const qy = (cy + y) / 2 - (x - cx) * 0.12;
-      const px = (1 - u) * (1 - u) * cx + 2 * (1 - u) * u * qx + u * u * x; const py = (1 - u) * (1 - u) * cy + 2 * (1 - u) * u * qy + u * u * y;
-      ctx.fillStyle = p.out ? '#4ade80' : '#ffd60a'; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(px, py, 1.9, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1;
+      p.t += p.sp; if (p.t > 1) p.t = 0; const u = p.out ? p.t : 1 - p.t; const [px, py] = curve(p.n, u, t);
+      ctx.fillStyle = p.out ? '#4ade80' : '#ffd60a'; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(px, py, oct ? 2.2 : 1.9, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1;
     }
     for (const n of nodes) {
-      const [x, y] = pos(n, t); const c = COL[n.kind] || COL.idle; const r = n.kind === 'held' ? 6 : 4.5;
+      const [x, y] = pos(n, t); const c = COL[n.kind] || COL.idle; const r = n.kind === 'held' || n.kind === 'buy' ? 6 : 4.5;
       if (n.kind !== 'off' && n.kind !== 'idle') { ctx.fillStyle = c; ctx.globalAlpha = 0.16; ctx.beginPath(); ctx.arc(x, y, r + 6 + Math.sin(t / 500 + n.ph) * 2, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; }
       ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
-      ctx.fillStyle = n.kind === 'off' ? '#6b6a60' : '#d8d5c4'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.textAlign = Math.cos(n.a) > 0.25 ? 'left' : Math.cos(n.a) < -0.25 ? 'right' : 'center';
-      ctx.fillText(n.label, x + (Math.cos(n.a) > 0.25 ? 10 : Math.cos(n.a) < -0.25 ? -10 : 0), y + (Math.abs(Math.cos(n.a)) <= 0.25 ? (Math.sin(n.a) > 0 ? 18 : -12) : 4));
+      const right = Math.cos(n.a) > 0.25; const left = Math.cos(n.a) < -0.25; const mid = !right && !left;
+      ctx.fillStyle = n.kind === 'off' ? '#6b6a60' : '#d8d5c4'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.textAlign = right ? 'left' : left ? 'right' : 'center';
+      const tx = x + (right ? 10 : left ? -10 : 0); const ty = y + (mid ? (Math.sin(n.a) > 0 ? 18 : -12) : 4);
+      ctx.fillText(n.label, tx, ty);
+      if (n.sub) { ctx.fillStyle = c; ctx.globalAlpha = 0.85; ctx.font = '500 9px ui-monospace,Menlo,monospace'; ctx.fillText(n.sub, tx, ty + 11); ctx.globalAlpha = 1; }
     }
     const pr = 14 + Math.sin(t / 380) * (d.live ? 3 : 1);
     const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, pr * 2.6); g.addColorStop(0, 'rgba(255,214,10,.55)'); g.addColorStop(1, 'rgba(255,214,10,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, pr * 2.6, 0, 6.28); ctx.fill();
-    ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.28); ctx.fill();
-    ctx.fillStyle = '#0b0b0e'; ctx.font = '700 8px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillText(d.center, cx, cy + 3);
+    if (oct) {
+      ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.ellipse(cx, cy - 2, 17, 15 + Math.sin(t / 500) * 1, 0, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#0b0b0e'; for (const ex of [-6, 6]) { ctx.beginPath(); ctx.arc(cx + ex, cy - 3, 3.2, 0, 6.28); ctx.fill(); }
+      ctx.fillStyle = '#ffd60a'; for (const ex of [-6, 6]) { ctx.beginPath(); ctx.arc(cx + ex + Math.sin(t / 900) * 0.8, cy - 4, 1, 0, 6.28); ctx.fill(); }
+    } else {
+      ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#0b0b0e'; ctx.font = '700 8px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillText(d.center, cx, cy + 3);
+    }
     if (!still) requestAnimationFrame(frame);
   };
   size(); new ResizeObserver(() => { size(); if (still) frame(0); }).observe(cv); requestAnimationFrame(frame);
@@ -332,19 +352,35 @@ function vizHtml(d, id) {
   const lines = d.stream.slice(0, 14).map((x) => { const [tg, c] = tagOf(x.text); return `<div><span class="tg ${c}">${tg}</span>${x.t ? `<span>${esc(ago(x.t))} · </span>` : ''}${esc(x.text)}</div>`; }).join('') || '<div>Esperando la primera decisión…</div>';
   return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>
     <div class="bstat">${d.stats.map((x) => `<div><b>${esc(x[1])}</b>${esc(x[0])}</div>`).join('')}</div>
+    ${d.rows && d.rows.length ? `<div class="brows">${d.rows.map((r) => `<div class="br ${r.kind}"><b>${esc(r.sym)}</b><span>${esc(r.state)}</span><span class="num">${r.score ? r.score.toFixed(1) : '—'}</span><span class="num">${esc(r.note)}</span></div>`).join('')}</div>` : ''}
     <div class="bstream">${lines}</div><div class="bappr">${esc(d.approval)}</div></div>`;
 }
+const agoS = (t) => { if (!t) return '—'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'ahora' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`; };
+const OSTATE = { compró: ['buy', 'compró'], listo: ['buy', 'listo p/comprar'], fuerte: ['held', 'fuerte'], mantiene: ['held', 'mantiene'], débil: ['drop', 'débil'], suelta: ['drop', 'suelta'], vendió: ['drop', 'vendió'], soltó: ['drop', 'soltó'] };
 function botViz(bn) {
   const base = (s) => s.replace('-USD', '');
   const held = (bn.holdings || []).map((h) => base(h.symbol)); const ok = ((bn.scanner && bn.scanner.qualified) || []).map((q) => base(q.symbol));
   const seen = new Set(); const nodes = [];
-  const add = (l, k) => { if (!seen.has(l) && nodes.length < 14) { seen.add(l); nodes.push({ label: l, kind: k }); } };
-  held.forEach((l) => add(l, 'held')); ok.forEach((l) => add(l, 'ok')); ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'LINK'].forEach((l) => add(l, 'idle'));
+  const add = (l, k, extra = {}) => { if (!seen.has(l) && nodes.length < 14) { seen.add(l); nodes.push({ label: l, kind: k, ...extra }); } };
+  const octo = bn.octopus && bn.octopus.items && bn.symbol === 'AUTO' ? bn.octopus : null;
+  if (octo) {
+    const tot = (bn.holdings || []).reduce((x, h) => x + (h.value || 0), 0) || 0; const mx = Math.max(0.0001, ...octo.items.map((i) => i.score || 0));
+    const hv = new Map((bn.holdings || []).map((h) => [base(h.symbol), h.value || 0]));
+    for (const it of octo.items) {
+      const [kind, txt] = OSTATE[it.state] || ['idle', it.state]; const l = base(it.symbol);
+      const share = tot > 0 && hv.has(l) ? hv.get(l) / tot : 0;
+      add(l, kind, { w: it.held ? Math.max(0.25, share) : (it.score || 0) / mx * 0.6, sub: `${txt.split(' ')[0]}${it.held && it.gain_pct !== undefined ? ` ${it.gain_pct >= 0 ? '+' : ''}${it.gain_pct.toFixed(1)}%` : ''}` });
+    }
+    held.forEach((l) => add(l, 'held', { w: 0.4, sub: 'tiene' }));
+  } else { held.forEach((l) => add(l, 'held')); ok.forEach((l) => add(l, 'ok')); }
+  ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'LINK'].forEach((l) => add(l, 'idle', { w: 0.05 }));
   const stream = [];
   if (bn.last) { for (const a of bn.last.auto || []) stream.push({ t: bn.last.t, text: a }); stream.push({ t: bn.last.t, text: bn.last.reason }); }
   for (const o of bn.recent || []) if (o.status === 'ok') stream.push({ t: o.t, text: `${o.side === 'buy' ? 'compra' : 'vende'} ${base(o.symbol)} ${money(o.usd)}${o.mode === 'live' ? ' (REAL)' : ' (papel)'}` });
-  return { center: 'IA', nodes, stream, live: bn.enabled, caption: bn.enabled ? 'Cerebro · en vivo' : 'Cerebro · apagado',
-    stats: [['posiciones', held.length], ['validadas', ok.length], ['vigila', nodes.length], ['revisó', ago(bn.last_run)]],
+  const rg = octo && octo.regime ? ({ bull: 'alcista', bear: 'bajista', volatile: 'volátil', range: 'lateral', unknown: 'sin datos' }[octo.regime] || octo.regime) : null;
+  const rows = octo ? octo.items.map((it) => ({ sym: base(it.symbol), state: (OSTATE[it.state] || [0, it.state])[1], kind: (OSTATE[it.state] || ['idle'])[0], score: it.score, note: it.held ? `${it.gain_pct >= 0 ? '+' : ''}${(it.gain_pct || 0).toFixed(2)} %` : it.edge ? `${it.edge.toFixed(1)}× costo` : '' })) : null;
+  return { center: 'IA', nodes, stream, rows, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? (octo ? 'Pulpo · en vivo' : 'Cerebro · en vivo') : 'Cerebro · apagado',
+    stats: [['posiciones', held.length], ['validadas', ok.length], ['mercado', rg || '—'], ['revisó', agoS(bn.last_run)]],
     approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
 }
 function agentsViz(b) {

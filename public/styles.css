@@ -204,11 +204,15 @@ th,td{padding:6px 5px;font-size:13px}
 .bviz{position:relative;border:1px solid var(--line);border-radius:12px;background:radial-gradient(120% 90% at 50% 40%,#17150a 0%,#09090c 70%);overflow:hidden}
 .bviz canvas{display:block;width:100%;height:250px}
 .bviz .bcap{position:absolute;left:10px;top:8px;font:600 10px/1.2 ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);opacity:.85}
-.bviz .bstat{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:1px;background:var(--line);border-top:1px solid var(--line)}
+.bviz .bstat{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border-top:1px solid var(--line)}
 .bviz .bstat div{background:#0b0b0e;padding:8px 10px;font:11px ui-monospace,Menlo,monospace;color:var(--muted)}
-.bviz .bstat b{display:block;font-size:18px;color:var(--accent);font-variant-numeric:tabular-nums}
+.bviz .bstat b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--accent);font-variant-numeric:tabular-nums}
 .bviz .bstream{max-height:150px;overflow:auto;padding:8px 10px;font:11px/1.55 ui-monospace,Menlo,monospace;border-top:1px solid var(--line);background:#08080b}
 .bviz .bstream div{white-space:normal;color:var(--muted)}
 .bviz .tg{display:inline-block;min-width:54px;margin-right:6px;padding:0 5px;border-radius:3px;font-weight:700;text-align:center;background:#1c1c14;color:var(--muted)}
 .bviz .tg.buy{background:rgba(74,222,128,.18);color:var(--good)}.bviz .tg.sell{background:rgba(255,93,77,.18);color:var(--bad)}.bviz .tg.hold{color:var(--accent)}
 .bviz .bappr{border-top:1px solid var(--line);padding:8px 10px;font:11px ui-monospace,Menlo,monospace;color:var(--accent);background:rgba(255,214,10,.05)}
+.bviz .brows{border-top:1px solid var(--line);padding:6px 10px;font:11px ui-monospace,Menlo,monospace;background:#0a0a0d}
+.bviz .br{display:grid;grid-template-columns:52px 1fr 40px 76px;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #15150f;color:var(--muted)}
+.bviz .br:last-child{border-bottom:0}.bviz .br b{color:var(--fg)}.bviz .br .num{text-align:right;font-variant-numeric:tabular-nums}
+.bviz .br.buy span:nth-child(2){color:var(--good)}.bviz .br.held span:nth-child(2){color:var(--accent)}.bviz .br.drop span:nth-child(2){color:var(--bad)}
