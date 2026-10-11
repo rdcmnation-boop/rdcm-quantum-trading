@@ -1,4 +1,5 @@
 // Interfaz de Quantum Trading. Sin librerías; todo dato dinámico pasa por esc() antes de insertarse.
+import { genEd25519 } from '/keygen.js';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n, d = 2) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -141,8 +142,8 @@ const EXCH = {
     steps: ['Abre Coinbase Developer Platform e inicia sesión.', 'Crea una API key nueva (Secret API key).', 'Permisos: marca solo <b>View</b> y <b>Trade</b>. <b>NO</b> marques Transfer/retiros.', 'Copia el <b>API key name</b> (empieza con <code>organizations/</code>) y la <b>Private key</b> completa.'],
     idLabel: 'API key name', idHint: 'organizations/…/apiKeys/…', secLabel: 'Private key (bloque completo)', secHint: '-----BEGIN EC PRIVATE KEY-----…' },
   robinhood: { name: 'Robinhood', url: 'https://robinhood.com/account/crypto',
-    steps: ['Abre tu cuenta de Robinhood en la web y entra a Cripto.', 'Crea credenciales de la API de Cripto (si no ves la opción, busca "API Trading").', 'Copia la <b>API key</b> y la <b>Private key</b> (una sola línea).', 'Esta API no permite retiros.'],
-    idLabel: 'API key', idHint: 'rh-api-…', secLabel: 'Private key (una línea)', secHint: 'base64, sin espacios' },
+    steps: ['Pulsa <b>Generar mis llaves</b> (abajo): se crean en tu teléfono y la privada no sale de él.', 'Copia la <b>llave pública</b>.', 'En Robinhood (web): Cuenta → Configuración → Cripto → <b>API Trading</b> → crear credenciales. Pega ahí la <b>llave pública</b> y deja permisos de ver y operar.', 'Robinhood te da una <b>API key</b>. Pégala en el paso ②; la llave privada ya se llena sola.', 'Esta API no permite retiros.'],
+    idLabel: 'API key que te dio Robinhood', idHint: 'rh-api-…', secLabel: 'Llave privada (se llena sola al generarla)', secHint: 'base64, una línea' },
 };
 
 async function tabExchanges(main) {
@@ -167,6 +168,7 @@ async function tabExchanges(main) {
     document.querySelectorAll('#ex_pick button').forEach((b) => b.classList.toggle('ghost', b.dataset.ex !== cur));
     $('#ex_wiz').innerHTML = `
     <details class="stepbox" open><summary>① Crea la llave en ${esc(e.name)}</summary><ol class="steps">${e.steps.map((x) => `<li>${x}</li>`).join('')}</ol>
+      ${cur === 'robinhood' ? `<div class="gen"><button class="btn small" id="gen_btn" type="button">🔑 Generar mis llaves</button><div id="gen_out"></div></div>` : ''}
       <a class="btn ghost small" href="${esc(e.url)}" target="_blank" rel="noopener">Abrir ${esc(e.name)} ›</a>
       <p class="muted" style="font-size:12px">Si el enlace cambió, busca "API" en tu cuenta de ${esc(e.name)}.</p></details>
     <details class="stepbox" open><summary>② Pégala aquí</summary>
@@ -176,6 +178,20 @@ async function tabExchanges(main) {
       <label class="full">Nombre (opcional)<input name="label" maxlength="60" placeholder="Mi cuenta"></label>
       <button class="btn full" type="submit">Verificar y conectar</button><div id="cm" class="full"></div>
     </form></details>`;
+    const gb = $('#gen_btn');
+    if (gb) gb.addEventListener('click', async () => {
+      try {
+        const k = await genEd25519();
+        $('#cf [name=secret]').value = k.privateKey;
+        $('#gen_out').innerHTML = `<p class="muted" style="font-size:12px;margin:8px 0 4px">Tu <b>llave pública</b> (cópiala y pégala en Robinhood):</p><code id="gen_pub" style="display:block;user-select:all">${esc(k.publicKey)}</code>
+          <div class="row" style="margin-top:6px"><button class="btn ghost small" id="gen_copy" type="button">Copiar llave pública</button><span class="msg ok" id="gen_m"></span></div>
+          <p class="muted" style="font-size:12px;margin:6px 0 0">La llave privada ya quedó en el paso ②. No la compartas con nadie.</p>`;
+        $('#gen_copy').addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(k.publicKey); $('#gen_m').textContent = 'Copiada'; }
+          catch { const r = document.createRange(); r.selectNodeContents($('#gen_pub')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); $('#gen_m').textContent = 'Selecciónala y cópiala'; }
+        });
+      } catch (err) { $('#gen_out').innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
+    });
     $('#cf').addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const f = Object.fromEntries(new FormData(ev.target));

@@ -543,6 +543,20 @@ console.log('Estado del bot y operaciones pequeñas de los agentes');
   t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 8 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
 }
 
+console.log('Robinhood: generador de llaves');
+{
+  const { genEd25519 } = await import('../public/keygen.js');
+  const k = await genEd25519();
+  const seed = Buffer.from(k.privateKey, 'base64'); const pub = Buffer.from(k.publicKey, 'base64');
+  t('generador: llave pública de 32 bytes y privada (semilla) de 32 bytes en base64', seed.length === 32 && pub.length === 32 && k.privateKey !== k.publicKey);
+  const sig = robinhoodSign('rh-api-test', k.privateKey, '1700000000', '/api/v1/crypto/trading/accounts/', 'GET', '');
+  const spki = Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), pub]);
+  const ok = crypto.verify(null, Buffer.from('rh-api-test1700000000/api/v1/crypto/trading/accounts/GET'), crypto.createPublicKey({ key: spki, format: 'der', type: 'spki' }), Buffer.from(sig, 'base64'));
+  t('la firma hecha con la llave generada se verifica con la llave pública (lo que Robinhood comprobará)', ok === true);
+  const k2 = await genEd25519();
+  t('cada generación produce llaves distintas', k2.publicKey !== k.publicKey);
+}
+
 console.log('Exportación del Cerebro y del app');
 const eb = await O2('GET', '/api/owner/export/brain');
 t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
