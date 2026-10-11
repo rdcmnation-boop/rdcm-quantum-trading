@@ -61,8 +61,8 @@ function viewAuth() {
 }
 
 // ============================ Estructura ============================
-const CLIENT_TABS = [['resumen', 'Resumen'], ['exchanges', 'Exchanges'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable']];
-const OWNER_TABS = [['o_overview', 'Analíticas'], ['o_clientes', 'Clientes'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
+const CLIENT_TABS = [['resumen', 'Resumen'], ['exchanges', 'Exchanges'], ['bot', 'Bot'], ['ordenes', 'Órdenes'], ['descargar', 'Bot descargable'], ['cuenta', 'Cuenta']];
+const OWNER_TABS = [['o_overview', 'Analíticas'], ['o_clientes', 'Clientes'], ['o_cerebro', 'Cerebro'], ['o_export', 'Exportar'], ['o_seguridad', 'Seguridad'], ['o_ajustes', 'Ajustes']];
 
 function shell() {
   const owner = state.user.role === 'owner';
@@ -86,8 +86,8 @@ async function loadTab() {
   const main = $('#main');
   main.innerHTML = '<div class="card muted">Cargando…</div>';
   try {
-    const fn = { resumen: tabResumen, exchanges: tabExchanges, bot: tabBot, ordenes: tabOrdenes, descargar: tabDescargar,
-      o_overview: tabOverview, o_clientes: tabClientes, o_seguridad: tabSeguridad, o_ajustes: tabAjustes }[state.tab];
+    const fn = { resumen: tabResumen, exchanges: tabExchanges, bot: tabBot, ordenes: tabOrdenes, descargar: tabDescargar, cuenta: tabCuenta,
+      o_cerebro: tabCerebro, o_export: tabExport, o_overview: tabOverview, o_clientes: tabClientes, o_seguridad: tabSeguridad, o_ajustes: tabAjustes }[state.tab];
     await fn(main);
   } catch (e) { main.innerHTML = `<div class="card"><span class="neg">${esc(e.message)}</span></div>`; }
 }
@@ -167,11 +167,14 @@ async function tabBot(main) {
   <div class="card"><h2>Tu bot</h2>
     <form id="bf" class="form">
       <label>Par<select name="symbol">${state.me.symbols.map((s) => opt(s, cfg.symbol)).join('')}</select></label>
-      <label>Estrategia<select name="strategy">${opt('dca', cfg.strategy, 'DCA: compra periódica')}${opt('sma', cfg.strategy, 'SMA: cruce de medias (1 h)')}</select></label>
+      <label>Estrategia<select name="strategy">${opt('dca', cfg.strategy, 'DCA: compra periódica')}${opt('sma', cfg.strategy, 'SMA: cruce de medias (1 h)')}${opt('rsi', cfg.strategy, 'RSI: sobreventa / sobrecompra (1 h)')}${opt('macd', cfg.strategy, 'MACD: cruce de momentum (1 h)')}</select></label>
       <label>Monto por compra (USD)<input name="usd" type="number" min="1" step="any" value="${esc(cfg.usd)}"></label>
       <label class="dca">Cada (minutos)<input name="intervalMin" type="number" min="15" value="${esc(cfg.intervalMin)}"></label>
       <label class="sma">SMA rápida<input name="fast" type="number" min="2" value="${esc(cfg.fast)}"></label>
       <label class="sma">SMA lenta<input name="slow" type="number" min="3" value="${esc(cfg.slow)}"></label>
+      <label class="rsi">RSI compra bajo<input name="rsiBuy" type="number" min="5" max="50" value="${esc(cfg.rsiBuy ?? 30)}"></label>
+      <label class="rsi">RSI venta sobre<input name="rsiSell" type="number" min="50" max="95" value="${esc(cfg.rsiSell ?? 60)}"></label>
+      <label class="nodca">Stop-loss % (0 = sin stop)<input name="stopLossPct" type="number" min="0" max="50" step="any" value="${esc(cfg.stopLossPct ?? 8)}"></label>
       <label>Modo<select name="mode">${opt('paper', cfg.mode, 'Papel (simulado, sin dinero)')}${opt('live', cfg.mode, live ? 'REAL (dinero real)' : 'REAL (no habilitado todavía)')}</select></label>
       <label class="real">Conexión para operar<select name="connectionId"><option value="">— elegir —</option>${connections.map((c) => opt(c.id, cfg.connectionId, `${c.exchange} · ${c.label}`)).join('')}</select></label>
       <label class="real">Tope por orden (USD, máx. ${money(state.me.limits.hardMaxOrder, 0)})<input name="maxOrderUsd" type="number" min="1" step="any" value="${esc(cfg.maxOrderUsd)}"></label>
@@ -184,6 +187,10 @@ async function tabBot(main) {
     ${live ? '' : '<p class="muted" style="font-size:13px">El trading real está desactivado por la plataforma por ahora. Puedes probar todo en modo papel.</p>'}
     <p class="muted" style="font-size:12px">El bot hospedado revisa cada minuto mientras el servidor esté activo. Para mayor control puedes usar el bot descargable en tu propia computadora.</p>
   </div>
+  <div class="card"><h2>Análisis técnico (informativo)</h2>
+    <div class="row"><button class="btn ghost" id="sg_run" type="button">Ver señales de ${esc(cfg.symbol)}</button></div>
+    <div id="sg_out"></div><div class="msg" id="sg_m"></div>
+  </div>
   <div class="card"><h2>Probar con historial (backtest)</h2>
     <p class="muted" style="font-size:13px">Simula tu configuración sobre las últimas ~300 velas de 1 hora (unos 12 días) con comisión de 0.6 % por operación y la compara con comprar y mantener. Sirve para descartar estrategias malas; <b>no predice el futuro</b>.</p>
     <div class="row"><button class="btn ghost" id="bt_run" type="button">Correr backtest</button></div>
@@ -193,6 +200,8 @@ async function tabBot(main) {
     const f = $('#bf');
     document.querySelectorAll('.dca').forEach((n) => { n.style.display = f.strategy.value === 'dca' ? '' : 'none'; });
     document.querySelectorAll('.sma').forEach((n) => { n.style.display = f.strategy.value === 'sma' ? '' : 'none'; });
+    document.querySelectorAll('.rsi').forEach((n) => { n.style.display = f.strategy.value === 'rsi' ? '' : 'none'; });
+    document.querySelectorAll('.nodca').forEach((n) => { n.style.display = f.strategy.value === 'dca' ? 'none' : ''; });
     document.querySelectorAll('.real').forEach((n) => { n.style.display = f.mode.value === 'live' ? '' : 'none'; });
   };
   $('#bf').addEventListener('change', sync); sync();
@@ -200,16 +209,34 @@ async function tabBot(main) {
     e.preventDefault();
     const f = e.target;
     const body = { symbol: f.symbol.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
-      slow: f.slow.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
+      slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
       maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, enabled: f.enabled.checked };
     try { await api('PUT', '/api/bot', body); setMsg($('#bm'), 'Guardado.', true); } catch (err) { setMsg($('#bm'), err.message); }
+  });
+  $('#sg_run').addEventListener('click', async () => {
+    const sym = $('#bf').symbol.value;
+    setMsg($('#sg_m'), 'Consultando…', true);
+    try {
+      const r = await api('GET', `/api/signals?symbol=${encodeURIComponent(sym)}`);
+      const m = r.model;
+      setMsg($('#sg_m'), '');
+      $('#sg_out').innerHTML = `<div class="scroll"><table><tbody>
+        <tr><td>Precio</td><td class="r">${money(r.price)}</td></tr>
+        <tr><td>RSI (14)</td><td class="r">${r.rsi === null ? '—' : r.rsi.toFixed(1)}</td></tr>
+        <tr><td>MACD</td><td class="r">${r.macd ? esc(r.macd.state) : '—'}</td></tr>
+        <tr><td>Bollinger %B</td><td class="r">${r.bollinger ? r.bollinger.pctB.toFixed(2) : '—'}</td></tr>
+        <tr><td>Tendencia SMA20/50</td><td class="r">${r.trend ? esc(r.trend) : '—'}</td></tr>
+        <tr><td>Modelo ML (activado por el dueño)</td><td class="r">${m ? `prob. de subida ${(m.prob_up * 100).toFixed(1)} %` : 'sin modelo con ventaja demostrada'}</td></tr></tbody></table></div>
+        ${m ? `<p class="muted" style="font-size:12px">Precisión fuera de muestra ${(m.test_accuracy * 100).toFixed(1)} % vs. línea base ${(m.baseline * 100).toFixed(1)} %. Factores: ${m.why.map((w) => esc(w.name)).join(', ')}.</p>` : ''}
+        <p class="muted" style="font-size:12px">${esc(r.disclaimer)}</p>`;
+    } catch (err) { setMsg($('#sg_m'), err.message); }
   });
   $('#bt_run').addEventListener('click', async () => {
     const f = $('#bf');
     setMsg($('#bt_m'), 'Calculando…', true);
     try {
       const r = await api('POST', '/api/backtest', { symbol: f.symbol.value, strategy: f.strategy.value, usd: f.usd.value,
-        intervalMin: f.intervalMin.value, fast: f.fast.value, slow: f.slow.value, maxOrderUsd: f.maxOrderUsd.value, maxDailyUsd: f.maxDailyUsd.value });
+        intervalMin: f.intervalMin.value, fast: f.fast.value, slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, maxOrderUsd: f.maxOrderUsd.value, maxDailyUsd: f.maxDailyUsd.value });
       const m = r.metrics;
       const pct = (x) => (x === null ? '—' : `${x.toFixed(2)} %`);
       const n2 = (x) => (x === null ? '—' : x.toFixed(2));
@@ -220,6 +247,8 @@ async function tabBot(main) {
         <tr><td>Caída máxima (max drawdown)</td><td class="r neg">${pct(m.maxDrawdownPct)}</td></tr>
         <tr><td>Sharpe / Sortino (anualizados)</td><td class="r">${n2(m.sharpe)} / ${n2(m.sortino)}</td></tr>
         <tr><td>Compras / operaciones cerradas</td><td class="r">${m.buys} / ${m.closedTrades}</td></tr>
+        <tr><td>Beta / alfa anual vs. el activo</td><td class="r">${n2(m.beta)} / ${pct(m.alphaAnnualPct)}</td></tr>
+        <tr><td>Tiempo en posición</td><td class="r">${pct(m.exposurePct)}</td></tr>
         <tr><td>% ganadoras / factor de beneficio</td><td class="r">${pct(m.winRatePct)} / ${n2(m.profitFactor)}</td></tr></tbody></table>
         <p class="muted" style="font-size:12px">Capital de referencia ${money(r.capital, 0)}, ${r.candles} velas, comisión ${r.feePct} %.</p>`;
     } catch (err) { setMsg($('#bt_m'), err.message); }
@@ -250,6 +279,111 @@ async function tabDescargar(main) {
       <li>Ayuda: <code>node quantum-bot.mjs --help</code>.</li>
     </ol>
     <p class="muted" style="font-size:13px">Usa siempre llaves de solo trading (sin retiros). El bot se niega a operar en real si la llave permite retiros.</p>
+  </div>`;
+}
+
+
+async function tabCuenta(main) {
+  main.innerHTML = `
+  <div class="card"><h2>Cambiar contraseña</h2>
+    ${state.user.role === 'owner' ? '<p class="muted">La contraseña del dueño se define en OWNER_PASSWORD (variables de entorno de Render).</p>' : `
+    <form id="pf" class="form">
+      <label>Contraseña actual<input name="current" type="password" required autocomplete="current-password"></label>
+      <label>Nueva (mín. 10 caracteres)<input name="next" type="password" required minlength="10" autocomplete="new-password"></label>
+      <button class="btn full" type="submit">Cambiar</button><div class="msg full" id="pm"></div>
+    </form>`}
+  </div>
+  <div class="card"><h2>Mis datos</h2>
+    <p class="muted" style="font-size:13px">Descarga una copia de tu perfil, configuración y órdenes. Tus llaves API no se incluyen.</p>
+    <a class="btn ghost" href="/api/me/export" download>Descargar mis datos (JSON)</a>
+  </div>
+  ${state.user.role === 'owner' ? '' : `<div class="card"><h2>Eliminar mi cuenta</h2>
+    <p class="muted" style="font-size:13px">Borra tu cuenta, tus llaves cifradas, tu bot y tus órdenes. No se puede deshacer.</p>
+    <form id="df" class="form"><label>Tu contraseña<input name="password" type="password" required autocomplete="current-password"></label>
+      <button class="btn danger full" type="submit">Eliminar cuenta definitivamente</button><div class="msg full" id="dm"></div></form></div>`}`;
+  const pf = $('#pf');
+  if (pf) pf.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await api('POST', '/api/me/password', { current: pf.current.value, next: pf.next.value }); state.user = null; render(); }
+    catch (err) { setMsg($('#pm'), err.message); }
+  });
+  const df = $('#df');
+  if (df) df.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!df.dataset.sure) { df.dataset.sure = '1'; setMsg($('#dm'), 'Pulsa otra vez para confirmar la eliminación.'); return; }
+    try { await api('DELETE', '/api/me', { password: df.password.value }); state.user = null; render(); }
+    catch (err) { setMsg($('#dm'), err.message); }
+  });
+}
+
+const KIND_LABEL = { strategy_defaults: 'Estrategia sugerida', agent_toggle: 'Activar/desactivar agente', model_update: 'Actualizar modelo ML',
+  risk_alert: 'Alerta de riesgo', ops_alert: 'Alerta operativa', insight: 'Hallazgo' };
+const APPLIES = ['strategy_defaults', 'agent_toggle', 'model_update'];
+
+async function tabCerebro(main) {
+  const b = await api('GET', '/api/owner/brain');
+  const agents = b.agents.map((a) => `<tr><td><b>${esc(a.label)}</b><div class="muted" style="font-size:12px;white-space:normal">${esc(a.description)}${a.available ? '' : ` · No disponible: ${esc(a.reason || '')}`}</div></td>
+    <td>${a.available ? (a.enabled ? '<span class="pos">activo</span>' : 'apagado') : '<span class="muted">no disponible</span>'}</td>
+    <td class="r">${a.available ? `<button class="btn ghost small" data-ag="${esc(a.name)}" data-en="${a.enabled ? '0' : '1'}">${a.enabled ? 'Apagar' : 'Encender'}</button>` : ''}</td></tr>`).join('');
+  const pend = b.pending.map((p) => `<div class="card" style="margin-top:10px"><div class="row"><span class="chip">${esc(KIND_LABEL[p.kind] || p.kind)}</span><span class="chip">${esc(p.agent || '')}</span></div>
+    <h3 style="margin-top:8px">${esc(p.title)}</h3>
+    <p class="muted" style="font-size:13px">${esc((p.detail && p.detail.text) || '')}</p>
+    <details><summary class="muted" style="font-size:12px;cursor:pointer">Evidencia</summary><pre style="white-space:pre-wrap;font-size:11px;overflow-x:auto">${esc(JSON.stringify(p.evidence, null, 1))}</pre></details>
+    <div class="row" style="margin-top:8px">${APPLIES.includes(p.kind) ? `<button class="btn small" data-dec="approve" data-id="${esc(p.id)}">Aprobar y aplicar</button>` : `<button class="btn ghost small" data-dec="approve" data-id="${esc(p.id)}">Enterado</button>`}
+    <button class="btn ghost small" data-dec="reject" data-id="${esc(p.id)}">Rechazar</button></div></div>`).join('');
+  const hist = b.history.map((p) => `<tr><td>${esc(when(p.decided_at || p.created_at))}</td><td>${esc(KIND_LABEL[p.kind] || p.kind)}</td><td style="white-space:normal">${esc(p.title)}</td><td>${esc(p.status)}</td></tr>`).join('');
+  const models = b.models.map((m) => `<tr><td>${esc(m.symbol)}</td><td>${m.active ? '<span class="pos">activo</span>' : 'ninguno'}</td>
+    <td>${m.candidate ? `precisión ${(m.candidate.metrics.acc_test * 100).toFixed(1)} % vs ${(m.candidate.metrics.baseline_test * 100).toFixed(1)} % base (z=${Number(m.candidate.metrics.z_test).toFixed(1)})` : '—'}</td>
+    <td>${m.candidate && m.candidate.drift ? `deriva ${Number(m.candidate.drift.score).toFixed(1)}` : '—'}</td></tr>`).join('');
+  const g = b.guardrails;
+  main.innerHTML = `
+  <div class="banner">El Cerebro solo <b>propone</b>. Nada cambia sin tu aprobación, y las áreas protegidas (riesgo, aislamiento de datos, seguridad, acceso del dueño) nunca las toca un agente.</div>
+  <div class="kpis">
+    <div class="kpi"><div class="l">Versión del app</div><div class="v">${esc(b.app_version)}</div></div>
+    <div class="kpi"><div class="l">Versión del Cerebro</div><div class="v">${b.brain_version}</div></div>
+    <div class="kpi"><div class="l">Pendientes</div><div class="v">${b.pending.length}</div></div>
+    <div class="kpi"><div class="l">Última corrida</div><div class="s">${esc(when(b.last_run))}</div></div>
+  </div>
+  <div class="card"><h2>Director</h2><div class="row"><button class="btn" id="br_run">Correr análisis ahora</button></div><div class="msg" id="br_m"></div></div>
+  <div class="card"><h2>Propuestas pendientes</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
+  <div class="card"><h2>Agentes</h2><div class="scroll"><table><tbody>${agents}</tbody></table></div><div class="msg" id="ag_m"></div></div>
+  <div class="card"><h2>Modelos ML</h2><div class="scroll"><table><thead><tr><th>Par</th><th>Estado</th><th>Último entrenamiento (fuera de muestra)</th><th>Deriva</th></tr></thead><tbody>${models}</tbody></table></div>
+    <p class="muted" style="font-size:12px">Un modelo solo se propone si supera la línea base con significancia estadística (z &gt; 2). Si no, el sistema te lo dice.</p></div>
+  <div class="card"><h2>Límites inviolables</h2>
+    <form id="gf" class="form">
+      <label>Máx. propuestas pendientes<input name="maxPendingProposals" type="number" min="1" max="100" value="${esc(g.maxPendingProposals)}"></label>
+      <label>Corrida automática cada (horas)<input name="autoRunHours" type="number" min="1" max="168" value="${esc(g.autoRunHours)}"></label>
+      <label class="full">Tipos de propuesta permitidos<span class="row">${Object.keys(KIND_LABEL).map((k) => `<label class="check"><input type="checkbox" name="kind_${k}" ${g.allowedKinds.includes(k) ? 'checked' : ''}><span>${esc(KIND_LABEL[k])}</span></label>`).join('')}</span></label>
+      <p class="muted full" style="font-size:12px">Áreas protegidas (fijas): ${g.protectedAreas.map((a) => `<code>${esc(a)}</code>`).join(' ')}</p>
+      <button class="btn full" type="submit">Guardar límites</button><div class="msg full" id="gm"></div>
+    </form></div>
+  <div class="card"><h2>Historial</h2>${hist ? `<div class="scroll"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Propuesta</th><th>Estado</th></tr></thead><tbody>${hist}</tbody></table></div>` : '<p class="muted">Sin historial.</p>'}</div>`;
+  $('#br_run').addEventListener('click', async (e) => {
+    e.target.disabled = true; setMsg($('#br_m'), 'Analizando datos reales… puede tardar unos segundos.', true);
+    try { await api('POST', '/api/owner/brain/run'); await loadTab(); } catch (err) { setMsg($('#br_m'), err.message); e.target.disabled = false; }
+  });
+  document.querySelectorAll('[data-dec]').forEach((x) => x.addEventListener('click', async () => {
+    try { await api('POST', `/api/owner/proposals/${x.dataset.id}/decision`, { decision: x.dataset.dec }); await loadTab(); } catch (err) { setMsg($('#pr_m'), err.message); }
+  }));
+  document.querySelectorAll('[data-ag]').forEach((x) => x.addEventListener('click', async () => {
+    try { await api('PUT', `/api/owner/agents/${x.dataset.ag}`, { enabled: x.dataset.en === '1' }); await loadTab(); } catch (err) { setMsg($('#ag_m'), err.message); }
+  }));
+  $('#gf').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const allowedKinds = Object.keys(KIND_LABEL).filter((k) => f[`kind_${k}`].checked);
+    try { await api('PUT', '/api/owner/guardrails', { maxPendingProposals: f.maxPendingProposals.value, autoRunHours: f.autoRunHours.value, allowedKinds }); setMsg($('#gm'), 'Límites guardados.', true); }
+    catch (err) { setMsg($('#gm'), err.message); }
+  });
+}
+
+async function tabExport(main) {
+  const b = await api('GET', '/api/owner/brain');
+  main.innerHTML = `
+  <div class="card"><h2>Descargas del dueño</h2>
+    <p>Versión del app <b>${esc(b.app_version)}</b> · Cerebro <b>v${b.brain_version}</b>. Cada cambio aprobado sube la versión del Cerebro.</p>
+    <div class="row"><a class="btn" href="/api/owner/export/brain" download>Descargar Cerebro (JSON)</a><a class="btn ghost" href="/api/owner/export/app" download>Descargar app completo (.tar.gz)</a></div>
+    <p class="muted" style="font-size:13px">El Cerebro incluye límites, agentes, modelos, propuestas y bitácora. El .tar.gz trae el código y BRAIN.json. Ninguno contiene contraseñas, llaves API ni datos individuales de clientes. Guárdalos como respaldo antes de cambios grandes.</p>
   </div>`;
 }
 
