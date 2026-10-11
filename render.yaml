@@ -15,6 +15,14 @@ services:
         fromDatabase:
           name: quantum-trading-db
           property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD
+        sync: false
 
 databases:
   - name: quantum-trading-db
