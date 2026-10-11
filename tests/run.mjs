@@ -543,6 +543,23 @@ console.log('Estado del bot y operaciones pequeñas de los agentes');
   t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 8 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
 }
 
+console.log('Trading real: alcance solo-dueño e inicio inmediato');
+{
+  const prevScope = await store.getSetting('live_trading', 'off');
+  t('ajustes: el dueño elige alcance (apagado / solo yo / todos)', (await O2('PUT', '/api/owner/settings', { live_scope: 'owner' })).status === 200 && (await O2('GET', '/api/owner/settings')).body.live_scope === 'owner');
+  t('alcance "solo yo": el dueño puede usar real y el cliente no', (await O2('GET', '/api/me')).body.liveTradingEnabled === true && (await A('GET', '/api/me')).body.liveTradingEnabled === false);
+  const liveCfg = { symbol: 'BTC-USD', strategy: 'dca', usd: 10, intervalMin: 60, mode: 'live', enabled: true, liveAck: true, maxOrderUsd: 25, maxDailyUsd: 100 };
+  const ra2 = await A('PUT', '/api/bot', liveCfg);
+  t('alcance "solo yo": un cliente recibe 403 al intentar activar real', ra2.status === 403);
+  const ro2 = await O2('PUT', '/api/bot', liveCfg);
+  t('alcance "solo yo": al dueño no lo bloquea el alcance (solo le falta elegir conexión)', ro2.status === 400 && /conexión/i.test(ro2.body.error));
+  await store.setSetting('live_trading', prevScope);
+  await A('PUT', '/api/bot', { symbol: 'BTC-USD', strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', enabled: true, maxOrderUsd: 25, maxDailyUsd: 100 });
+  await new Promise((r) => setTimeout(r, 400));
+  const stN = (await A('GET', '/api/bot/status')).body;
+  t('al encender el bot hay una primera decisión al instante (sin esperar un ciclo)', stN.last && stN.last.reason && stN.enabled === true && Array.isArray(stN.closes) && stN.signals && stN.next_check > 0);
+}
+
 console.log('Robinhood: generador de llaves');
 {
   const { genEd25519 } = await import('../public/keygen.js');
