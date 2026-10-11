@@ -1,0 +1,129 @@
+<title>Quantum Trading</title>
+<style>
+:root{--bg:#f4f7f9;--panel:#fff;--fg:#0e1a24;--muted:#5b6b78;--line:#dde5ea;--accent:#007c91;--good:#0a8f4e;--warn:#b26a00;--bad:#c0392b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a1118;--panel:#111c26;--fg:#e6eef3;--muted:#8da0ae;--line:#1f2f3d;--accent:#2fd4ee;--good:#2ee59d;--warn:#ffb547;--bad:#ff6b5b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0a1118;--panel:#111c26;--fg:#e6eef3;--muted:#8da0ae;--line:#1f2f3d;--accent:#2fd4ee;--good:#2ee59d;--warn:#ffb547;--bad:#ff6b5b;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding-inline:16px;padding-block:20px}
+.wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center}
+h1{font-size:22px;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1 small{display:block;font-size:12px;font-weight:500;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:12px;font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.ok{background:var(--good)}.dot.err{background:var(--bad)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.kpi .l{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.kpi .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent);margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+h2{font-size:13px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+td.r,th.r{text-align:right}
+.pos{color:var(--good)}.neg{color:var(--bad)}
+.tag{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+form{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+input,select,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);min-width:0}
+button{background:var(--accent);color:#fff;border:0;font-weight:600;cursor:pointer}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) button{color:#04222a}}
+:root[data-theme="dark"] button{color:#04222a}
+#msg{margin-top:8px;font-size:12px;color:var(--muted);min-height:18px}
+footer{color:var(--muted);font-size:12px;text-align:center}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1><small>RDCMNATION</small>Quantum Trading Platform</h1>
+    <span class="badge"><span class="dot" id="dot"></span><span id="status">Connecting…</span></span>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <section><h2>Portfolio</h2><div class="scroll"><table><tbody id="portfolio"></tbody></table></div></section>
+    <section><h2>Performance · 30 days</h2><div class="scroll"><table><tbody id="performance"></tbody></table></div></section>
+  </div>
+
+  <div class="grid">
+    <section><h2>Recent incidents</h2><div class="scroll"><table>
+      <thead><tr><th>Time</th><th>Service</th><th>Root cause</th><th class="r">Resolved in</th></tr></thead>
+      <tbody id="incidents"></tbody></table></div></section>
+    <section><h2>Top automation rules</h2><div class="scroll"><table>
+      <thead><tr><th>Rule</th><th>Type</th><th class="r">Conf.</th><th class="r">Runs</th></tr></thead>
+      <tbody id="rules"></tbody></table></div></section>
+  </div>
+
+  <section>
+    <h2>Submit trade order</h2>
+    <form id="trade">
+      <input name="symbol" placeholder="Symbol" required maxlength="20">
+      <select name="side"><option value="buy">Buy</option><option value="sell">Sell</option></select>
+      <input name="quantity" type="number" step="any" min="0" placeholder="Quantity" required>
+      <input name="price" type="number" step="any" min="0" placeholder="Price" required>
+      <button type="submit">Submit</button>
+    </form>
+    <div id="msg"></div>
+  </section>
+
+  <footer>Phase 12 · ML-driven optimization · <span id="ts"></span></footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const money = (n) => Number(n).toLocaleString('en-US', {style:'currency', currency:'USD', maximumFractionDigits:0});
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const get = (p) => fetch(p).then((r) => { if (!r.ok) throw new Error(p); return r.json(); });
+const row = (l, v, cls = '') => `<tr><td>${l}</td><td class="r ${cls}">${v}</td></tr>`;
+const ago = (t) => { const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago'; };
+
+async function load() {
+  try {
+    const [h, m, inc, rules, pf, perf] = await Promise.all([
+      get('/api/health'), get('/api/metrics'), get('/api/incidents?limit=6'),
+      get('/api/rules'), get('/api/portfolio'), get('/api/performance')
+    ]);
+    $('dot').className = 'dot ok';
+    $('status').textContent = `Live · v${h.version} · DB ${h.database}`;
+
+    const k = [
+      ['Auto-resolution', m.auto_resolution_rate + '%'], ['MTTR', m.mttr_minutes + ' min'],
+      ['Prevention', m.incident_prevention_pct + '%'], ['Active rules', m.active_rules],
+      ['Cost leverage / mo', money(m.cost_leverage_monthly)], ['Uptime', m.uptime_pct + '%']
+    ];
+    $('kpis').innerHTML = k.map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${esc(v)}</div></div>`).join('');
+
+    $('portfolio').innerHTML =
+      row('Total value', money(pf.total_value)) + row('Positions', pf.positions) +
+      row('Long exposure', money(pf.long_exposure), 'pos') + row('Short exposure', money(pf.short_exposure), 'neg');
+    $('performance').innerHTML =
+      row('Total P&L', money(perf.total_pnl), perf.total_pnl >= 0 ? 'pos' : 'neg') +
+      row('Trades', perf.trades) + row('Win rate', perf.win_rate_pct + '%');
+
+    $('incidents').innerHTML = inc.incidents.map((i) =>
+      `<tr><td>${ago(i.incident_timestamp)}</td><td>${esc(i.service_name)}</td><td>${esc(i.root_cause)}</td><td class="r">${i.resolution_time_sec}s</td></tr>`).join('');
+    $('rules').innerHTML = rules.rules.slice(0, 6).map((r) =>
+      `<tr><td>${esc(r.rule_name)}</td><td><span class="tag">${esc(r.rule_type)}</span></td><td class="r">${r.confidence_score}%</td><td class="r">${r.activation_count}</td></tr>`).join('');
+    $('ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    $('dot').className = 'dot err';
+    $('status').textContent = 'API unavailable';
+  }
+}
+
+$('trade').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  f.quantity = +f.quantity; f.price = +f.price;
+  const r = await fetch('/api/trades', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(f)});
+  const j = await r.json();
+  $('msg').textContent = r.ok ? `Order #${j.trade_id} submitted (${j.status})` : (j.error || 'Failed');
+  if (r.ok) { e.target.reset(); load(); }
+});
+
+load();
+setInterval(load, 30000);
+</script>
