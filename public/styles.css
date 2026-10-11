@@ -263,3 +263,4 @@ th,td{padding:6px 5px;font-size:13px}
 .bviz .bwhy{max-height:150px;overflow:auto}
 table td{padding-block:6px}
 .langsw.float{top:auto;right:auto;left:8px;bottom:calc(env(safe-area-inset-bottom,0px) + 74px);opacity:.88;transform:scale(.9);transform-origin:left bottom}
+.bviz .bmic{position:absolute;right:10px;top:48px;z-index:2;min-height:34px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:rgba(8,8,11,.78);color:var(--accent);font:600 11px/1 ui-monospace,Menlo,monospace;cursor:pointer}.bviz .bmic.on{background:#ff5d4d;color:#fff;border-color:#ff5d4d;box-shadow:0 0 14px #ff5d4d88}

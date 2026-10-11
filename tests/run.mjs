@@ -992,6 +992,14 @@ const dictEn = (await import('../public/i18n-en.js')).default;
 t('diccionario ES/EN: pares válidos con los mismos huecos', Array.isArray(dictEn) && dictEn.length > 800 && dictEn.every(([es, en]) => typeof es === 'string' && typeof en === 'string' && en && [...es.matchAll(/\{(\d+)\}/g)].map((m) => m[1]).sort().join() === [...en.matchAll(/\{(\d+)\}/g)].map((m) => m[1]).sort().join()));
 t('landing y legal cargan el selector de idioma y la entrada con logo', fs.readFileSync('public/landing.html', 'utf8').includes('/lang.js') && fs.readFileSync('public/legal.html', 'utf8').includes('/lang.js') && fs.readFileSync('public/landing.html', 'utf8').includes('/splash.js') && fs.readFileSync('public/index.html', 'utf8').includes('/splash.js'));
 
+const vc = await import('../public/voicecmd.js');
+t('voz: entiende frases en español e inglés (solo lectura)', vc.intentOf('¿Por qué compraste?') === 'why' && vc.intentOf('what are the news') === 'news' && vc.intentOf('cállate') === 'mute' && vc.intentOf('cómo está el riesgo') === 'risk' && vc.intentOf('dame un resumen') === 'report');
+t('voz: pedir login, dueño u operar solo recibe una negativa', ['entra a la cuenta del dueño', 'abre el panel del owner', 'vende todo mi bitcoin', 'log into another account', 'dame la contraseña', 'cambia a otro usuario'].every((x) => vc.intentOf(x) === 'unknown' && /no puedo operar ni abrir cuentas/.test(vc.answerFor('unknown', {}))));
+t('voz: la respuesta usa lo que hay en pantalla', /frenó|frené/.test(vc.answerFor('news', { scouts: [{ name: 'NOTICIAS', val: 'freno · 2 negativas' }] })) && vc.answerFor('why', { thoughts: [{ k: 'buy', text: 'Compré BTC porque sube.' }] }) === 'Compré BTC porque sube.');
+const vsrc = fs.readFileSync('public/voicecmd.js', 'utf8').replace(/\/\/.*$/gm, '');
+t('voz: el módulo de voz no tiene red, sesión ni acceso a cuentas', !/\b(fetch|XMLHttpRequest|WebSocket|sendBeacon|document\.cookie|localStorage\.getItem\('qt_(tok|sess)|location\s*=|eval\(|import\()/.test(vsrc) && !/api\(/.test(vsrc));
+const appsrc = fs.readFileSync('public/app.js', 'utf8'); const vi = appsrc.indexOf("const m = $('.bmic', r)"); const vj = appsrc.indexOf('function narrate');
+t('voz: los manejadores de voz en la app no llaman al servidor', vi > 0 && vj > vi && !/\bapi\(|fetch\(|location\./.test(appsrc.slice(vi, vj)));
 server.close();
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

@@ -1,6 +1,7 @@
 // Interfaz de Quantum Trading. Sin librerías; todo dato dinámico pasa por esc() antes de insertarse.
 import { genEd25519 } from '/keygen.js';
 import { voice } from '/voice.js';
+import { intentOf, answerFor, statusPhrases, listenOnce, autoPace } from '/voicecmd.js';
 import { initI18n, mountSwitch, tr, onLang, lang } from '/i18n.js';
 await initI18n(); mountSwitch(null);
 const $ = (s, r = document) => r.querySelector(s);
@@ -409,9 +410,10 @@ const vizStream = (d) => d.stream.slice(0, 14).map((x) => { const [tg, c] = tagO
 const TH_TAG = { pass: 'TRASPASO', buy: 'COMPRA', sell: 'VENTA', risk: 'FRENO', hold: 'VIGILA' };
 const vizWhy = (d) => (d.thoughts || []).map((x) => `<div class="w ${x.k}"><b>${x.big ? 'COMPRA GRANDE' : TH_TAG[x.k] || 'NOTA'}</b> ${esc(x.text)}</div>`).join('');
 const briefBtn = (d) => (d.city && voice.supported ? '<button type="button" class="bbrief">🎙 Informe del Cerebro</button>' : '');
+const micBtn = (d) => ((d.octopus || d.ufo) && voice.supported && (window.SpeechRecognition || window.webkitSpeechRecognition) ? '<button type="button" class="bmic" aria-label="Preguntar por voz">🎤 Pregúntale</button>' : '');
 const voiceLbl = () => (voice.on ? '🔊 Voz activa' : '🔈 Toca para oírlo');
 function vizHtml(d, id) {
-  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${briefBtn(d)}${(d.octopus || d.city || d.ufo) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
+  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${briefBtn(d)}${micBtn(d)}${(d.octopus || d.city || d.ufo) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
     <div class="bstat">${vizStat(d)}</div><div class="brows" ${d.rows && d.rows.length ? '' : 'hidden'}>${vizRows(d)}</div>
     ${d.city ? '<div class="bdetail" hidden></div>' : ''}<div class="bwhy" ${d.thoughts && d.thoughts.length ? '' : 'hidden'}>${vizWhy(d)}</div><div class="bstream">${vizStream(d)}</div><div class="bappr">${esc(d.approval)}</div></div>`;
 }
@@ -520,7 +522,7 @@ async function mountCity(r, d) {
 let vizCtl = null; let vizMode = '';
 // Con el bot en AUTO el Cerebro es un OVNI con IA en 3D que recorre el mapa de criptos; si no, la red de nodos. Si el 3D falla, cae a la red.
 async function mountViz(bn) {
-  const r = $('#bz_v'); if (!r) return; const d = botViz(bn);
+  const r = $('#bz_v'); if (!r) return; const d = botViz(bn); lastD = d;
   if (d.octopus || d.ufo) { try { const m = await import('/octo3d.js'); if (!document.body.contains(r)) return; vizCtl = m.createOcto3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi) }); bindVoice(r, d); vizMode = '3d'; r.dataset.on = '1'; r.classList.add('is3d'); return; } catch { /* usa la red */ } }
   vizCtl = brainViz(r, d); vizMode = '2d'; r.dataset.on = '1'; r.classList.remove('is3d');
 }
@@ -529,9 +531,28 @@ let thoughtSeen = 0;
 function bindVoice(r, d) {
   if (!thoughtSeen && d.ot) thoughtSeen = d.ot;
   const b = $('.bvoice', r); if (!b || b.dataset.b) return; b.dataset.b = '1';
-  b.onclick = () => { voice.set(!voice.on); b.classList.toggle('on', voice.on); b.setAttribute('aria-pressed', String(voice.on)); b.textContent = voiceLbl(); };
+  b.onclick = () => { if (voice.on && Date.now() - lastSpoke < 25000) autoPace.muted(); voice.set(!voice.on); b.classList.toggle('on', voice.on); b.setAttribute('aria-pressed', String(voice.on)); b.textContent = voiceLbl(); startAuto(); };
+  const m = $('.bmic', r); if (m && !m.dataset.b) { m.dataset.b = '1'; m.onclick = () => {
+    if (!voice.on) { voice.set(true); b.classList.add('on'); b.textContent = voiceLbl(); }
+    m.classList.add('on'); m.textContent = '🎤 Escuchando…';
+    const ok = listenOnce(lang(), (txt) => { const it = intentOf(txt); if (it === 'mute') { voice.set(false); b.classList.remove('on'); b.textContent = voiceLbl(); autoPace.muted(); return; } voice.say(answerFor(it, lastD || {}), true); }, () => { m.classList.remove('on'); m.textContent = '🎤 Pregúntale'; });
+    if (!ok) { m.classList.remove('on'); m.textContent = '🎤 Pregúntale'; voice.say('Tu navegador no deja escuchar por voz aquí.', true); }
+  }; }
+  startAuto();
+}
+// Narración automática: cada cierto rato el Cerebro cuenta qué hace, noticias y por qué compra. El ritmo se ajusta solo (autoPace).
+let lastD = null; let lastSpoke = 0; let autoT = null; let autoRound = 0;
+function startAuto() {
+  if (autoT) clearTimeout(autoT); autoT = null; if (!voice.on) return;
+  const tick = () => {
+    autoT = null; if (!voice.on) return;
+    if (document.visibilityState === 'visible' && lastD && document.body.contains($('#bz_v') || $('#ag_v') || document.body)) { const ph = statusPhrases(lastD); if (ph.length) { voice.say(ph[autoRound % ph.length], false); lastSpoke = Date.now(); autoRound++; if (autoRound % 6 === 0) autoPace.liked(); } }
+    autoT = setTimeout(tick, autoPace.get() * 1000 / 3);
+  };
+  autoT = setTimeout(tick, 8000);
 }
 function narrate(d) {
+  lastD = d;
   if (!d.octopus || !d.ot || d.ot <= thoughtSeen) return; thoughtSeen = d.ot;
   for (const x of d.thoughts || []) setTimeout(() => voice.say(x.text, x.k !== 'hold'), x.k === 'buy' || x.k === 'sell' ? 5000 : 0); // compra/venta: la dice el OVNI cuando llega a la isla; esto es el respaldo
 }
