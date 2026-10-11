@@ -440,7 +440,7 @@ function botViz(bn) {
   for (const o of bn.recent || []) if (o.status === 'ok') stream.push({ t: o.t, text: `${o.side === 'buy' ? 'compra' : 'vende'} ${base(o.symbol)} ${money(o.usd)}${o.mode === 'live' ? ' (REAL)' : ' (papel)'}` });
   const rg = octo && octo.regime ? ({ bull: 'alcista', bear: 'bajista', volatile: 'volátil', range: 'lateral', unknown: 'sin datos' }[octo.regime] || octo.regime) : null;
   const rows = octo ? octo.items.map((it) => ({ sym: base(it.symbol), state: (OSTATE[it.state] || [0, it.state])[1], kind: (OSTATE[it.state] || ['idle'])[0], score: it.score, why: it.why || '', note: it.held ? `${it.gain_pct >= 0 ? '+' : ''}${(it.gain_pct || 0).toFixed(2)} %` : it.edge ? `${it.edge.toFixed(1)}× costo` : '' })) : null;
-  return { center: 'IA', nodes, stream, rows, thoughts: octo ? (octo.thoughts || []) : [], ot: octo ? octo.t : 0, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? (octo ? 'OVNI IA · en vivo' : 'Cerebro · en vivo') : 'Cerebro · apagado',
+  return { center: 'IA', nodes, stream, rows, thoughts: octo ? (octo.thoughts || []) : [], ot: octo ? octo.t : 0, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? (octo ? 'Superintelligence · en vivo' : 'Cerebro · en vivo') : 'Cerebro · apagado',
     stats: [['posiciones', held.length], ['validadas', ok.length], ['mercado', rg || '—'], ['revisó', agoS(bn.last_run)]],
     approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
 }

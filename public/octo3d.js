@@ -194,6 +194,7 @@ export function createOcto3D(cv, d0, opt = {}) {
           ctx.fillStyle = on ? '#fff7b0' : rgba(tint, 0.9); ctx.globalAlpha = front > -0.2 ? 1 : 0.35; ctx.beginPath(); ctx.arc(lxp, lyp, Math.max(1.2, R * (on ? 0.075 : 0.055)), 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
         // emisor inferior
         ctx.fillStyle = rgba(tint, 0.9); ctx.beginPath(); ctx.ellipse(0, R * 0.42, R * 0.34, R * 0.1, 0, 0, TAU); ctx.fill();
+        ctx.font = '700 9px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd60a'; ctx.fillText('SUPERINTELLIGENCE', 0, -R * 1.05);
         ctx.restore();
       } });
       const pu = proj(oct.x, alt + 0.1, oct.z); void pu;

@@ -76,7 +76,7 @@ export function createCity3D(cv, d0, opt = {}) {
         const hg = ctx.createLinearGradient(0, -R * 0.3, 0, R * 0.5); hg.addColorStop(0, '#d7dbe3'); hg.addColorStop(0.45, '#8d939e'); hg.addColorStop(1, '#2c2f37'); ctx.fillStyle = hg; ctx.beginPath(); ctx.ellipse(0, 0, R * 1.62, R * 0.46, 0, 0, TAU); ctx.fill();
         ctx.strokeStyle = tint; ctx.lineWidth = Math.max(1.5, R * 0.06); ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.ellipse(0, R * 0.04, R * 1.5, R * 0.34, 0, 0.05, Math.PI - 0.05); ctx.stroke(); ctx.globalAlpha = 1;
         for (let i = 0; i < 9; i++) { const ang = sec * 2.4 + (i / 9) * TAU; const fr = Math.sin(ang); const on = (Math.floor(sec * 6) + i) % 3 === 0; ctx.fillStyle = on ? '#fff7b0' : rgba(tint, 0.9); ctx.globalAlpha = fr > -0.2 ? 1 : 0.35; ctx.beginPath(); ctx.arc(Math.cos(ang) * R * 1.32, R * 0.03 + fr * R * 0.2, Math.max(1.2, R * (on ? 0.075 : 0.055)), 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
-        ctx.font = '700 10px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd60a'; ctx.fillText('AI UFO', 0, -R * 1.05);
+        ctx.font = '700 9px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd60a'; ctx.fillText('SUPERINTELLIGENCE', 0, -R * 1.05);
         ctx.restore(); } }); }
     items.sort((p, q) => q.z - p.z).forEach((o) => o.d());
     // etiquetas

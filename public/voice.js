@@ -23,7 +23,7 @@ export const voice = {
   subscribe(f) { subs.add(f); return () => subs.delete(f); },
   set(v) {
     on = !!v && ok; try { localStorage.setItem(KEY, on ? '1' : '0'); } catch { /* sin almacenamiento */ }
-    if (!on) { queue = []; busy = false; current = ''; try { speechSynthesis.cancel(); } catch { /* ignora */ } } else this.say('Voz activada. Te cuento lo que pienso y hago, y por qué.', true);
+    if (!on) { queue = []; busy = false; current = ''; try { speechSynthesis.cancel(); } catch { /* ignora */ } } else this.say('Voz activada. Soy Superintelligence. Te cuento lo que pienso y hago, y por qué.', true);
     emit();
   },
   // Informe largo: dice todas las frases en orden (sin recortar la fila ni ignorar repetidas).
