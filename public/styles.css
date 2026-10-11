@@ -241,3 +241,4 @@ th,td{padding:6px 5px;font-size:13px}
 .bviz .bdetail em{display:block;font-style:normal;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:2px}
 .bviz .bdetail .dp div{color:#ff9d2e}
 .bviz .bdetail .dn div{color:var(--muted)}
+.bviz .bwhy .w.pass{border-left-color:#8fe3ff}.bviz .bwhy .w.pass b{color:#8fe3ff}

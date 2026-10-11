@@ -65,14 +65,14 @@ export function createOcto3D(cv, d0, opt = {}) {
 
   const pickTarget = (t) => {
     const ev = events.shift();
-    if (ev && isl.has(ev.label)) { oct.target = isl.get(ev.label); oct.mode = ev.type; oct.until = t + 2800; return; }
+    if (ev && isl.has(ev.label)) { oct.target = isl.get(ev.label); oct.mode = ev.type; oct.until = t + 2800; say(`Voy a ${ev.type === 'buy' ? 'comprar' : 'soltar'} ${ev.label}.`, true); return; }
     const list = [...isl.values()].filter((n) => !n.gone).sort((a, b) => b.tw - a.tw);
     if (!list.length) { oct.target = null; oct.until = t + 1500; return; }
     tourIdx = (tourIdx + 1) % list.length; oct.target = list[tourIdx]; oct.mode = 'tour'; oct.until = t + 2400;
     rings.push({ x: oct.target.x, z: oct.target.z, r: 0.5, col: COLORS[oct.target.kind] || COLORS.idle });
     const n = oct.target; const row = n.row;
     hud = { title: `Evaluando ${n.label}`, sub: row ? `${row.state}${row.score ? ` · puntaje ${row.score.toFixed(1)}` : ''}${row.note ? ` · ${row.note}` : ''}` : (n.sub || 'vigilando') };
-    if (row && row.why) say(row.why, false);
+    say(`Escaneando ${n.label}. ${row && row.why ? row.why : (n.sub || 'sin cambios')}`, false);
   };
 
   const ops = []; // todo lo que se dibuja con profundidad (esferas, partes del pulpo)
@@ -110,7 +110,7 @@ export function createOcto3D(cv, d0, opt = {}) {
       const ox = tg.x - oct.x; const oz = tg.z - oct.z; const dist = Math.hypot(ox, oz);
       const want = dist > 1.3 ? 1 : 0; const sp = Math.min(dist, 3.2 * speedK);
       oct.vx += ((ox / (dist || 1)) * sp * want - oct.vx) * 0.04; oct.vz += ((oz / (dist || 1)) * sp * want - oct.vz) * 0.04;
-      if (dist <= 1.8 && (oct.mode === 'buy' || oct.mode === 'sell') && !oct.did) { oct.did = true; const col = oct.mode === 'buy' ? '#4ade80' : '#ff5d4d'; burst(tg.x, 1.2, tg.z, col, 38); rings.push({ x: tg.x, z: tg.z, r: 0.5, col }); floaters.push({ x: tg.x, y: 3.4, z: tg.z, text: oct.mode === 'buy' ? `COMPRA ${tg.label}` : `SUELTA ${tg.label}`, col, life: 1 }); hud = { title: `${oct.mode === 'buy' ? 'Comprando' : 'Soltando'} ${tg.label}`, sub: tg.row ? `${tg.row.state}${tg.row.note ? ` · ${tg.row.note}` : ''}` : tg.sub }; }
+      if (dist <= 1.8 && (oct.mode === 'buy' || oct.mode === 'sell') && !oct.did) { oct.did = true; const col = oct.mode === 'buy' ? '#4ade80' : '#ff5d4d'; burst(tg.x, 1.2, tg.z, col, 38); rings.push({ x: tg.x, z: tg.z, r: 0.5, col }); floaters.push({ x: tg.x, y: 3.4, z: tg.z, text: oct.mode === 'buy' ? `COMPRA ${tg.label}` : `SUELTA ${tg.label}`, col, life: 1 }); hud = { title: `${oct.mode === 'buy' ? 'Comprando' : 'Soltando'} ${tg.label}`, sub: tg.row ? `${tg.row.state}${tg.row.note ? ` · ${tg.row.note}` : ''}` : tg.sub }; say(tg.row && tg.row.why ? tg.row.why : `${oct.mode === 'buy' ? 'Comprando' : 'Soltando'} ${tg.label}.`, true); }
       if (oct.mode === 'tour') oct.did = false; if (t > oct.until - 100) oct.did = false;
       oct.reach += (((oct.mode !== 'tour' && dist < 3) || (oct.mode === 'tour' && dist < 2.2)) ? 1 - oct.reach : -oct.reach) * 0.06;
     } else { oct.vx *= 0.95; oct.vz *= 0.95; oct.reach *= 0.9; }

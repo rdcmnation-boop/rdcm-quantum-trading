@@ -152,7 +152,7 @@ const until = (t) => { if (!t) return '—'; const m = Math.round((t - Date.now(
 function dashHtml(d) {
   const r = d.real; const p = d.paper; const br = d.brain;
   const none = !r.orders && !r.errors;
-  const rows = r.last.map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} <b>${esc(o.symbol.replace('-USD', ''))}</b> <span class="chip">${esc(o.exchange)}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : '<span class="neg">error</span>'}</td></tr>${o.note ? `<tr><td colspan="4" class="neg" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.note)}</td></tr>` : ''}`).join('');
+  const rows = r.last.map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} <b>${esc(o.symbol.replace('-USD', ''))}</b> <span class="chip">${esc(o.exchange)}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : o.old ? '<span class="muted">error antiguo</span>' : '<span class="neg">error</span>'}</td></tr>${o.note ? `<tr><td colspan="4" class="${o.old ? 'muted' : 'neg'}" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.old ? (/precision/i.test(o.note) ? 'Hace horas. Ahora el bot reintenta solo con el incremento que indica Robinhood (aún sin confirmar en vivo). ' : 'Hace horas. ') : '')}${esc(o.note)}</td></tr>` : ''}`).join('');
   const showStart = !(d.bot.enabled && d.bot.mode === 'live');
   const start = !showStart ? '' : d.can_live && d.connections.length ? `<form id="ds_f" class="startbox">
       <b>▶ Encender trading automático REAL</b>
@@ -168,7 +168,7 @@ function dashHtml(d) {
       <div class="muted" style="font-size:12px">resultado total real · ${money(r.realized)} cerrado · ${r.unrealized === null ? '—' : money(r.unrealized)} abierto</div>
       <div class="kpis" style="margin-top:8px"><div class="kpi"><div class="l">Invertido ahora</div><div class="v" style="font-size:16px">${money(r.invested_now)}</div></div>
         <div class="kpi"><div class="l">Compras / ventas</div><div class="v" style="font-size:16px">${r.orders}</div><div class="s">${money(r.bought, 0)} / ${money(r.sold, 0)}</div></div>
-        <div class="kpi"><div class="l">Errores</div><div class="v ${r.errors ? 'neg' : ''}" style="font-size:16px">${r.errors}</div></div></div>
+        <div class="kpi"><div class="l">Errores (6 h)</div><div class="v ${r.errors ? 'neg' : ''}" style="font-size:16px">${r.errors}</div>${r.errors_old ? `<div class="s">${r.errors_old} anteriores</div>` : ''}</div></div>
       ${none ? '<p class="muted" style="margin:8px 0 0">Aún no hay operaciones reales. Ve a Bot → «Real: comprar ya» (con trading real activado en Ajustes).</p>' : ''}
       ${r.holdings.length ? `<div class="row" style="margin-top:8px">${r.holdings.map((h) => `<span class="chip"><b>${esc(h.symbol.replace('-USD', ''))}</b> ${h.value !== null ? money(h.value) : '—'} · ${esc(h.venue || '')}</span>`).join(' ')}</div>` : ''}
       ${rows ? `<div class="scroll" style="margin-top:6px"><table><tbody>${rows}</tbody></table></div>` : ''}
@@ -369,9 +369,9 @@ const tagOf = (txt) => (/mantiene|vigila|espera|pausa|descansa|freno|límite|sin
 const vizStat = (d) => d.stats.map((x) => `<div><b>${esc(x[1])}</b>${esc(x[0])}</div>`).join('');
 const vizRows = (d) => (d.rows && d.rows.length ? d.rows.map((r) => `<div class="br ${r.kind}"><b>${esc(r.sym)}</b><span>${esc(r.state)}</span><span class="num">${r.score ? r.score.toFixed(1) : '—'}</span><span class="num">${esc(r.note)}</span></div>`).join('') : '');
 const vizStream = (d) => d.stream.slice(0, 14).map((x) => { const [tg, c] = tagOf(x.text); return `<div><span class="tg ${c}">${tg}</span>${x.t ? `<span>${esc(ago(x.t))} · </span>` : ''}${esc(x.text)}</div>`; }).join('') || '<div>Esperando la primera decisión…</div>';
-const TH_TAG = { buy: 'COMPRA', sell: 'VENTA', risk: 'FRENO', hold: 'VIGILA' };
+const TH_TAG = { pass: 'TRASPASO', buy: 'COMPRA', sell: 'VENTA', risk: 'FRENO', hold: 'VIGILA' };
 const vizWhy = (d) => (d.thoughts || []).map((x) => `<div class="w ${x.k}"><b>${x.big ? 'COMPRA GRANDE' : TH_TAG[x.k] || 'NOTA'}</b> ${esc(x.text)}</div>`).join('');
-const voiceLbl = () => (voice.on ? '🔊 Voz activa' : '🔈 Activar voz');
+const voiceLbl = () => (voice.on ? '🔊 Voz activa' : '🔈 Toca para oírlo');
 function vizHtml(d, id) {
   return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${(d.octopus || d.city) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
     <div class="bstat">${vizStat(d)}</div><div class="brows" ${d.rows && d.rows.length ? '' : 'hidden'}>${vizRows(d)}</div>
@@ -409,14 +409,24 @@ function botViz(bn) {
     stats: [['posiciones', held.length], ['validadas', ok.length], ['mercado', rg || '—'], ['revisó', agoS(bn.last_run)]],
     approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
 }
+// Qué hace cada agente y a quién le pasa su trabajo (así la ciudad cuenta cómo se coordinan).
+const COORD = {
+  market_intel: ['lee el mercado global y el libro de órdenes de Coinbase para saber si el mercado está alcista, bajista o lateral', 'opportunity_scanner', 'el régimen y los costos reales'],
+  opportunity_scanner: ['recorre las criptos grandes y prueba una estrategia en cada una con los costos de Coinbase y Robinhood', 'paper_lab', 'las criptos que califican'],
+  paper_lab: ['practica con un millón virtual para ver qué estrategias ganan de verdad', 'trading_improvement', 'las estrategias campeonas'],
+  trading_improvement: ['propone cambios a la configuración del bot según lo que aprendió el laboratorio', null, 'sus propuestas a ti, que decides'],
+  ml_models: ['entrena modelos de predicción y solo los activa si le ganan al azar en datos que no vio', 'trading_improvement', 'los modelos candidatos'],
+  problem_processing: ['procesa los problemas que reportan los clientes y propone arreglos', null, 'sus propuestas a ti, que decides'],
+  owner_analytics: ['analiza el negocio: clientes, uso y errores', null, 'avisos para ti'],
+};
 function agentsViz(b) {
   const st = new Map((b.agent_stats || []).map((x) => [x.name, x])); const lastNote = new Map();
   for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) if (!lastNote.has(a.agent) && (a.notes || []).length) lastNote.set(a.agent, a.notes[0]);
   const detail = (a, x) => ({ name: a.name, label: a.label || a.name, state: !a.available ? 'próximamente' : a.enabled ? 'activo' : 'apagado', stats: x, notes: (() => { const o = []; for (const r of (b.runs || []).slice(0, 6)) for (const q of r.agents) if (q.agent === a.name) for (const n of (q.notes || []).slice(0, 2)) o.push({ t: r.t, text: n }); return o.slice(0, 4); })(), pending: (b.pending || []).filter((p) => p.agent === a.name).map((p) => p.title) });
-  const nodes = b.agents.map((a) => { const x = st.get(a.name) || {}; const mx = Math.max(1, ...b.agents.map((q) => (st.get(q.name) || {}).runs || 0)); return { label: (a.label || a.name).split(' ')[0].slice(0, 13), kind: !a.available ? 'off' : a.enabled ? 'ok' : 'idle', w: ((x.runs || 0) / mx) * 0.6 + Math.min(0.4, (x.created || 0) / 20), sub: lastNote.get(a.name) || `${x.runs || 0} corridas · ${x.created || 0} propuestas`, detail: detail(a, x) }; });
+  const nodes = b.agents.map((a) => { const x = st.get(a.name) || {}; const mx = Math.max(1, ...b.agents.map((q) => (st.get(q.name) || {}).runs || 0)); return { label: (a.label || a.name).split(' ')[0].slice(0, 13), kind: !a.available ? 'off' : a.enabled ? 'ok' : 'idle', w: ((x.runs || 0) / mx) * 0.6 + Math.min(0.4, (x.created || 0) / 20), sub: lastNote.get(a.name) || `${x.runs || 0} corridas · ${x.created || 0} propuestas`, detail: detail(a, x), name: a.name, say: (() => { const c = COORD[a.name]; const nt = lastNote.get(a.name); const tgt = c && c[1] ? (b.agents.find((q) => q.name === c[1]) || {}).label : null; return `${a.label || a.name}${a.enabled ? '' : ', apagado'}: ${c ? c[0] : 'agente en preparación'}.${nt ? ` Lo último que reportó: ${String(nt).slice(0, 170)}.` : ' Todavía no ha reportado nada.'}${c && a.enabled ? ` Le pasa ${c[2]}${tgt ? ` a ${tgt}` : ''}.` : ''}`; })(), to: (() => { const c = COORD[a.name]; return c && c[1] ? b.agents.findIndex((q) => q.name === c[1]) : -1; })() }; });
   const stream = [];
   for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) for (const n of (a.notes || []).slice(0, 2)) stream.push({ t: r.t, text: `${a.agent}: ${n}` });
-  return { center: 'DIR', nodes, pending: b.pending.length, city: true, stream: stream.slice(0, 14), live: true, caption: 'Director + agentes',
+  return { center: 'DIR', nodes, pending: b.pending.length, city: true, thoughts: b.agents.filter((a) => a.enabled && COORD[a.name]).map((a) => { const c = COORD[a.name]; const t = c[1] ? (b.agents.find((q) => q.name === c[1]) || {}).label : 'ti'; return { k: 'pass', text: `${a.label} → ${t || 'ti'}: le pasa ${c[2]}.` }; }).slice(0, 7), directorSay: `Director al habla. ${b.agents.filter((a) => a.enabled).length} agentes están trabajando${b.pending.length ? ` y ${b.pending.length} propuesta${b.pending.length > 1 ? 's esperan' : ' espera'} tu decisión. Solo tú las apruebas` : ', sin propuestas pendientes'}. Última corrida ${agoS(b.last_run) === 'ahora' ? 'ahora mismo' : 'hace ' + agoS(b.last_run)}.`, stream: stream.slice(0, 14), live: true, caption: 'Director + agentes',
     stats: [['agentes activos', b.agents.filter((a) => a.enabled).length], ['pendientes tuyos', b.pending.length], ['versión', 'v' + b.brain_version], ['última corrida', ago(b.last_run)]],
     approval: b.pending.length ? `Solo tú apruebas: ${b.pending.length} propuesta(s) esperan tu decisión.` : 'Solo tú apruebas los cambios críticos. Nada pendiente ahora.' };
 }
@@ -435,9 +445,9 @@ async function mountCity(r, d) {
   if (!r) return;
   try {
     const m = await import('/city3d.js'); if (!document.body.contains(r)) return;
-    m.createCity3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi), onPick: (i) => { const n = d.nodes[i]; showAgent(r, n); voice.say(agentSummary(n), true); } });
+    m.createCity3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi), onPick: (i) => { const n = d.nodes[i]; showAgent(r, n); voice.say(n.say || agentSummary(n), true); } });
     r.classList.add('is3d'); bindVoice(r, { ot: 0 });
-    if (d.pending) voice.say(`Hay ${d.pending} propuesta${d.pending > 1 ? 's' : ''} esperando tu decisión. Solo tú las apruebas.`, false);
+    voice.say(d.directorSay, false);
   } catch { brainViz(r, d); }
 }
 let vizCtl = null; let vizMode = '';
@@ -456,7 +466,7 @@ function bindVoice(r, d) {
 }
 function narrate(d) {
   if (!d.octopus || !d.ot || d.ot <= thoughtSeen) return; thoughtSeen = d.ot;
-  for (const x of d.thoughts || []) voice.say(x.text, x.k !== 'hold');
+  for (const x of d.thoughts || []) setTimeout(() => voice.say(x.text, x.k !== 'hold'), x.k === 'buy' || x.k === 'sell' ? 5000 : 0); // compra/venta: la dice el OVNI cuando llega a la isla; esto es el respaldo
 }
 // Actualiza SIN recrear: el pulpo sigue nadando y las islas se reacomodan según lo que el bot decide.
 function updateViz(bn) {

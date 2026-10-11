@@ -44,6 +44,10 @@ export function createCity3D(cv, d0, opt = {}) {
     const cen = proj(0, 0, 0);
     for (const a of A) { const p = proj(a.x, 0, a.z); const on = a.kind === 'ok'; ctx.strokeStyle = rgba(KC[a.kind] || KC.idle, on ? 0.45 : 0.15); ctx.lineWidth = on ? 2 : 1; ctx.beginPath(); ctx.moveTo(cen.x, cen.y); ctx.lineTo(p.x, p.y); ctx.stroke();
       if (on) for (let k = 0; k < 3; k++) { const u = ((sec * 0.35 + k / 3 + a.i * 0.17) % 1); const out = (a.i + k) % 2 === 0; const t = out ? u : 1 - u; ctx.fillStyle = out ? '#ffd60a' : '#4ade80'; ctx.beginPath(); ctx.arc(cen.x + (p.x - cen.x) * t, cen.y + (p.y - cen.y) * t, 2.4, 0, TAU); ctx.fill(); } }
+    // traspasos entre agentes: línea punteada del que entrega al que recibe, con un paquete viajando
+    ctx.setLineDash([3, 5]); for (const a of A) { const t = a.to >= 0 ? A[a.to] : null; if (!t || a.kind !== 'ok' || t.kind !== 'ok') continue; const p1 = proj(a.x, 1.2, a.z); const p2 = proj(t.x, 1.2, t.z); ctx.strokeStyle = 'rgba(120,220,255,.55)'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+      const u = (sec * 0.4 + a.i * 0.23) % 1; ctx.setLineDash([]); ctx.fillStyle = '#8fe3ff'; ctx.beginPath(); ctx.arc(p1.x + (p2.x - p1.x) * u, p1.y + (p2.y - p1.y) * u, 3, 0, TAU); ctx.fill(); ctx.setLineDash([3, 5]); }
+    ctx.setLineDash([]);
     // todo lo alto se dibuja de lejos a cerca
     const items = [...SKY.map((s) => ({ z: proj(s.x, 0, s.z).z, d: () => building(s.x, s.z, s.w, s.h, '#8a8776', sec, false, s.ph) })),
       ...A.map((a) => ({ z: proj(a.x, 0, a.z).z, d: () => { const top = building(a.x, a.z, 0.9, a.h, KC[a.kind] || KC.idle, sec, a.kind === 'ok', a.i); a.top = top; } })),
@@ -65,7 +69,7 @@ export function createCity3D(cv, d0, opt = {}) {
       ctx.fillStyle = 'rgba(255,248,210,.95)'; ctx.beginPath(); ctx.roundRect(bx - w / 2, by - 11, w, 20, 7); ctx.fill(); ctx.beginPath(); ctx.moveTo(fa.dx - 4, by + 9); ctx.lineTo(fa.dx + 4, by + 9); ctx.lineTo(fa.dx, by + 15); ctx.fill();
       ctx.fillStyle = '#1a1706'; ctx.textAlign = 'center'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.fillText(txt, bx, by + 3); }
     // HUD: recorre los agentes y cuenta qué hace cada uno
-    if (sec > focusUntil && A.length) { if (sel >= 0) sel = -1; focus = (focus + 1) % A.length; focusUntil = sec + 3.2; const a = A[focus]; say(`${a.label}. ${a.sub || ''}`, false); hud = { title: `${a.label}${a.kind === 'off' ? ' · apagado' : a.kind === 'ok' ? ' · activo' : ' · en pausa'}`, sub: a.sub || 'sin notas todavía' }; }
+    if (sec > focusUntil && A.length) { if (sel >= 0) sel = -1; focus = (focus + 1) % A.length; focusUntil = sec + 3.2; const a = A[focus]; say(a.say || `${a.label}. ${a.sub || ''}`, false); hud = { title: `${a.label}${a.kind === 'off' ? ' · apagado' : a.kind === 'ok' ? ' · activo' : ' · en pausa'}`, sub: a.sub || 'sin notas todavía' }; }
     ctx.fillStyle = 'rgba(8,8,11,.72)'; ctx.beginPath(); ctx.roundRect(8, 8, Math.min(W - 16, 330), 38, 8); ctx.fill();
     ctx.textAlign = 'left'; ctx.fillStyle = '#ffd60a'; ctx.font = '700 11px ui-monospace,Menlo,monospace'; ctx.fillText(`● ${hud.title}`.toUpperCase().slice(0, 40), 16, 24);
     ctx.fillStyle = '#c9c6b5'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.fillText(String(hud.sub).slice(0, 48), 16, 38);

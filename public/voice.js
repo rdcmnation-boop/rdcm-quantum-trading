@@ -33,7 +33,7 @@ export const voice = {
     if (now - (said.get(k) || 0) < 90000) return; said.set(k, now);
     if (said.size > 80) for (const [a, t] of said) if (now - t > 90000) said.delete(a);
     if (hi) { queue.push({ text, hi }); if (queue.length > 4) queue = queue.filter((x) => x.hi).slice(-4); }
-    else if (!busy && !queue.length && now - lastEnd > 6000) queue.push({ text, hi });
+    else if (!busy && !queue.length && now - lastEnd > 2500) queue.push({ text, hi });
     pump();
   },
 };

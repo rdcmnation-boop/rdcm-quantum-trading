@@ -467,6 +467,13 @@ console.log('Mercado, resumen del Director y lote de hallazgos');
   const { setCalibration, getCalibration } = await import('../lib/costs.js');
   t('régimen: alcista, bajista, volátil, lateral y sin datos', classifyRegime({ btc7: 3, btc30: 20, mcap24: 1 }).code === 'bull' && classifyRegime({ btc7: -3, btc30: -20, mcap24: 1 }).code === 'bear'
     && classifyRegime({ btc7: 12, btc30: 2, mcap24: 1 }).code === 'volatile' && classifyRegime({ btc7: 1, btc30: 2, mcap24: 1 }).code === 'range' && classifyRegime({ btc7: null, btc30: null }).code === 'unknown');
+  { const mk = await import('../lib/market.js'); mk.resetMarketCache(); let calls = 0;
+    const ok = async (u) => { calls++; if (u.includes('/global')) return { ok: true, status: 200, json: async () => ({ data: { total_market_cap: { usd: 1e12 }, market_cap_percentage: { btc: 50 } } }) }; return { ok: true, status: 200, json: async () => [] }; };
+    const lim = async () => { calls++; return { ok: false, status: 429, headers: { get: () => null }, json: async () => ({}) }; };
+    const g1 = await mk.getMarket({ f: ok, force: true, now: 1000 }); const before = calls;
+    const g2 = await mk.getMarket({ f: lim, force: true, now: 2000 }); const g3 = await mk.getMarket({ f: lim, force: true, now: 3000 });
+    t('429 de CoinGecko: usa los últimos datos buenos, avisa y deja de insistir', g1.sources.coingecko && g2.gecko.stale === true && g2.sources.coingecko_stale && !!g2.gecko.global && g3.gecko.stale === true && calls - before <= 4, `calls ${calls - before}`);
+    mk.resetMarketCache(); }
   const jf = (map) => async (url) => { const k = Object.keys(map).find((x) => url.includes(x)); if (!k) return { ok: false, status: 404, json: async () => ({}) }; return { ok: true, status: 200, json: async () => map[k] }; };
   const g = await fetchGecko(jf({ '/global': { data: { total_market_cap: { usd: 2e12 }, market_cap_percentage: { btc: 50 }, market_cap_change_percentage_24h_usd: -1 } },
     '/coins/markets': [{ id: 'bitcoin', current_price: 100, price_change_percentage_24h_in_currency: 1, price_change_percentage_7d_in_currency: 2, price_change_percentage_30d_in_currency: 3, total_volume: 5, market_cap: 9 }, { id: 'otra-cosa', current_price: 1 }],
