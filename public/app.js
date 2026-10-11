@@ -145,7 +145,7 @@ function botNowHtml(b) {
     ${hold ? `<div class="scroll" style="margin-top:6px"><table><thead><tr><th>Posición</th><th class="r">Cant.</th><th class="r">Valor</th><th class="r">No realiz.</th></tr></thead><tbody>${hold}</tbody></table></div>` : ''}
     ${b.errors ? `<div class="msg err">${b.errors} error(es) seguidos del exchange</div>` : ''}
     ${b.recent.length ? `<div class="scroll" style="margin-top:6px"><table><tbody>${b.recent.slice(0, 6).map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} ${esc(o.symbol)} <span class="chip ${o.mode === 'live' ? 'live' : 'paper'}">${o.mode === 'live' ? 'REAL' : 'papel'}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : `<span class="neg">${esc(o.status)}</span>`}</td></tr>${o.status !== 'ok' && o.note ? `<tr><td colspan="4" class="neg" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.note)}</td></tr>` : ''}`).join('')}</tbody></table></div>` : ''}
-    ${b.enabled ? '<p class="muted" style="font-size:11px;margin:6px 0 0">El bot trabaja mientras el servidor está despierto. En el plan gratis de Render se duerme sin visitas: usa UptimeRobot sobre /api/health.</p>' : ''}`;
+    ${b.enabled ? '<p class="muted" style="font-size:11px;margin:6px 0 0">El bot trabaja mientras el servidor está despierto. En el plan gratis de Render se duerme sin visitas; con un plan de pago de Render queda siempre despierto.</p>' : ''}`;
 }
 const until = (t) => { if (!t) return '—'; const m = Math.round((t - Date.now()) / 60000); return m <= 0 ? 'en breve' : m < 60 ? `en ${m} min` : `en ${Math.round(m / 60)} h`; };
 function dashHtml(d) {
@@ -293,18 +293,83 @@ function bindPrice() {
   loadPrice();
 }
 
+// ---- Cerebro en vivo: red de nodos animada con datos REALES (qué vigila, qué tiene, qué decidió). Sin cifras inventadas. ----
+function brainViz(root, d) {
+  const cv = $('canvas', root); const ctx = cv.getContext('2d'); const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const COL = { held: '#4ade80', ok: '#ffd60a', idle: '#8a8776', off: '#4a4a44', hot: '#ff5d4d' };
+  let W = 0; const H = 250; const nodes = d.nodes.map((n, i) => ({ ...n, a: (i / d.nodes.length) * Math.PI * 2 - Math.PI / 2, ph: Math.random() * 6.28 }));
+  const parts = nodes.flatMap((n) => (n.kind === 'off' ? [] : Array.from({ length: n.kind === 'held' || n.kind === 'ok' ? 3 : 1 }, (_, k) => ({ n, t: Math.random(), sp: (d.live ? 0.0035 : 0.0012) * (0.7 + Math.random() * 0.8), out: n.kind === 'held' && k === 0 }))));
+  const size = () => { W = cv.clientWidth || 340; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+  const pos = (n, t) => { const rx = W * 0.38; const ry = H * 0.36; const w = Math.sin(t / 1400 + n.ph) * 3; return [W / 2 + Math.cos(n.a) * rx + w, H / 2 + Math.sin(n.a) * ry + w]; };
+  const frame = (t) => {
+    if (!document.body.contains(cv)) return;
+    ctx.clearRect(0, 0, W, H); const cx = W / 2; const cy = H / 2;
+    for (const n of nodes) { const [x, y] = pos(n, t); ctx.strokeStyle = n.kind === 'off' ? 'rgba(120,120,110,.18)' : 'rgba(255,214,10,.22)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo((cx + x) / 2 + (y - cy) * 0.12, (cy + y) / 2 - (x - cx) * 0.12, x, y); ctx.stroke(); }
+    for (const p of parts) {
+      p.t += p.sp; if (p.t > 1) p.t = 0; const [x, y] = pos(p.n, t); const u = p.out ? p.t : 1 - p.t;
+      const qx = (cx + x) / 2 + (y - cy) * 0.12; const qy = (cy + y) / 2 - (x - cx) * 0.12;
+      const px = (1 - u) * (1 - u) * cx + 2 * (1 - u) * u * qx + u * u * x; const py = (1 - u) * (1 - u) * cy + 2 * (1 - u) * u * qy + u * u * y;
+      ctx.fillStyle = p.out ? '#4ade80' : '#ffd60a'; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(px, py, 1.9, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1;
+    }
+    for (const n of nodes) {
+      const [x, y] = pos(n, t); const c = COL[n.kind] || COL.idle; const r = n.kind === 'held' ? 6 : 4.5;
+      if (n.kind !== 'off' && n.kind !== 'idle') { ctx.fillStyle = c; ctx.globalAlpha = 0.16; ctx.beginPath(); ctx.arc(x, y, r + 6 + Math.sin(t / 500 + n.ph) * 2, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1; }
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
+      ctx.fillStyle = n.kind === 'off' ? '#6b6a60' : '#d8d5c4'; ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.textAlign = Math.cos(n.a) > 0.25 ? 'left' : Math.cos(n.a) < -0.25 ? 'right' : 'center';
+      ctx.fillText(n.label, x + (Math.cos(n.a) > 0.25 ? 10 : Math.cos(n.a) < -0.25 ? -10 : 0), y + (Math.abs(Math.cos(n.a)) <= 0.25 ? (Math.sin(n.a) > 0 ? 18 : -12) : 4));
+    }
+    const pr = 14 + Math.sin(t / 380) * (d.live ? 3 : 1);
+    const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, pr * 2.6); g.addColorStop(0, 'rgba(255,214,10,.55)'); g.addColorStop(1, 'rgba(255,214,10,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, pr * 2.6, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#0b0b0e'; ctx.font = '700 8px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillText(d.center, cx, cy + 3);
+    if (!still) requestAnimationFrame(frame);
+  };
+  size(); new ResizeObserver(() => { size(); if (still) frame(0); }).observe(cv); requestAnimationFrame(frame);
+}
+const tagOf = (txt) => (/compra|buy|rota/i.test(txt) && !/vende|stop/i.test(txt) ? ['COMPRA', 'buy'] : /vend|stop|sell|rota:/i.test(txt) ? ['VENTA', 'sell'] : /mantiene|vigila|espera|pausa|descansa|freno|límite/i.test(txt) ? ['VIGILA', 'hold'] : ['NOTA', '']);
+function vizHtml(d, id) {
+  const lines = d.stream.slice(0, 14).map((x) => { const [tg, c] = tagOf(x.text); return `<div><span class="tg ${c}">${tg}</span>${x.t ? `<span>${esc(ago(x.t))} · </span>` : ''}${esc(x.text)}</div>`; }).join('') || '<div>Esperando la primera decisión…</div>';
+  return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>
+    <div class="bstat">${d.stats.map((x) => `<div><b>${esc(x[1])}</b>${esc(x[0])}</div>`).join('')}</div>
+    <div class="bstream">${lines}</div><div class="bappr">${esc(d.approval)}</div></div>`;
+}
+function botViz(bn) {
+  const base = (s) => s.replace('-USD', '');
+  const held = (bn.holdings || []).map((h) => base(h.symbol)); const ok = ((bn.scanner && bn.scanner.qualified) || []).map((q) => base(q.symbol));
+  const seen = new Set(); const nodes = [];
+  const add = (l, k) => { if (!seen.has(l) && nodes.length < 14) { seen.add(l); nodes.push({ label: l, kind: k }); } };
+  held.forEach((l) => add(l, 'held')); ok.forEach((l) => add(l, 'ok')); ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'LINK'].forEach((l) => add(l, 'idle'));
+  const stream = [];
+  if (bn.last) { for (const a of bn.last.auto || []) stream.push({ t: bn.last.t, text: a }); stream.push({ t: bn.last.t, text: bn.last.reason }); }
+  for (const o of bn.recent || []) if (o.status === 'ok') stream.push({ t: o.t, text: `${o.side === 'buy' ? 'compra' : 'vende'} ${base(o.symbol)} ${money(o.usd)}${o.mode === 'live' ? ' (REAL)' : ' (papel)'}` });
+  return { center: 'IA', nodes, stream, live: bn.enabled, caption: bn.enabled ? 'Cerebro · en vivo' : 'Cerebro · apagado',
+    stats: [['posiciones', held.length], ['validadas', ok.length], ['vigila', nodes.length], ['revisó', ago(bn.last_run)]],
+    approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
+}
+function agentsViz(b) {
+  const nodes = b.agents.map((a) => ({ label: (a.label || a.name).split(' ')[0].slice(0, 10), kind: !a.available ? 'off' : a.enabled ? 'ok' : 'idle' }));
+  const stream = [];
+  for (const r of (b.runs || []).slice(0, 4)) for (const a of r.agents) for (const n of (a.notes || []).slice(0, 2)) stream.push({ t: r.t, text: `${a.agent}: ${n}` });
+  return { center: 'DIR', nodes, stream: stream.slice(0, 14), live: true, caption: 'Director + agentes',
+    stats: [['agentes activos', b.agents.filter((a) => a.enabled).length], ['pendientes tuyos', b.pending.length], ['versión', 'v' + b.brain_version], ['última corrida', ago(b.last_run)]],
+    approval: b.pending.length ? `Solo tú apruebas: ${b.pending.length} propuesta(s) esperan tu decisión.` : 'Solo tú apruebas los cambios críticos. Nada pendiente ahora.' };
+}
+
+function mountViz(bn) { const r = $('#bz_v'); if (r) brainViz(r, botViz(bn)); }
 const myBotCards = (bn) => `<div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
   <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
   <div class="card" data-open id="botnow"><h2>Mi bot ahora</h2><div id="botnow_b">${botNowHtml(bn)}</div></div>
+  <div class="card" data-open id="bz"><h2>Cerebro en vivo</h2><div id="bz_b">${vizHtml(botViz(bn), 'bz_v')}</div></div>
   <div class="card" data-open id="pc"><h2>Gráfico de precio</h2><div id="pc_c">${priceCardHtml(bn)}</div></div>
   <div class="card" data-open><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
 function startMyBot(bn) {
-  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); bindPrice();
+  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); bindPrice(); mountViz(bn);
   const lr = $('#live_r'); if (lr) lr.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
   let n = 0; let waiting = bn.enabled && !bn.last;
   tabTimer = setInterval(async () => {
     n++; if (n % 8 === 0) { refreshLive(); refreshDash(); loadProfit(bn.mode); } if (!waiting && n % 8 !== 0) return; // rápido (4 s) mientras espera la primera decisión; luego cada ~30 s
-    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
+    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); const zb = $('#bz_b'); if (zb) { zb.innerHTML = vizHtml(botViz(b), 'bz_v'); mountViz(b); } } waiting = b.enabled && !b.last; } catch { /* reintenta en el próximo ciclo */ }
   }, 4000);
 }
 
@@ -694,6 +759,7 @@ async function tabCerebro(main) {
   const models = b.models.map((m) => `<tr><td>${esc(m.symbol)}</td><td>${m.active ? '<span class="pos">activo</span>' : '—'}</td><td>${m.candidate ? `${(m.candidate.metrics.acc_test * 100).toFixed(1)} % vs ${(m.candidate.metrics.baseline_test * 100).toFixed(1)} %` : '—'}</td></tr>`).join('');
   const g = b.guardrails;
   main.innerHTML = `
+  <div class="card" data-open><h2>Cerebro en vivo</h2>${vizHtml(agentsViz(b), 'ag_v')}</div>
   <div class="kpis">
     <div class="kpi"><div class="l">Cerebro</div><div class="v">v${b.brain_version}</div><div class="s">app ${esc(b.app_version)}</div></div>
     <div class="kpi"><div class="l">Agentes</div><div class="v">${active}/${avail}</div><div class="s">activos</div></div>
@@ -716,6 +782,7 @@ async function tabCerebro(main) {
       <label class="full">Tipos permitidos<span class="row">${Object.keys(KIND_LABEL).map((k) => `<label class="check"><input type="checkbox" name="kind_${k}" ${g.allowedKinds.includes(k) ? 'checked' : ''}><span>${esc(KIND_LABEL[k])}</span></label>`).join('')}</span></label>
       <p class="muted full" style="font-size:12px">Protegido: ${g.protectedAreas.map((a) => `<code>${esc(a)}</code>`).join(' ')}</p>
       <button class="btn full" type="submit">Guardar</button><div class="msg full" id="gm"></div></form></details>`;
+  brainViz($('#ag_v'), agentsViz(b));
   $('#br_run').addEventListener('click', async (e) => {
     e.target.disabled = true; setMsg($('#br_m'), 'Corriendo agentes…', true);
     try { await api('POST', '/api/owner/brain/run'); await loadTab(); } catch (err) { setMsg($('#br_m'), err.message); e.target.disabled = false; }
