@@ -21,6 +21,7 @@ export function createCity3D(cv, d0, opt = {}) {
     const ce = Math.cos(cam.el); const se = Math.sin(cam.el); const y2 = dy * ce + z1 * se; const z2 = -dy * se + z1 * ce + cam.D; const k = (W * 1.25) / Math.max(2, z2);
     return { x: W / 2 + x1 * k, y: H * 0.68 - y2 * k, k, z: z2 };
   };
+  const ufo = { x: 0, z: 0, vx: 0, vz: 0, bob: 0 };
   const agents = () => d.nodes.map((n, i, a) => { const ang = (i / Math.max(1, a.length)) * TAU - 1.1; const r = 6.2; return { ...n, i, x: Math.cos(ang) * r, z: Math.sin(ang) * r, h: 1 + Math.min(3.2, (n.w || 0) * 3 + (n.kind === 'ok' ? 0.9 : n.kind === 'idle' ? 0.4 : 0)), ang }; });
   const poly = (pts, fill, stroke) => { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); } };
   // edificio: caja con dos caras visibles, ventanas encendidas y techo luminoso
@@ -59,6 +60,24 @@ export function createCity3D(cv, d0, opt = {}) {
     A.filter((a) => a.kind === 'ok').forEach((a) => { const ph = (sec * 0.22 + a.i * 0.31) % 1; const t = ph < 0.5 ? ph * 2 : (1 - ph) * 2; const e = t * t * (3 - 2 * t); const x = a.x * e; const z = a.z * e; const y = 1.8 + Math.sin(sec * 3 + a.i) * 0.2 + Math.sin(e * Math.PI) * 1.6;
       items.push({ z: proj(x, y, z).z - 0.3, d: () => { const q = proj(x, y, z); a.dx = q.x; a.dy = q.y; a.dr = q.k * 0.3; const r = q.k * 0.3; ctx.fillStyle = 'rgba(0,0,0,.3)'; const s = proj(x, 0, z); ctx.beginPath(); ctx.ellipse(s.x, s.y, r * 1.4, r * 0.5, 0, 0, TAU); ctx.fill();
         const gg = ctx.createLinearGradient(0, q.y - r, 0, q.y + r); gg.addColorStop(0, '#e6e9f0'); gg.addColorStop(1, '#4a4f5a'); ctx.fillStyle = gg; ctx.beginPath(); ctx.ellipse(q.x, q.y, r * 1.5, r * 0.5, 0, 0, TAU); ctx.fill(); ctx.fillStyle = 'rgba(120,220,255,.8)'; ctx.beginPath(); ctx.ellipse(q.x, q.y - r * 0.25, r * 0.6, r * 0.45, 0, Math.PI, TAU); ctx.fill(); ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(q.x + Math.sin(sec * 8 + a.i) * r, q.y + r * 0.1, Math.max(1, r * 0.14), 0, TAU); ctx.fill(); } }); });
+    // OVNI con IA: patrulla la ciudad, se coloca sobre el agente enfocado y lo escanea con un haz
+    { const fa0 = A[sel >= 0 ? sel : focus]; const gx = fa0 ? fa0.x * 0.8 : 0; const gz = fa0 ? fa0.z * 0.8 : 0; ufo.vx += (gx - ufo.x) * 0.6 * dt; ufo.vz += (gz - ufo.z) * 0.6 * dt; ufo.vx *= 0.94; ufo.vz *= 0.94; ufo.x += ufo.vx * dt * 3; ufo.z += ufo.vz * dt * 3; ufo.bob += dt;
+      const alt = 7.4 + Math.sin(ufo.bob * 1.7) * 0.25; const c = proj(ufo.x, alt, ufo.z); const R = c.k * 0.85; const tgt = fa0 && fa0.top ? fa0.top : null;
+      const fw = proj(ufo.x + ufo.vx * 0.4, alt, ufo.z + ufo.vz * 0.4); const tilt = Math.max(-0.28, Math.min(0.28, (fw.x - c.x) * 0.03)); const tint = sel >= 0 ? '#4ade80' : '#ffd60a';
+      items.push({ z: -1, d: () => {
+        if (tgt) { const dx = tgt.x - c.x; const dy = tgt.y - c.y; const L = Math.hypot(dx, dy) || 1; const nx = -dy / L; const ny = dx / L; const w1 = R * 0.9; const g = ctx.createLinearGradient(c.x, c.y, tgt.x, tgt.y); g.addColorStop(0, rgba(tint, 0.38)); g.addColorStop(1, rgba(tint, 0.06));
+          ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(c.x + nx * R * 0.15, c.y + ny * R * 0.15); ctx.lineTo(c.x - nx * R * 0.15, c.y - ny * R * 0.15); ctx.lineTo(tgt.x - nx * w1, tgt.y - ny * w1); ctx.lineTo(tgt.x + nx * w1, tgt.y + ny * w1); ctx.closePath(); ctx.fill();
+          const u = (sec * 1.3) % 1; ctx.strokeStyle = rgba(tint, 0.7 * (1 - u)); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(c.x + dx * u, c.y + dy * u, w1 * (0.2 + u * 0.8), w1 * (0.2 + u * 0.8) * 0.4, Math.atan2(dy, dx), 0, TAU); ctx.stroke(); }
+        ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(tilt);
+        const gl = ctx.createRadialGradient(0, R * 0.4, 2, 0, R * 0.4, R * 1.9); gl.addColorStop(0, rgba(tint, 0.35)); gl.addColorStop(1, rgba(tint, 0)); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, R * 0.4, R * 1.9, 0, TAU); ctx.fill();
+        const dg = ctx.createRadialGradient(-R * 0.25, -R * 0.75, R * 0.05, 0, -R * 0.3, R * 0.95); dg.addColorStop(0, 'rgba(210,250,255,.85)'); dg.addColorStop(0.6, 'rgba(90,200,230,.5)'); dg.addColorStop(1, 'rgba(40,110,150,.55)');
+        ctx.fillStyle = dg; ctx.strokeStyle = 'rgba(200,240,255,.7)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(0, -R * 0.12, R * 0.78, R * 0.78, 0, Math.PI, TAU); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#6fe08a'; ctx.beginPath(); ctx.ellipse(0, -R * 0.38, R * 0.3, R * 0.36, 0, 0, TAU); ctx.fill(); ctx.fillStyle = '#0b1a0e'; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.ellipse(sg * R * 0.12, -R * 0.4, R * 0.075, R * 0.13, sg * 0.45, 0, TAU); ctx.fill(); }
+        const hg = ctx.createLinearGradient(0, -R * 0.3, 0, R * 0.5); hg.addColorStop(0, '#d7dbe3'); hg.addColorStop(0.45, '#8d939e'); hg.addColorStop(1, '#2c2f37'); ctx.fillStyle = hg; ctx.beginPath(); ctx.ellipse(0, 0, R * 1.62, R * 0.46, 0, 0, TAU); ctx.fill();
+        ctx.strokeStyle = tint; ctx.lineWidth = Math.max(1.5, R * 0.06); ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.ellipse(0, R * 0.04, R * 1.5, R * 0.34, 0, 0.05, Math.PI - 0.05); ctx.stroke(); ctx.globalAlpha = 1;
+        for (let i = 0; i < 9; i++) { const ang = sec * 2.4 + (i / 9) * TAU; const fr = Math.sin(ang); const on = (Math.floor(sec * 6) + i) % 3 === 0; ctx.fillStyle = on ? '#fff7b0' : rgba(tint, 0.9); ctx.globalAlpha = fr > -0.2 ? 1 : 0.35; ctx.beginPath(); ctx.arc(Math.cos(ang) * R * 1.32, R * 0.03 + fr * R * 0.2, Math.max(1.2, R * (on ? 0.075 : 0.055)), 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
+        ctx.font = '700 10px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd60a'; ctx.fillText('AI UFO', 0, -R * 1.05);
+        ctx.restore(); } }); }
     items.sort((p, q) => q.z - p.z).forEach((o) => o.d());
     // etiquetas
     ctx.font = '600 10px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center';
