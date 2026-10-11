@@ -120,7 +120,7 @@ async function loadTab() {
 }
 
 // ============================ Cliente ============================
-const AUTO_PRESET = { symbol: 'AUTO', strategy: 'sma', usd: 25, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'paper', paperExchange: 'best', maxPositions: 3, maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
+const AUTO_PRESET = { autoMode: 'active', symbol: 'AUTO', strategy: 'sma', usd: 25, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'paper', paperExchange: 'best', maxPositions: 3, maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
 const DEMO_PRESET = { symbol: 'BTC-USD', strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', paperExchange: 'best', maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
 async function quickStart(preset) { await api('PUT', '/api/bot', preset); state.tab = 'resumen'; shell(); loadTab(); }
 const cheapTxt = { coinbase: 'Coinbase', robinhood: 'Robinhood', igual: 'igual' };
@@ -154,7 +154,16 @@ function dashHtml(d) {
   const r = d.real; const p = d.paper; const br = d.brain;
   const none = !r.orders && !r.errors;
   const rows = r.last.map((o) => `<tr><td>${esc(ago(o.t))}</td><td>${o.side === 'buy' ? 'Compra' : 'Venta'} <b>${esc(o.symbol.replace('-USD', ''))}</b> <span class="chip">${esc(o.exchange)}</span></td><td class="r">${money(o.usd)}</td><td>${o.status === 'ok' ? '<span class="pos">ok</span>' : '<span class="neg">error</span>'}</td></tr>${o.note ? `<tr><td colspan="4" class="neg" style="white-space:normal;font-size:12px;padding-top:0">↳ ${esc(o.note)}</td></tr>` : ''}`).join('');
-  return `<div class="real ${r.total > 0 ? 'up' : r.total < 0 ? 'down' : ''}">
+  const showStart = !(d.bot.enabled && d.bot.mode === 'live');
+  const start = !showStart ? '' : d.can_live && d.connections.length ? `<form id="ds_f" class="startbox">
+      <b>▶ Encender trading automático REAL</b>
+      <div class="muted" style="font-size:12px;margin:2px 0 8px">El Cerebro elige las criptos con ventaja y compra solo, en ${d.connections.some((c) => c.exchange === 'robinhood') ? 'tu Robinhood' : 'tu exchange'}. Tú solo pones cuánto por compra.</div>
+      <div class="row"><label style="flex:1;min-width:140px">USD por compra<input name="usd" type="number" min="1" step="any" value="5"></label>
+      <label style="flex:1;min-width:140px">Exchange<select name="conn">${d.connections.map((c) => `<option value="${esc(c.id)}" ${c.exchange === 'robinhood' ? 'selected' : ''}>${esc(c.exchange)}</option>`).join('')}</select></label></div>
+      <label class="check" style="margin:8px 0"><input type="checkbox" name="ack"><span>Entiendo que es dinero REAL y que puedo perder todo lo que invierta.</span></label>
+      <button class="btn" type="submit">Encender automático</button><div class="msg" id="ds_m"></div></form>`
+    : `<div class="startbox"><b>Para operar de verdad</b><ol class="muted" style="font-size:13px;margin:6px 0 0 18px;padding:0">${d.connections.length ? '' : '<li>Toca <b>Conectar</b> y une tu Robinhood o Coinbase.</li>'}${d.can_live ? '' : '<li>Dueño: <b>Más → Ajustes → Trading REAL → «Solo yo»</b>.</li>'}<li>Vuelve aquí y toca «Encender automático».</li></ol></div>`;
+  return `${start}<div class="real ${r.total > 0 ? 'up' : r.total < 0 ? 'down' : ''}">
       <div class="row" style="justify-content:space-between"><span class="chip live">DINERO REAL</span><span class="muted" style="font-size:12px">${d.bot.enabled && d.bot.mode === 'live' ? '● bot real activo' : 'bot real apagado'}</span></div>
       <div class="bigv ${cls(r.total)}">${none ? '$0.00' : money(r.total)}</div>
       <div class="muted" style="font-size:12px">resultado total real · ${money(r.realized)} cerrado · ${r.unrealized === null ? '—' : money(r.unrealized)} abierto</div>
@@ -183,7 +192,18 @@ function liveHtml(d) {
 }
 async function refreshDash() {
   const el = $('#dash_b'); if (!el) return;
-  try { el.innerHTML = dashHtml(await api('GET', '/api/dashboard')); } catch (e) { el.innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+  if (el.querySelector('#ds_f input:focus')) return; // no pisar lo que el usuario está escribiendo
+  try {
+    const d = await api('GET', '/api/dashboard'); el.innerHTML = dashHtml(d);
+    const f = $('#ds_f');
+    if (f) f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!f.ack.checked) return setMsg($('#ds_m'), 'Marca la confirmación de riesgo para continuar.');
+      const usd = Number(f.usd.value);
+      try { await quickStart({ symbol: 'AUTO', autoMode: 'active', strategy: 'sma', usd, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'live', connectionId: f.conn.value,
+        maxOrderUsd: usd, maxDailyUsd: Math.min(d.limits.hardMaxDaily, usd * 12), maxPositions: 3, paperExchange: 'best', liveAck: true, enabled: true }); } catch (err) { setMsg($('#ds_m'), err.message); }
+    });
+  } catch (e) { el.innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
 }
 async function refreshLive(force = false) {
   const el = $('#live_b'); if (!el) return;

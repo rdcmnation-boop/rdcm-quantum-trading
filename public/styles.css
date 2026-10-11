@@ -177,3 +177,6 @@ th,td{padding:6px 5px;font-size:13px}
 .bigv{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--accent);text-shadow:0 0 18px rgba(255,214,10,.4);line-height:1.1;margin-top:6px}
 .bigv.pos{color:var(--good);text-shadow:0 0 18px rgba(74,222,128,.35)}.bigv.neg{color:var(--bad);text-shadow:none}
 .brainline{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+
+.startbox{border:1px solid var(--accent);border-radius:12px;padding:12px;margin-bottom:10px;background:#1a1700;box-shadow:var(--glow)}
+.startbox .btn{width:100%}

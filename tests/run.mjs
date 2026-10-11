@@ -621,7 +621,7 @@ console.log('Todas las criptos, escáner y modo AUTO');
   await E('POST', '/api/auth/register', { email: 'e-auto@x.com', password: 'Clave-De-Eva-12345', acceptTos: true });
   const eId = (await E('GET', '/api/me')).body.user.id;
   const mk = (qualified) => JSON.stringify({ t: Date.now(), scanned: 1, universe: 4, items: [{ symbol: 'ADA-USD', label: 'DCA', qualified, cheaper: 'robinhood', gap_pct: -0.4,
-    cfg: { strategy: 'dca', fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: 3, bh: 1, drag: 1 }, robinhood: { ret: 4, bh: 1, drag: 0.6 } }] });
+    cfg: { strategy: 'dca', fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: qualified ? 3 : -2, bh: 1, drag: 1 }, robinhood: { ret: qualified ? 4 : -2, bh: 1, drag: 0.6 } }] });
   await store.setSetting('scanner:latest', mk(false));
   await E('PUT', '/api/bot', { ...cfgBase, symbol: 'AUTO', paperExchange: 'best', enabled: true });
   await new Promise((r) => setTimeout(r, 400));
@@ -718,6 +718,56 @@ console.log('Exchanges en vivo y reglas de Robinhood');
   const dsh2 = (await F('GET', '/api/dashboard')).body;
   t('tablero: lo real cuenta solo órdenes reales, muestra el error con su motivo y no mezcla con papel', dsh2.real.orders === 1 && dsh2.real.errors === 1 && dsh2.real.invested_now === 10 && /precision/.test(dsh2.real.last_error) && dsh2.paper.orders === 1);
   t('/api/exchange/live exige sesión', (await nobody('GET', '/api/exchange/live')).status === 401);
+}
+
+console.log('AUTO activo y tablero de inicio');
+{
+  const G = client();
+  await G('POST', '/api/auth/register', { email: 'g-auto@x.com', password: 'Clave-De-Gus-12345', acceptTos: true });
+  const gId = (await G('GET', '/api/me')).body.user.id;
+  await store.setSetting('scanner:latest', JSON.stringify({ t: Date.now(), scanned: 2, universe: 4, items: [
+    { symbol: 'ADA-USD', label: 'SMA 5/20', qualified: false, cheaper: 'coinbase', gap_pct: 0.2, cfg: { strategy: 'sma', fast: 5, slow: 20, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: 2, bh: 5, drag: 1 }, robinhood: { ret: 1, bh: 5, drag: 1.2 } },
+    { symbol: 'SOL-USD', label: 'SMA 5/20', qualified: false, cheaper: 'coinbase', gap_pct: 0.2, cfg: { strategy: 'sma', fast: 5, slow: 20, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: -2, bh: 5, drag: 1 }, robinhood: { ret: -3, bh: 5, drag: 1.2 } }] }));
+  await G('PUT', '/api/bot', { symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'coinbase', enabled: true, maxOrderUsd: 25, maxDailyUsd: 100 });
+  await new Promise((r) => setTimeout(r, 400));
+  await engine.runBot({ ...(await store.getBot(gId)), last_run: 0 }, Date.now() + 3000);
+  const go = (await store.listOrders(gId)).filter((o) => o.status === 'ok');
+  t('AUTO activo: compra la cripto que ganó la prueba (tendencia alcista) y NO la que perdió', go.length === 1 && go[0].symbol === 'ADA-USD' && /Tendencia alcista/.test(go[0].note), JSON.stringify(go.map((o) => o.symbol)));
+  await G('PUT', '/api/bot', { symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'coinbase', enabled: true, autoMode: 'validated', maxOrderUsd: 25, maxDailyUsd: 100 });
+  t('el modo "solo validadas" se guarda', (await G('GET', '/api/bot')).body.cfg.autoMode === 'validated');
+  const dd = (await G('GET', '/api/dashboard')).body;
+  t('tablero: informa si puede operar en real y qué exchanges hay', typeof dd.can_live === 'boolean' && Array.isArray(dd.connections) && dd.limits.hardMaxDaily > 0);
+}
+
+console.log('Privacidad: cada quien solo ve lo suyo; solo el dueño ve agregados');
+{
+  const X = client(); const Y = client();
+  await X('POST', '/api/auth/register', { email: 'xavier-privado@x.com', password: 'Clave-De-Xav-12345', acceptTos: true });
+  await Y('POST', '/api/auth/register', { email: 'yara-curiosa@x.com', password: 'Clave-De-Yar-12345', acceptTos: true });
+  const xId = (await X('GET', '/api/me')).body.user.id;
+  const xConn = await store.addConnection({ user_id: xId, exchange: 'robinhood', label: 'RH-SECRETO-X', key_id: 'KEYID-SECRETO-X', secret_enc: sec.encrypt(env.ENCRYPTION_KEY, 'PRIVADA-SECRETA-X'), can_trade: true, can_transfer: false });
+  await store.addOrder({ user_id: xId, mode: 'live', exchange: 'robinhood', symbol: 'PEPE-USD', side: 'buy', usd: 7.77, qty: 1, price: 1, status: 'error', note: 'NOTA-PRIVADA-X' });
+  await store.addOrder({ user_id: xId, mode: 'paper', exchange: 'coinbase', symbol: 'PEPE-USD', side: 'buy', usd: 7.77, qty: 1, price: 1, status: 'ok' });
+  await store.setSetting(`botlast:${xId}`, JSON.stringify({ reason: 'DECISION-PRIVADA-X' }));
+  const marks = ['xavier-privado', xId, 'RH-SECRETO-X', 'KEYID-SECRETO-X', 'PRIVADA-SECRETA-X', 'NOTA-PRIVADA-X', 'DECISION-PRIVADA-X', xConn.id, 'PEPE-USD'];
+  const eps = ['/api/me', '/api/connections', '/api/bot', '/api/bot/status', '/api/orders', '/api/pnl', '/api/dashboard', '/api/exchange/live', '/api/universe', '/api/scanner', '/api/market', '/api/me/export'];
+  let leak = null;
+  for (const ep of eps) { const r = await Y('GET', ep); const txt = r.text || JSON.stringify(r.body); const m = marks.find((k) => txt.includes(k)); if (m) leak = `${ep} filtra ${m}`; }
+  t('un cliente no ve nada de otro en ninguno de sus endpoints', leak === null, leak || '');
+  t('un cliente no puede usar la conexión de otro', (await Y('PUT', '/api/bot', { symbol: 'BTC-USD', strategy: 'dca', usd: 5, intervalMin: 60, mode: 'live', enabled: false, connectionId: xConn.id, maxOrderUsd: 25, maxDailyUsd: 100 })).body.cfg?.connectionId === null);
+  t('un cliente no borra la conexión de otro', (await Y('DELETE', `/api/connections/${xConn.id}`)).status !== 200 && !!(await store.getConnection(xId, xConn.id)));
+  let ownerLeak = null;
+  for (const ep of ['/api/owner/overview', '/api/owner/users', '/api/owner/briefing', '/api/owner/brain', '/api/owner/readiness', '/api/owner/compliance', '/api/owner/export/brain']) {
+    const r = await O2('GET', ep); const txt = r.text || JSON.stringify(r.body);
+    const m = ['KEYID-SECRETO-X', 'PRIVADA-SECRETA-X', 'NOTA-PRIVADA-X', 'DECISION-PRIVADA-X', 'RH-SECRETO-X', 'secret_enc', 'pass_hash'].find((k) => txt.includes(k)); if (m) ownerLeak = `${ep} muestra ${m}`;
+  }
+  t('el dueño ve agregados, nunca llaves, órdenes ni decisiones individuales de clientes', ownerLeak === null, ownerLeak || '');
+  const ownerEps = ['/api/owner/overview', '/api/owner/users', '/api/owner/audit', '/api/owner/settings', '/api/owner/brain', '/api/owner/readiness', '/api/owner/briefing', '/api/owner/compliance', '/api/owner/export/brain', '/api/owner/export/app'];
+  const codes = []; for (const ep of ownerEps) codes.push((await Y('GET', ep)).status);
+  t('ningún endpoint de dueño responde a un cliente', codes.every((c) => c === 403), codes.join());
+  const codesAnon = []; for (const ep of ownerEps.concat(['/api/dashboard', '/api/exchange/live', '/api/bot/status'])) codesAnon.push((await nobody('GET', ep)).status);
+  t('anónimo no accede a nada privado', codesAnon.every((c) => c === 401), codesAnon.join());
+  await store.deleteConnection(xId, xConn.id);
 }
 
 console.log('Exportación del Cerebro y del app');
