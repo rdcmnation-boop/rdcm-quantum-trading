@@ -156,7 +156,7 @@ async function loadTab() {
 }
 
 // ============================ Cliente ============================
-const AUTO_PRESET = { autoMode: 'pro', symbol: 'AUTO', strategy: 'sma', usd: 25, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'paper', paperExchange: 'best', maxPositions: 3, maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
+const AUTO_PRESET = { autoMode: 'pro', symbol: 'AUTO', strategy: 'sma', usd: 25, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, takeProfitPct: 2, mode: 'paper', paperExchange: 'best', maxPositions: 3, maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
 const DEMO_PRESET = { symbol: 'BTC-USD', strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', paperExchange: 'best', maxOrderUsd: 25, maxDailyUsd: 100, enabled: true };
 async function quickStart(preset) { await api('PUT', '/api/bot', preset); state.tab = state.user.role === 'owner' ? 'o_hoy' : 'resumen'; shell(); loadTab(); }
 const cheapTxt = { coinbase: 'Coinbase', robinhood: 'Robinhood', igual: 'igual' };
@@ -239,7 +239,7 @@ async function refreshDash() {
       e.preventDefault();
       if (!f.ack.checked) return setMsg($('#ds_m'), 'Marca la confirmación de riesgo para continuar.');
       const usd = Number(f.usd.value);
-      try { await quickStart({ symbol: 'AUTO', autoMode: 'pro', strategy: 'sma', usd, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, mode: 'live', connectionId: f.conn.value,
+      try { await quickStart({ symbol: 'AUTO', autoMode: 'pro', strategy: 'sma', usd, intervalMin: 60, fast: 20, slow: 50, rsiBuy: 30, rsiSell: 60, stopLossPct: 8, takeProfitPct: 2, mode: 'live', connectionId: f.conn.value,
         maxOrderUsd: usd, maxDailyUsd: Math.min(d.limits.hardMaxDaily, usd * 12), maxPositions: 5, paperExchange: 'best', liveAck: true, enabled: true }); } catch (err) { setMsg($('#ds_m'), err.message); }
     });
   } catch (e) { el.innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
@@ -897,6 +897,7 @@ async function tabBot(main) {
       <label class="sma">SMA lenta<input name="slow" type="number" min="3" value="${esc(cfg.slow)}"></label>
       <label class="rsi">RSI compra bajo<input name="rsiBuy" type="number" min="5" max="50" value="${esc(cfg.rsiBuy ?? 30)}"></label>
       <label class="rsi">RSI venta sobre<input name="rsiSell" type="number" min="50" max="95" value="${esc(cfg.rsiSell ?? 60)}"></label>
+      <label class="nodca">Meta de ganancia % (0 = sin meta; en AUTO es neta de costos)<input name="takeProfitPct" type="number" min="0" max="100" step="any" value="${esc(cfg.takeProfitPct ?? 0)}"></label>
       <label class="nodca">Stop-loss % (0 = sin stop)<input name="stopLossPct" type="number" min="0" max="50" step="any" value="${esc(cfg.stopLossPct ?? 8)}"></label>
       <label>Modo<select name="mode">${opt('paper', cfg.mode, 'Papel (simulado, sin dinero)')}${opt('live', cfg.mode, live ? 'REAL (dinero real)' : 'REAL (no habilitado todavía)')}</select></label>
       <label class="real">Conexión para operar<select name="connectionId"><option value="">— elegir —</option>${connections.map((c) => opt(c.id, cfg.connectionId, `${c.exchange} · ${c.label}`)).join('')}</select></label>
@@ -956,7 +957,7 @@ async function tabBot(main) {
     e.preventDefault();
     const f = e.target;
     const body = { symbol: f.symbol.value.trim().toUpperCase(), autoMode: f.autoMode.value, paperExchange: f.paperExchange.value, maxPositions: f.maxPositions.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
-      slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
+      slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, takeProfitPct: f.takeProfitPct.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
       maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, sizing: f.sizing.checked ? 'balance' : 'fixed', enabled: f.enabled.checked };
     try { await api('PUT', '/api/bot', body); setMsg($('#bm'), 'Guardado.', true); } catch (err) { setMsg($('#bm'), err.message); }
   });
@@ -1282,6 +1283,24 @@ async function tabExport(main) {
 
 
 // Todas las tarjetas con título se vuelven secciones que se despliegan al tocar. La primera (o las marcadas data-open) abre sola.
+// Botón 🔈 de cada sección: lee en voz alta el título y el contenido visible (sin botones ni formularios), en frases cortas.
+let readingBtn = null;
+const cardText = (d) => {
+  const title = (d.querySelector('summary h2') || {}).textContent || '';
+  const clone = (d.querySelector('.accb') || d).cloneNode(true);
+  clone.querySelectorAll('button, input, select, textarea, canvas, svg, script, style, .spk, details:not([open]) > :not(summary)').forEach((x) => x.remove());
+  return `${title}. ${clone.innerText || clone.textContent || ''}`.replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, ' ').replace(/[▲▼•·→↑↓⏻]/g, ' ').replace(/\s+/g, ' ').trim();
+};
+const speechChunks = (t) => { const out = []; let cur = ''; for (const part of t.split(/(?<=[.!?:;])\s+/)) { if ((cur + ' ' + part).length > 220 && cur) { out.push(cur.trim()); cur = part; } else cur += ' ' + part; } if (cur.trim()) out.push(cur.trim()); return out.flatMap((x) => (x.length > 260 ? x.match(/.{1,240}(\s|$)/g).map((y) => y.trim()) : [x])).filter(Boolean).slice(0, 14); };
+function toggleReadCard(d, btn) {
+  if (readingBtn === btn) { voice.stop(); btn.textContent = '🔈'; readingBtn = null; return; }
+  if (readingBtn) readingBtn.textContent = '🔈';
+  const txt = cardText(d); if (!txt) return;
+  if (!voice.readAll(speechChunks(txt))) return;
+  readingBtn = btn; btn.textContent = '⏹';
+  const unsub = voice.subscribe(() => setTimeout(() => { if (readingBtn === btn && !voice.speakingNow) { btn.textContent = '🔈'; readingBtn = null; unsub(); } }, 600));
+}
+
 function accordionize(main) {
   let i = 0;
   [...main.children].forEach((c) => {
@@ -1293,6 +1312,7 @@ function accordionize(main) {
     if (c.hasAttribute('data-open') || i === 0) d.open = true;
     const sm = document.createElement('summary');
     sm.append(h);
+    if (voice.supported) { const sp = document.createElement('button'); sp.type = 'button'; sp.className = 'spk'; sp.textContent = '🔈'; sp.title = 'Escuchar esta sección'; sp.setAttribute('aria-label', 'Escuchar esta sección'); sm.append(sp); sp.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleReadCard(d, sp); }); }
     const body = document.createElement('div');
     body.className = 'accb';
     while (c.firstChild) body.append(c.firstChild);

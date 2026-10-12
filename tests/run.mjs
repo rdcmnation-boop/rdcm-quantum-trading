@@ -1405,6 +1405,31 @@ console.log('Cierre de posiciones, botones Comprar/Vender y kill switch');
   good.marketSell = origSell; good.marketBuy = origBuy; good.balances = origBal;
 }
 
+
+console.log('Botón 🔈: leer cada sección en voz alta');
+{
+  const a = fs.readFileSync('public/app.js', 'utf8'); const v = fs.readFileSync('public/voice.js', 'utf8');
+  t('cada sección desplegable recibe un botón 🔈 que lee título y contenido, y un segundo toque lo detiene', /className = 'spk'/.test(a) && /toggleReadCard/.test(a) && /voice\.readAll\(/.test(a) && /voice\.stop\(\)/.test(a));
+  t('el texto leído excluye botones, formularios y gráficos', /querySelectorAll\('button, input, select, textarea, canvas, svg/.test(a));
+  t('la lectura suena aunque la voz del Cerebro esté apagada y se puede cancelar sin solaparse', /force: true/.test(v) && /stop\(\) \{ gen\+\+/.test(v) && /if \(g !== gen\) return/.test(v));
+}
+
+console.log('Meta de ganancia (toma de ganancia)');
+{
+  const ST = await import('../lib/strategy.js'); const PR = await import('../lib/pro.js');
+  const cfg = { ...ST.DEFAULT_CFG, strategy: 'sma', takeProfitPct: 3, stopLossPct: 8 };
+  const up = ST.decide(cfg, { closes: Array.from({ length: 100 }, (_, i) => 100 + i * 0.01), now: Date.now(), price: 103.5, lastBuyAt: 1, lastSellAt: 0, position: 1, avgCost: 100 });
+  const below = ST.decide(cfg, { closes: Array.from({ length: 100 }, () => 100), now: Date.now(), price: 102, lastBuyAt: 1, lastSellAt: 0, position: 1, avgCost: 100 });
+  t('meta de ganancia: vende cuando el precio supera el costo en la meta', up.action === 'sell' && /Toma de ganancia/.test(up.reason) && up.qty === 1);
+  t('meta de ganancia: por debajo de la meta no vende por esa razón', !(below.action === 'sell' && /Toma de ganancia/.test(below.reason)));
+  t('meta de ganancia apagada (0): nunca vende por meta', !/Toma de ganancia/.test(ST.decide({ ...cfg, takeProfitPct: 0 }, { closes: Array.from({ length: 100 }, () => 100), now: Date.now(), price: 150, lastBuyAt: 1, lastSellAt: 0, position: 1, avgCost: 100 }).reason || ''));
+  const f = { vol: 0.001, px: 103, s10: 105, s30: 100, rsi: 55 };
+  const e1 = PR.exitSignal({ ...f }, { avgCost: 100, heldHours: 2, highSince: 103, rtPct: 1.6, stopLossPct: 8, takeProfitPct: 1 });
+  const e2 = PR.exitSignal({ ...f, px: 101.5 }, { avgCost: 100, heldHours: 2, highSince: 101.5, rtPct: 1.6, stopLossPct: 8, takeProfitPct: 1 });
+  t('AUTO: la meta es NETA de costos (+3% bruto con costo 1.6% → +1.4% neto ≥ meta 1%)', e1.sell === true && /neto/.test(e1.reason));
+  t('AUTO: +1.5% bruto con costo 1.6% NO cuenta como ganancia (neto negativo): no vende por meta', !(e2.sell && /Toma de ganancia/.test(e2.reason)));
+  t('validación: meta fuera de rango o no numérica se rechaza', ST.validateCfg({ ...ST.DEFAULT_CFG, takeProfitPct: 150 }).ok === false && ST.validateCfg({ ...ST.DEFAULT_CFG, takeProfitPct: 'x' }).ok === false && ST.validateCfg({ ...ST.DEFAULT_CFG, takeProfitPct: 2 }).ok === true && ST.validateCfg({ ...ST.DEFAULT_CFG }).cfg.takeProfitPct === 0);
+}
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');

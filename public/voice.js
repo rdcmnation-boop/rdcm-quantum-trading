@@ -5,7 +5,7 @@ const KEY = 'qt_voice';
 const ok = typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
 let on = false; try { on = localStorage.getItem(KEY) === '1'; } catch { on = false; }
 if (!ok) on = false;
-let queue = []; let busy = false; let lastEnd = 0; let current = ''; const said = new Map(); const subs = new Set();
+let queue = []; let busy = false; let gen = 0; let lastEnd = 0; let current = ''; const said = new Map(); const subs = new Set();
 
 const speechEn = (t) => moneyEn(String(t)).replace(/×/g, ' times ').replace(/(\d)\s*%/g, '$1 percent').replace(/\bUSD\b/g, 'dollars').replace(/\+(\d)/g, 'plus $1').replace(/-(\d)/g, 'minus $1').replace(/(\d)\.(\d)/g, '$1 point $2').replace(/\s+/g, ' ').trim();
 const moneyEs = (s) => s.replace(/\$(\d[\d,]*)\.(\d{2})\b/g, (_, a, c) => (c === '00' ? `${a} dólares` : `${a} dólares con ${Number(c)}`)).replace(/\$(\d[\d,]*)/g, '$1 dólares');
@@ -28,7 +28,7 @@ function pump() {
   if (busy || !queue.length || !(on || queue[0].force)) return;
   const it = queue.shift(); current = it.text; const L = it.lang || lang();
   const u = new SpeechSynthesisUtterance(it.lang ? speechEn(it.text) : speechText(it.text)); u.lang = L === 'en' ? 'en-US' : 'es-US'; const v = pickVoice(L); if (v) { u.voice = v; u.lang = v.lang; } u.rate = 1.03; u.pitch = 1.05;
-  const done = () => { busy = false; lastEnd = Date.now(); emit(); pump(); };
+  const g = gen; const done = () => { if (g !== gen) return; busy = false; lastEnd = Date.now(); emit(); pump(); };
   u.onend = done; u.onerror = done; busy = true; emit();
   const say = () => { try { speechSynthesis.speak(u); } catch { done(); } };
   if (azure) { playAzure(u.text, L === 'en' ? 'en' : 'es', done).then((okp) => { if (!okp) say(); }); return; }
@@ -50,6 +50,9 @@ export const voice = {
   // Informe largo: dice todas las frases en orden (sin recortar la fila ni ignorar repetidas).
   // Radio de noticias: suena aunque la voz del Cerebro esté apagada (el usuario lo pidió); lang 'en' lee el titular tal cual en inglés.
   radio(text, L) { if (!ok || !text) return; queue.push({ text, hi: true, force: true, lang: L === 'en' ? 'en' : undefined }); pump(); },
+  // Leer una tarjeta completa en voz alta (botón 🔈): parte el texto en frases cortas y suena aunque la voz del Cerebro esté apagada.
+  stop() { gen++; queue = []; busy = false; current = ''; try { speechSynthesis.cancel(); } catch { /* ignora */ } try { if (audioEl) audioEl.pause(); } catch { /* ignora */ } emit(); },
+  readAll(list) { if (!ok) return false; this.stop(); for (const text of list) if (text) queue.push({ text, hi: true, force: true }); pump(); return true; },
   stopRadio() { queue = queue.filter((x) => !x.force); if (busy && current && !on) { try { speechSynthesis.cancel(); } catch { /* ignora */ } busy = false; } },
   sayAll(list) {
     if (!on) return; queue = []; for (const text of list) if (text) queue.push({ text, hi: true });

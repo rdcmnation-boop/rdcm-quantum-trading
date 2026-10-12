@@ -1,6 +1,9 @@
 # Notas de versión
 
 ## 19.32 — Planes y facturación
+## 19.36 — Audio y meta de ganancia
+Botón 🔈 en cada sección (lee título y contenido). Nueva «meta de ganancia» (neta de costos en AUTO) para vender y seguir buscando; el stop-loss se mantiene.
+
 ## 19.34 — Cerrar todo y operación manual
 El kill switch ahora **cierra todas las posiciones y apaga** (solo vende, permitido incluso con parada de emergencia). Botones Comprar / Vender (25/50/100 %) con confirmación de doble toque y las mismas compuertas de riesgo.
 
