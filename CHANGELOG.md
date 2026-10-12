@@ -1,5 +1,8 @@
 # Notas de versión
 
+## 19.38 — Alertas críticas
+Aviso push (si activaste avisos) cuando tu bot se apaga o una orden queda sin confirmar. Máximo uno por motivo cada 10 min; el aviso no lleva datos sensibles. Si no activaste avisos, nada cambia: el bot sigue igual.
+
 ## 19.32 — Planes y facturación
 ## 19.37 — Panel honesto
 Las órdenes «pendientes de confirmar» ya no cuentan como error. El panel de dinero real muestra cuántas órdenes confirmó el broker, cuántas siguen estimadas, las comisiones reales y marca el resultado como «estimado» hasta que todo esté confirmado.

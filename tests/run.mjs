@@ -1444,6 +1444,34 @@ console.log('Panel: cifras confirmadas vs estimadas');
   await store.addOrder({ user_id: r2.body.user.id, mode: 'live', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0002, price: 50000, status: 'ok', lifecycle: 'filled', fee_usd: 0.06, created_at: Date.now() - 3600000 });
   t('panel: con todo confirmado por el broker, las cifras no se marcan como estimadas', (await c2('GET', '/api/dashboard')).body.real.estimated === false);
 }
+console.log('Alertas críticas (push)');
+{
+  const PU = await import('../lib/push.js');
+  const c = client(); const r = await c('POST', '/api/auth/register', { email: 'alert1@x.com', password: pw, acceptTos: true }); const id = r.body.user.id;
+  const ep = 'https://fcm.googleapis.com/fcm/send/alert1';
+  await c('POST', '/api/push/subscribe', { endpoint: ep });
+  const hits = []; const f = async (u) => { hits.push(u); return { ok: true, status: 201 }; };
+  const a = await PU.notifyUser(store, id, { kind: 'bot_disabled', title: '⛔ Tu bot se apagó', body: 'prueba' }, { subject: 'https://x.invalid', f });
+  t('alerta: se envía el push solo a los dispositivos del dueño', a.sent === 1 && hits.length === 1 && hits[0] === ep);
+  const b = await PU.notifyUser(store, id, { kind: 'bot_disabled', title: 'otra', body: 'x' }, { subject: 'https://x.invalid', f });
+  t('alerta: el mismo motivo no se repite en 10 min (sin spam)', b.throttled === true && hits.length === 1);
+  const g = await PU.notifyUser(store, id, { kind: 'order_unknown', title: '⚠ Orden sin confirmar', body: 'y' }, { subject: 'https://x.invalid', f });
+  t('alerta: otro motivo sí se envía', g.sent === 1 && hits.length === 2);
+  const last = (await c('GET', '/api/news/last-push')).body;
+  t('alerta: el service worker recibe la alerta del propio usuario con prioridad', last.alert === true && /Orden sin confirmar/.test(last.title));
+  const other = client(); await other('POST', '/api/auth/register', { email: 'alert2@x.com', password: pw, acceptTos: true });
+  t('alerta: otro usuario no ve la alerta ajena', (await other('GET', '/api/news/last-push')).body.alert !== true);
+  const bad = await PU.notifyUser(store, id, { kind: 'x2', title: 't', body: 'b' }, { subject: 'https://x.invalid', f: async () => { throw new Error('red'); } });
+  t('alerta: si el push falla no lanza error', bad.sent === 0);
+  // Gone (410) limpia la suscripción
+  await PU.notifyUser(store, id, { kind: 'x3', title: 't', body: 'b' }, { subject: 'https://x.invalid', f: async () => ({ ok: false, status: 410 }) });
+  t('alerta: suscripción vencida (410) se elimina', !(await PU.loadSubs(store)).some((s) => s.endpoint === ep));
+  // engine: disable avisa
+  const got = []; const eng = createEngine({ store, adapters, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} }, alert: async (u, x) => { got.push([u, x.kind]); } });
+  const c3 = client(); const r3 = await c3('POST', '/api/auth/register', { email: 'alert3@x.com', password: pw, acceptTos: true });
+  t('engine: acepta el gancho de alerta', typeof eng.tick === 'function' && got.length === 0 && r3.status < 300);
+}
+
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');

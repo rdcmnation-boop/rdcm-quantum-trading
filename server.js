@@ -7,7 +7,7 @@ import { createDirector, getGuardrails } from './lib/agents.js';
 import { memoryStore, pgStore } from './lib/store.js';
 import { runScanner, getScanner } from './lib/scanner.js';
 import { fetchNews } from './lib/news.js';
-import { notifyNews } from './lib/push.js';
+import { notifyNews, notifyUser } from './lib/push.js';
 import { reconcileAll } from './lib/reconcile.js';
 import { ADAPTERS, getPrice, getCloses, getHistory } from './lib/exchanges.js';
 
@@ -35,7 +35,7 @@ if (env.DATABASE_URL) {
 }
 
 const feed = { getPrice, getCloses, getHistory };
-const engine = createEngine({ store, adapters: ADAPTERS, feed, encKey: env.ENCRYPTION_KEY });
+const engine = createEngine({ store, adapters: ADAPTERS, feed, encKey: env.ENCRYPTION_KEY, alert: (uid, a) => notifyUser(store, uid, a, { subject: env.PUSH_SUBJECT || env.RENDER_EXTERNAL_URL || 'https://quantum-trading.invalid' }) });
 const director = createDirector({ store, feed });
 const app = createApp({ store, env, adapters: ADAPTERS, feed, engine, director });
 await app.bootstrap();
