@@ -1059,7 +1059,9 @@ server.close();
   const st = memoryStore(); const now = Date.now();
   await st.addOrder({ user_id: 'u1', mode: 'paper', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0001, price: 100000, status: 'ok', note: 'edge alto', created_at: now - 60000 });
   const off = await AGENTS.ia_explainer.run({ store: st, now, llm: createExplainer({ env: {} }) });
-  t('IA explicadora: sin ANTHROPIC_API_KEY no hace nada ni falla', off.proposals.length === 0 && /ANTHROPIC_API_KEY/.test(off.notes[0]));
+  t('IA explicadora: sin llave es gratis (plantillas) y explica con datos reales', off.proposals.length === 1 && /BTC-USD/.test(off.proposals[0].detail.text) && /reglas/.test(off.notes[0]));
+  const gm = createExplainer({ env: { GEMINI_API_KEY: 'g' }, f: async (u, o) => ({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: u.includes('generativelanguage') && o.headers['x-goog-api-key'] === 'g' ? 'Gemini ok' : 'mal' }] } }] }) }) });
+  t('IA explicadora: Gemini (gratis) funciona y, si falla, cae a plantilla', (await gm.explain({})).text === 'Gemini ok' && (await createExplainer({ env: { GEMINI_API_KEY: 'g' }, f: async () => ({ ok: false, status: 429 }) }).explain({ ordenes_24h: [] })).free === true);
   let sent = null; const fakeF = async (url, o) => { sent = { url, o }; return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'Compró BTC por edge alto.' }] }) }; };
   const on = createExplainer({ env: { ANTHROPIC_API_KEY: 'k' }, f: fakeF });
   const r1 = await AGENTS.ia_explainer.run({ store: st, now, llm: on });
@@ -1067,7 +1069,7 @@ server.close();
   for (let i = 0; i < 5; i++) await AGENTS.ia_explainer.run({ store: st, now, llm: on });
   const lim = await AGENTS.ia_explainer.run({ store: st, now, llm: on });
   t('IA explicadora: máximo 4 llamadas al día', lim.proposals.length === 0 && /límite/.test(lim.notes[0]));
-  t('IA explicadora: errores de la API no rompen y el texto se limpia', (await createExplainer({ env: { ANTHROPIC_API_KEY: 'k' }, f: async () => ({ ok: false, status: 500 }) }).explain({})).ok === false && clean('a\u0000  b\n c', 10) === 'a b c');
+  t('IA explicadora: errores de la API no rompen y el texto se limpia', (await createExplainer({ env: { ANTHROPIC_API_KEY: 'k' }, f: async () => ({ ok: false, status: 500 }) }).explain({})).free === true && clean('a\u0000  b\n c', 10) === 'a b c');
 }
 
 console.log(`\n${pass} ok, ${fail} fallos`);

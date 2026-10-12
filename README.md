@@ -8,7 +8,7 @@ Plataforma SaaS **no-custodial** de bots cripto (Coinbase Advanced y Robinhood C
 | `DATABASE_URL` | Se conecta sola desde `render.yaml` |
 | `SESSION_SECRET`, `ENCRYPTION_KEY` | Se generan solas. **No las cambies** o se pierden las llaves cifradas de los clientes |
 | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` | **Opcional (voz natural).** Créalos en Render → Environment (recurso «Speech» de Azure; región p. ej. `eastus`). Sin ellos la app usa la voz del teléfono. La llave nunca llega al navegador |
-| `ANTHROPIC_API_KEY` | **Opcional (Explicador IA).** Créala en console.anthropic.com y ponla en Render → Environment. Sin ella el agente no hace nada. Máx. 4 llamadas al día, solo redacta explicaciones; nunca opera. Modelo por defecto `claude-haiku-5-5` (`ANTHROPIC_MODEL` para cambiarlo) |
+| `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` | **Opcional (Explicador IA).** Sin ninguna, el agente explica gratis con plantillas sobre datos reales. `GEMINI_API_KEY` (plan gratuito de Google AI Studio) o `ANTHROPIC_API_KEY` (de pago) hacen que redacte con IA. Máx. 4 llamadas al día; solo redacta, nunca opera |
 | `OWNER_EMAIL`, `OWNER_PASSWORD` | **Tú las pones.** Solo ese correo puede ser dueño. Cambiar la contraseña aquí la rota al reiniciar |
 
 ## Seguridad
