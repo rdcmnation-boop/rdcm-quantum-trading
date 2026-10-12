@@ -1326,6 +1326,18 @@ console.log('Fase 7: planes, límites del servidor y webhooks de pago');
   srv7.close();
 }
 
+
+console.log('Fase 8: lanzamiento (documentos y página de estado)');
+{
+  const need = ['docs/LEGAL-DRAFTS.md', 'docs/LICENSES.md', 'docs/ONBOARDING.md', 'docs/LAUNCH-READINESS.md', 'docs/BILLING.md', 'CHANGELOG.md', 'public/status.html', 'public/status.js'];
+  t('documentos de lanzamiento presentes', need.every((f) => fs.existsSync(f) && fs.statSync(f).size > 300));
+  const lg = fs.readFileSync('docs/LEGAL-DRAFTS.md', 'utf8');
+  t('los borradores legales se declaran sin revisión de abogado y no prometen rentabilidad ni cumplimiento', /no es asesor[ií]a legal/i.test(lg) && /\[EMPRESA\]/.test(lg) && !/garantizamos|rentabilidad asegurada|cumplimos con toda la ley/i.test(lg));
+  t('el informe de lanzamiento declara NO listo y lista bloqueos', /NO listo/.test(fs.readFileSync('docs/LAUNCH-READINESS.md', 'utf8')) && (fs.readFileSync('docs/LAUNCH-READINESS.md', 'utf8').match(/^\| \d+ \|/gm) || []).length >= 8);
+  const st = await fetch(base + '/status.html'); const stj = await fetch(base + '/status.js');
+  t('página de estado pública y sin datos internos (solo /api/ready, sin versión ni secretos)', st.status === 200 && stj.status === 200 && /api\/ready/.test(await stj.clone().text()) && !/version|secret|token/i.test(await stj.text()));
+  t('la página de estado cumple la CSP (sin scripts en línea)', !/<script(?![^>]*src=)/i.test(await st.text()));
+}
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');
