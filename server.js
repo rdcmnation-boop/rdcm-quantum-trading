@@ -44,10 +44,13 @@ try { setRobinhoodSpreads(JSON.parse(await store.getSetting('market:rhspread', '
 const server = http.createServer(app.handler);
 server.listen(PORT, '0.0.0.0', () => console.log(`Quantum Trading escuchando en :${PORT}`));
 
+const instanceId = crypto.randomUUID();
+const leader = async (name, ttl) => (store.acquireLease ? store.acquireLease(name, instanceId, ttl) : true);
 const timer = setInterval(() => engine.tick().catch((e) => console.error('tick', e.message)), 15000);
 // El Director corre solo cada N horas (ver límites del dueño). Solo PROPONE; nada se aplica sin tu aprobación.
 const autoTimer = setInterval(async () => {
   try {
+    if (!(await leader('director', 25 * 60000))) return;
     const g = await getGuardrails(store);
     const last = Number(await store.getSetting('director_last_run', '0')) || 0;
     if (Date.now() - last >= g.autoRunHours * 3600000) await director.run({ trigger: 'auto' });
@@ -55,11 +58,11 @@ const autoTimer = setInterval(async () => {
 }, 30 * 60000);
 // El escáner de criptos (alimenta el modo AUTO) corre al arrancar y se refresca cada 6 h, sin esperar al Director.
 const scan = async () => {
-  try { const sc = await getScanner(store); if (!sc || Date.now() - sc.t > 6 * 3600000) await runScanner({ store, feed }); } catch (e) { console.error('escáner', e.message); }
+  try { if (!(await leader('scanner', 5 * 60000))) return; const sc = await getScanner(store); if (!sc || Date.now() - sc.t > 6 * 3600000) await runScanner({ store, feed }); } catch (e) { console.error('escáner', e.message); }
 };
 setTimeout(scan, 15000);
 // Noticias: titulares públicos cada 5 min; solo sirven de freno de riesgo para el modo Pro.
-const newsRun = async () => { try { const n = await fetchNews(); if (n.sources) { await store.setSetting('news:latest', JSON.stringify(n)); await notifyNews(store, n, { subject: env.PUSH_SUBJECT || env.RENDER_EXTERNAL_URL || 'https://quantum-trading.invalid' }); } } catch (e) { console.error('noticias', e.message); } };
+const newsRun = async () => { try { if (!(await leader('news', 4 * 60000))) return; const n = await fetchNews(); if (n.sources) { await store.setSetting('news:latest', JSON.stringify(n)); await notifyNews(store, n, { subject: env.PUSH_SUBJECT || env.RENDER_EXTERNAL_URL || 'https://quantum-trading.invalid' }); } } catch (e) { console.error('noticias', e.message); } };
 setTimeout(newsRun, 20000);
 const newsTimer = setInterval(newsRun, 5 * 60000);
 // Plan gratis de Render: se duerme sin visitas y el bot se detendría. Un ping propio al dominio público lo mantiene despierto.

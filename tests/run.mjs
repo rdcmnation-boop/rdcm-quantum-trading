@@ -1055,6 +1055,25 @@ t('Mejora de UI y landing: audita con datos reales y solo propone', Array.isArra
 const sstore = memoryStore(); await sstore.addOrder({ user_id: 'u1', status: 'error', note: 'Your asset quantity has too much precision. Please round it to nearest 0.01', created_at: Date.now() }); await sstore.addOrder({ user_id: 'u2', status: 'error', note: 'insufficient buying power', created_at: Date.now() });
 const sp = await AG2.client_support.run({ store: sstore, now: Date.now() + 1000 });
 t('Soporte al cliente: agrupa errores reales y deja respuestas sugeridas (no envía nada)', sp.proposals.length === 2 && sp.proposals.some((p) => /redondear/.test(p.detail.text)) && sp.proposals.some((p) => /saldo/.test(p.detail.text)) && sp.proposals.every((p) => p.kind === 'insight' && p.touches.length === 0));
+console.log('Fase 3: ciclo de vida del bot (rutas)');
+{
+  const payload = { symbol: 'BTC-USD', strategy: 'dca', usd: 10, intervalMin: 15, mode: 'paper', enabled: true, maxOrderUsd: 25, maxDailyUsd: 100 };
+  await A('PUT', '/api/bot', payload);
+  let st = (await A('GET', '/api/bot/status')).body;
+  t('estado del bot: RUNNING con latido, salud, inquilino y versión de estrategia', st.lifecycle.state === 'RUNNING' && st.lifecycle.strategy_version === 'qt-2026.10' && !!st.lifecycle.tenant && ['ok', 'stale'].includes(st.lifecycle.status));
+  const pz = await A('POST', '/api/bot/pause'); st = (await A('GET', '/api/bot/status')).body;
+  t('pausar: el bot queda PAUSED y conserva su configuración', pz.status === 200 && st.lifecycle.state === 'PAUSED' && st.enabled === true);
+  t('pausar dos veces se rechaza', (await A('POST', '/api/bot/pause')).status === 409);
+  const rs = await A('POST', '/api/bot/resume'); st = (await A('GET', '/api/bot/status')).body;
+  t('reanudar: vuelve a RUNNING', rs.status === 200 && st.lifecycle.state === 'RUNNING' && (await A('POST', '/api/bot/resume')).status === 409);
+  const evs = (await A('GET', '/api/bot/events')).body.events;
+  t('historial de estados con motivo (más reciente primero)', evs.length >= 4 && evs[0].to_state === 'RUNNING' && evs.some((e) => e.to_state === 'PAUSED' && /pausado/.test(e.reason)));
+  await A('POST', '/api/bot/kill'); st = (await A('GET', '/api/bot/status')).body;
+  t('apagar (kill): STOPPED', st.lifecycle.state === 'STOPPED' && st.enabled === false);
+  const o2id = (await O2('GET', '/api/me')).body.user.id; const aid = (await A('GET', '/api/me')).body.user.id;
+  t('un cliente no ve los eventos de otro (aislado por inquilino)', (await O2('GET', '/api/bot/events')).body.events.every((e) => e.user_id === o2id) && (await A('GET', '/api/bot/events')).body.events.every((e) => e.user_id === aid));
+}
+
 console.log('Fase 2: rutas de riesgo y emergencia');
 {
   // Rutas del dueño
@@ -1191,6 +1210,57 @@ console.log('Fase 2: puerta de riesgo central');
     const e2 = createEngine({ store: x.s2, adapters: { coinbase: { ...good, balances: async () => [{ asset: 'USD', available: 500, hold: 0 }], marketBuy: async (_c, q) => { x.calls.push(q); return { ok: true, id: 'B2' }; } }, robinhood: good }, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
     await e2.runBot({ ...(await x.s2.getBot(x.us.id)), last_run: 0 }, TR + 2000);
     t('reinicio: una instancia nueva ve lo ya enviado y no repite (los límites viven en la base de datos, no en memoria)', x.calls.length === 1 && (await x.s2.liveUsdSince(x.us.id, 0)) === 10); }
+}
+
+console.log('Fase 3: candado de líder, estados y emergencia');
+{
+  const B = await import('../lib/botstate.js'); const R = await import('../lib/risk.js');
+  t('estados: camino CREATED → RUNNING pasa por CONFIGURED y VALIDATING', B.botPath('CREATED', 'RUNNING').join() === 'CONFIGURED,VALIDATING,RUNNING' && B.botPath('RUNNING', 'STOPPED').join() === 'STOPPING,STOPPED');
+  t('estados: los 9 estados existen y las transiciones inválidas se rechazan', B.BOT_STATES.length === 9 && !B.canBotTransition('STOPPED', 'RUNNING') && !B.canBotTransition('CREATED', 'RUNNING') && B.canBotTransition('EMERGENCY_STOP', 'RUNNING'));
+  t('salud: latido viejo = stale; emergencia/error se distinguen', B.healthOf({ state: 'RUNNING', enabled: true, last_run: Date.now() - 600000 }).status === 'stale' && B.healthOf({ state: 'RUNNING', enabled: true, last_run: Date.now() - 5000 }).status === 'ok' && B.healthOf({ state: 'EMERGENCY_STOP' }).status === 'emergency' && B.healthOf({ state: 'RUNNING', enabled: true, last_run: Date.now(), errors: 3 }).status === 'error');
+  const st = memoryStore(); const u = await st.createUser({ email: 'f3@demo.com', pass_hash: 'x' });
+  await st.saveBot(u.id, { symbol: 'BTC-USD', enabled: false });
+  t('guardar un bot apagado lo deja CONFIGURED', (await st.getBot(u.id)).state === 'CONFIGURED');
+  await st.saveBot(u.id, { symbol: 'BTC-USD', enabled: true });
+  t('encenderlo recorre VALIDATING → RUNNING y queda en el historial', (await st.getBot(u.id)).state === 'RUNNING' && (await st.listBotEvents(u.id)).map((e) => e.to_state).reverse().join() === 'CREATED,CONFIGURED,VALIDATING,RUNNING');
+  t('transición inválida no cambia nada', (await st.setBotState(u.id, 'CREATED')).ok === false && (await st.getBot(u.id)).state === 'RUNNING');
+  const b = await st.getBot(u.id); await st.patchBot(u.id, { cfg: { ...b.cfg, enabled: false } });
+  t('apagarlo por cualquier ruta lo deja STOPPED', (await st.getBot(u.id)).state === 'STOPPED');
+
+  // Candado de líder
+  const ls = memoryStore();
+  t('candado: A lo toma, B no puede, A lo renueva', (await ls.acquireLease('engine', 'A', 50)) && !(await ls.acquireLease('engine', 'B', 50)) && (await ls.acquireLease('engine', 'A', 50)));
+  await new Promise((r) => setTimeout(r, 70));
+  t('candado: si el líder cae (caduca), otra instancia toma el relevo', (await ls.acquireLease('engine', 'B', 50)) && !(await ls.acquireLease('engine', 'A', 50)));
+  await ls.releaseLease('engine', 'B'); t('candado: al soltarlo otro puede tomarlo', await ls.acquireLease('engine', 'A', 50));
+
+  const mkEng = async () => {
+    const s2 = memoryStore(); const us = await s2.createUser({ email: `f3${Math.random()}@demo.com`, pass_hash: 'x' });
+    const cn = await s2.addConnection({ user_id: us.id, exchange: 'coinbase', label: 'cb', key_id: 'k', secret_enc: sec.encrypt(env.ENCRYPTION_KEY, 's'), can_trade: true, can_transfer: false });
+    await s2.setSetting('live_trading', 'on'); await s2.setSetting('risk:platform', LOOSE);
+    const cnt = { bal: 0, buy: 0 }; let buyResult = async () => ({ ok: true, id: 'B' });
+    const ad = { coinbase: { ...good, name: 'coinbase', balances: async () => { cnt.bal++; return [{ asset: 'USD', available: 500, hold: 0 }]; }, marketBuy: async () => { cnt.buy++; return buyResult(); } }, robinhood: good };
+    const mk = () => createEngine({ store: s2, adapters: ad, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
+    await s2.saveBot(us.id, { autoMode: 'active', symbol: 'BTC-USD', strategy: 'dca', intervalMin: 15, usd: 10, mode: 'live', enabled: true, liveAck: true, connectionId: cn.id, maxOrderUsd: 25, maxDailyUsd: 100 });
+    return { s2, us, cnt, mk, setBuy: (f) => { buyResult = f; } };
+  };
+  { const x = await mkEng(); const e1 = x.mk(); const e2 = x.mk();
+    await Promise.all([e1.tick(), e2.tick(), e1.tick(), e2.tick()]);
+    t('dos instancias haciendo tick a la vez: solo una ejecuta el bot (un solo cálculo de saldo y una sola orden)', x.cnt.bal === 1 && x.cnt.buy === 1 && (await x.s2.listOrders(x.us.id)).length === 1); }
+  { const x = await mkEng(); const e = x.mk(); const T = Math.floor((Date.now() + 5e8) / 60000) * 60000 + 100;
+    await x.s2.setBotState(x.us.id, 'PAUSED', 'prueba'); await e.runBot(await x.s2.getBot(x.us.id), T);
+    t('PAUSED: el bot no opera', x.cnt.buy === 0);
+    await x.s2.setBotState(x.us.id, 'RUNNING', 'prueba'); await e.runBot({ ...(await x.s2.getBot(x.us.id)), last_run: 0 }, T);
+    t('al reanudar vuelve a operar', x.cnt.buy === 1); }
+  { const x = await mkEng(); const e = x.mk(); const T = Math.floor((Date.now() + 5e8) / 60000) * 60000 + 100;
+    await R.setEmergency(x.s2, { on: true, by: 'o', reason: 'prueba' }); await e.runBot({ ...(await x.s2.getBot(x.us.id)), last_run: 0 }, T);
+    t('emergencia: el bot real pasa a EMERGENCY_STOP y no opera', (await x.s2.getBot(x.us.id)).state === 'EMERGENCY_STOP' && x.cnt.buy === 0);
+    await R.setEmergency(x.s2, { on: false }); await e.runBot({ ...(await x.s2.getBot(x.us.id)), last_run: 0 }, T);
+    const bb = await x.s2.getBot(x.us.id); t('al levantar la emergencia vuelve a RUNNING y opera con sus límites', bb.state === 'RUNNING' && x.cnt.buy === 1); }
+  { const x = await mkEng(); const e = x.mk(); x.setBuy(async () => ({ ok: false, error: 'Insufficient funds' })); const T = Math.floor((Date.now() + 5e8) / 60000) * 60000 + 100;
+    for (let k = 0; k < 3; k++) await e.runBot({ ...(await x.s2.getBot(x.us.id)), last_run: 0 }, T + k * 61000);
+    const bb = await x.s2.getBot(x.us.id);
+    t('3 errores seguidos: el bot pasa a ERROR, se apaga y queda el motivo', bb.state === 'ERROR' && bb.cfg.enabled === false && /3 errores/.test(bb.state_reason)); }
 }
 
 console.log(`\n${pass} ok, ${fail} fallos`);

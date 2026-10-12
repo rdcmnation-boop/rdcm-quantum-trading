@@ -802,7 +802,8 @@ async function tabBot(main) {
       <label class="check full real"><input type="checkbox" name="sizing" ${cfg.sizing === 'balance' ? 'checked' : ''}><span>Usar el saldo disponible en mi exchange (se reparte entre posiciones y nunca pasa los topes de abajo)</span></label>
       <label class="check full real"><input type="checkbox" name="liveAck" ${cfg.liveAck ? 'checked' : ''}><span>Entiendo que el modo REAL usa mi dinero, que puedo perder todo lo que invierta, que los resultados pasados o simulados no garantizan resultados futuros y que Quantum Trading no es asesor financiero.</span></label>
       <label class="check full"><input type="checkbox" name="enabled" ${cfg.enabled ? 'checked' : ''}><span><b>Bot encendido</b></span></label>
-      <div class="full row"><button class="btn" type="submit">Guardar</button><button class="btn danger" type="button" id="kill">Apagar ya</button></div>
+      <div class="full row"><button class="btn" type="submit">Guardar</button><button class="btn ghost" type="button" id="pz">Pausar</button><button class="btn danger" type="button" id="kill">Apagar ya</button></div>
+      <p class="muted full" id="bstate" style="font-size:12px;margin:0"></p>
       <div class="msg full" id="bm"></div>
     </form>
     ${live ? '' : '<p class="muted" style="font-size:13px">El trading real está desactivado por la plataforma por ahora. Puedes probar todo en modo papel.</p>'}
@@ -902,8 +903,21 @@ async function tabBot(main) {
     } catch (err) { setMsg($('#bt_m'), err.message); }
   });
   $('#kill').addEventListener('click', async () => {
-    try { await api('POST', '/api/bot/kill'); $('#bf').enabled.checked = false; setMsg($('#bm'), 'Bot apagado.', true); } catch (err) { setMsg($('#bm'), err.message); }
+    try { await api('POST', '/api/bot/kill'); $('#bf').enabled.checked = false; setMsg($('#bm'), 'Bot apagado.', true); showBotState(); } catch (err) { setMsg($('#bm'), err.message); }
   });
+  // Estado real del ciclo de vida (lo guarda el servidor) y pausa/reanudar.
+  const STATE_ES = { CREATED: 'creado', CONFIGURED: 'configurado', VALIDATING: 'validando', RUNNING: 'en marcha', PAUSED: 'en pausa', STOPPING: 'deteniéndose', STOPPED: 'detenido', ERROR: 'con error', EMERGENCY_STOP: 'PARADA DE EMERGENCIA' };
+  async function showBotState() {
+    try {
+      const b = await api('GET', '/api/bot/status'); const l = b.lifecycle || {}; const el = $('#bstate'); if (!el) return;
+      el.textContent = `Estado: ${STATE_ES[l.state] || l.state}${l.reason ? ` · ${l.reason}` : ''}${l.heartbeat_age_s != null && b.enabled ? ` · último latido hace ${l.heartbeat_age_s} s` : ''}${l.status === 'stale' ? ' · SIN LATIDO RECIENTE' : ''}`;
+      const pz = $('#pz'); if (pz) { pz.textContent = l.state === 'PAUSED' ? 'Reanudar' : 'Pausar'; pz.disabled = !(b.enabled && ['RUNNING', 'PAUSED'].includes(l.state)); }
+    } catch { /* informativo */ }
+  }
+  $('#pz').addEventListener('click', async () => {
+    try { const b = await api('GET', '/api/bot/status'); await api('POST', b.lifecycle && b.lifecycle.state === 'PAUSED' ? '/api/bot/resume' : '/api/bot/pause'); await showBotState(); } catch (err) { setMsg($('#bm'), err.message); }
+  });
+  showBotState();
 }
 
 async function tabOrdenes(main) {
