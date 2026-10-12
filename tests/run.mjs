@@ -1072,5 +1072,56 @@ server.close();
   t('IA explicadora: errores de la API no rompen y el texto se limpia', (await createExplainer({ env: { ANTHROPIC_API_KEY: 'k' }, f: async () => ({ ok: false, status: 500 }) }).explain({})).free === true && clean('a\u0000  b\n c', 10) === 'a b c');
 }
 
+console.log('Fase 1: libro de órdenes, ciclo de vida e idempotencia');
+{
+  const L = await import('../lib/ledger.js');
+  const base = { userId: 'u', mode: 'live', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', t: 1700000000000 };
+  t('ID de orden: estable en el mismo minuto, distinto en otro minuto, símbolo o cliente', L.clientOrderId(base) === L.clientOrderId({ ...base, t: base.t + 30000 }) && L.clientOrderId(base) !== L.clientOrderId({ ...base, t: base.t + 61000 }) && L.clientOrderId(base) !== L.clientOrderId({ ...base, symbol: 'ETH-USD' }) && L.clientOrderId(base) !== L.clientOrderId({ ...base, userId: 'v' }));
+  t('ID de orden: tiene forma de UUID v5/8-4-4-4-12', /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(L.clientOrderId(base)));
+  t('ciclo de vida: transiciones válidas y terminales inmutables', L.canTransition('submitting', 'submitted') && L.canTransition('submitted', 'partial') && L.canTransition('partial', 'filled') && L.canTransition('unknown', 'filled') && !L.canTransition('filled', 'submitted') && !L.canTransition('rejected', 'filled') && !L.canTransition('submitting', 'filled'));
+  t('«aceptada» no cuenta como ejecutada; «unknown» cuenta como exposición reservada', L.legacyStatus('submitted') === 'ok' && L.legacyStatus('unknown') === 'pending' && L.COUNTS_AS_EXPOSURE.includes('unknown') && L.isAmbiguous('HTTP 503') && L.isAmbiguous('Coinbase no respondió (timeout)') && !L.isAmbiguous('Insufficient funds'));
+
+  const st = memoryStore(); const u = await st.createUser({ email: 'f1@demo.com', pass_hash: 'x' });
+  const r1 = await st.reserveOrder({ user_id: u.id, mode: 'live', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0001, price: 100000, client_order_id: 'C1' });
+  const many = await Promise.all(Array.from({ length: 25 }, () => st.reserveOrder({ user_id: u.id, mode: 'live', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0001, price: 100000, client_order_id: 'C1' })));
+  t('reserva concurrente: 25 intentos con el mismo ID crean una sola orden', r1.created && many.every((x) => !x.created) && (await st.listOrders(u.id)).length === 1);
+  const u2 = await st.createUser({ email: 'f1b@demo.com', pass_hash: 'x' });
+  t('el mismo ID en otro cliente es una orden distinta (aislado por tenant)', (await st.reserveOrder({ user_id: u2.id, mode: 'live', symbol: 'BTC-USD', side: 'buy', client_order_id: 'C1' })).created && (await st.transitionOrder(u2.id, r1.order.id, 'submitted')).ok === false);
+  t('transición inválida se rechaza y no cambia nada', (await st.transitionOrder(u.id, r1.order.id, 'filled')).ok === false && (await st.listOrders(u.id))[0].lifecycle === 'submitting');
+  await st.transitionOrder(u.id, r1.order.id, 'submitted', { ext_id: 'X1' }, 'aceptada');
+  await st.transitionOrder(u.id, r1.order.id, 'partial', { filled_qty: 0.00005 }, 'parcial');
+  const fin = await st.transitionOrder(u.id, r1.order.id, 'filled', { filled_qty: 0.0001, fee_usd: 0.06 }, 'completa');
+  const ev = await st.listOrderEvents(u.id, r1.order.id);
+  t('ciclo completo submitting → submitted → partial → filled, con eventos auditables', fin.ok && fin.order.lifecycle === 'filled' && fin.order.fee_usd === 0.06 && ev.map((e) => e.to_state).join() === 'submitting,submitted,partial,filled' && (await st.listOrderEvents(u2.id, r1.order.id)).length === 0);
+
+  // Motor: pedido real con adaptador simulado (nunca toca un broker real)
+  const run = async (adapterFn) => {
+    const s2 = memoryStore(); const us = await s2.createUser({ email: `f1${Math.random()}@demo.com`, pass_hash: 'x' });
+    const cn = await s2.addConnection({ user_id: us.id, exchange: 'coinbase', label: 'cb', key_id: 'k', secret_enc: sec.encrypt(env.ENCRYPTION_KEY, 's'), can_trade: true, can_transfer: false });
+    await s2.setSetting('live_trading', 'on');
+    const calls = []; const ad = { coinbase: { ...good, name: 'coinbase', balances: async () => [{ asset: 'USD', available: 500, hold: 0 }], marketBuy: async (_c, a) => { calls.push(a); return adapterFn(a, calls.length); } }, robinhood: good };
+    const eng = createEngine({ store: s2, adapters: ad, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
+    await s2.saveBot(us.id, { autoMode: 'active', symbol: 'BTC-USD', strategy: 'dca', intervalMin: 15, usd: 10, mode: 'live', enabled: true, liveAck: true, connectionId: cn.id, maxOrderUsd: 25, maxDailyUsd: 100 });
+    return { s2, us, eng, calls };
+  };
+  { const { s2, us, eng, calls } = await run(async () => ({ ok: true, id: 'B1' }));
+    const T0 = Math.floor((Date.now() + 5e8) / 60000) * 60000 + 100; await eng.runBot({ ...(await s2.getBot(us.id)), last_run: 0 }, T0);
+    const o = (await s2.listOrders(us.id))[0];
+    t('motor: orden aceptada queda «submitted» con ID estable enviado al broker (no «ejecutada»)', o && o.lifecycle === 'submitted' && o.ext_id === 'B1' && calls.length === 1 && calls[0].clientOrderId === o.client_order_id && !o.filled_qty);
+    await eng.runBot({ ...(await s2.getBot(us.id)), last_run: 0 }, T0 + 1000);
+    t('motor: duplicado en el mismo minuto (reintento/reinicio/2.ª instancia) no llega al broker', calls.length === 1 && (await s2.listOrders(us.id)).length === 1);
+    t('motor: lo aceptado cuenta para el tope diario', (await s2.liveUsdSince(us.id, 0)) >= 10); }
+  { const { s2, us, eng, calls } = await run(async () => ({ ok: false, error: 'Insufficient funds' }));
+    await eng.runBot({ ...(await s2.getBot(us.id)), last_run: 0 }, Date.now() + 5e8);
+    const o = (await s2.listOrders(us.id))[0];
+    t('motor: rechazo definitivo del broker queda «rejected» y no cuenta como gasto', o && o.lifecycle === 'rejected' && o.status === 'error' && (await s2.liveUsdSince(us.id, 0)) === 0 && calls.length === 1); }
+  { const { s2, us, eng, calls } = await run(async () => { throw new Error('Coinbase no respondió (timeout)'); });
+    const TT = Math.floor((Date.now() + 5e8) / 60000) * 60000 + 100; await eng.runBot({ ...(await s2.getBot(us.id)), last_run: 0 }, TT);
+    const o = (await s2.listOrders(us.id))[0];
+    t('motor: timeout (resultado ambiguo) queda «unknown», sigue reservando cupo y NO se reintenta a ciegas', o && o.lifecycle === 'unknown' && (await s2.liveUsdSince(us.id, 0)) >= 10 && calls.length === 1);
+    await eng.runBot({ ...(await s2.getBot(us.id)), last_run: 0 }, TT + 5000);
+    t('motor: tras un «unknown» no se vuelve a enviar la misma orden', calls.length === 1); }
+}
+
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);
