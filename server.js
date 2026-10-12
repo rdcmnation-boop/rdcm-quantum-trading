@@ -25,7 +25,7 @@ for (const k of ['SESSION_SECRET', 'ENCRYPTION_KEY']) {
 
 let store;
 if (env.DATABASE_URL) {
-  store = await pgStore(env.DATABASE_URL, { ssl: prod });
+  store = await pgStore(env.DATABASE_URL, { ssl: prod, verify: env.PG_SSL_VERIFY === '1', max: Number(env.PG_POOL_MAX) || 8 });
 } else if (prod) {
   console.error('Falta DATABASE_URL en producción. Abortando.');
   process.exit(1);
@@ -75,4 +75,18 @@ const newsTimer = setInterval(newsRun, 5 * 60000);
 let keepTimer = null;
 if (env.RENDER_EXTERNAL_URL) keepTimer = setInterval(() => { fetch(`${env.RENDER_EXTERNAL_URL}/api/health`).catch(() => {}); }, 10 * 60000);
 const scanTimer = setInterval(scan, 30 * 60000);
-process.on('SIGTERM', () => { clearInterval(timer); clearInterval(recTimer); clearInterval(autoTimer); clearInterval(scanTimer); clearInterval(newsTimer); if (keepTimer) clearInterval(keepTimer); server.close(() => process.exit(0)); });
+// Apagado ordenado: deja de aceptar peticiones, no inicia ciclos nuevos, espera al ciclo del motor en curso y cierra la base de datos.
+let shuttingDown = false;
+async function shutdown(sig) {
+  if (shuttingDown) return; shuttingDown = true;
+  console.log(JSON.stringify({ level: 'info', msg: `señal ${sig}: apagado ordenado` }));
+  const force = setTimeout(() => { console.error('apagado forzado por tiempo'); process.exit(1); }, 25000); force.unref();
+  for (const t of [timer, recTimer, autoTimer, scanTimer, newsTimer, keepTimer]) if (t) clearInterval(t);
+  server.close();
+  try { const idle = await engine.stop(20000); if (!idle) console.error('el ciclo del motor no terminó a tiempo'); } catch (e) { console.error('engine.stop', e.message); }
+  try { await store.close(); } catch (e) { console.error('store.close', e.message); }
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM')); process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('unhandledRejection', (e) => console.error(JSON.stringify({ level: 'error', msg: 'unhandledRejection', detail: String(e && e.message || e).slice(0, 300) })));
+process.on('uncaughtException', (e) => { console.error(JSON.stringify({ level: 'error', msg: 'uncaughtException', detail: String(e && e.message || e).slice(0, 300) })); shutdown('uncaughtException'); });

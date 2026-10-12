@@ -1074,6 +1074,18 @@ console.log('Fase 3: ciclo de vida del bot (rutas)');
   t('un cliente no ve los eventos de otro (aislado por inquilino)', (await O2('GET', '/api/bot/events')).body.events.every((e) => e.user_id === o2id) && (await A('GET', '/api/bot/events')).body.events.every((e) => e.user_id === aid));
 }
 
+console.log('Fase 5: operación (rutas)');
+{
+  const lv = await A('GET', '/api/live'); const rd = await A('GET', '/api/ready');
+  t('liveness y readiness responden (readiness comprueba la base de datos)', lv.status === 200 && lv.body.status === 'alive' && rd.status === 200 && rd.body.checks.database === true && rd.body.checks.startup === true);
+  const probe = await fetch(`http://localhost:${server.address().port}/api/health`, { headers: { 'x-request-id': 'abc-12345678' } });
+  const probe2 = await fetch(`http://localhost:${server.address().port}/api/health`, { headers: { 'x-request-id': 'malo <script>' } });
+  t('ID de petición: se respeta uno válido y se reemplaza uno malicioso', probe.headers.get('x-request-id') === 'abc-12345678' && /^[0-9a-f-]{36}$/.test(probe2.headers.get('x-request-id')));
+  t('métricas: solo el dueño (cliente 403) y en formato Prometheus', (await A('GET', '/api/owner/metrics')).status === 403);
+  const mt = await fetch(`http://localhost:${server.address().port}/api/owner/metrics`, { headers: { cookie: O2.cookie || '' } });
+  t('métricas del dueño sin sesión: 401', mt.status === 401);
+}
+
 console.log('Fase 2: rutas de riesgo y emergencia');
 {
   // Rutas del dueño
@@ -1322,6 +1334,15 @@ console.log('Fase 4: conciliación con el broker (contratos y flujos)');
     t('sin conexión activa no inventa nada: la orden queda igual y se audita', (await x.get(id)).lifecycle === 'submitted' && (await x.s2.listAudit(20)).some((a) => a.action === 'reconcile_no_credentials')); }
   { const x = await setup(); await x.mkOrder('Q1'); const o2 = await x.mkOrder('Q2'); x.brokerOrders({}); await x.s2.transitionOrder(x.us.id, o2, 'filled', {});
     const r = await RC.reconcileAll({ store: x.s2, adapters: { coinbase: { getOrder: async () => { throw new Error('x'); } } }, encKey: env.ENCRYPTION_KEY, now: Date.now() + 20000 }); t('solo concilia órdenes pendientes (las terminales no se consultan)', r.checked === 1); }
+}
+
+console.log('Fase 5: migraciones');
+{
+  const { MIGRATIONS } = await import('../lib/migrations.js');
+  t('migraciones: ids consecutivos, nombres y SQL no vacíos', MIGRATIONS.every((m, i) => m.id === i + 1 && m.name && m.sql.trim().length > 20));
+  t('migraciones: solo aditivas (sin DROP de datos de clientes, sin renombrar, sin borrar columnas)', MIGRATIONS.every((m) => !/DROP\s+(COLUMN|TABLE\s+(?!IF EXISTS incidents))|RENAME|TRUNCATE|DELETE\s+FROM/i.test(m.sql)));
+  t('migraciones: cada CREATE/ADD es idempotente', MIGRATIONS.every((m) => !/CREATE\s+(UNIQUE\s+)?(TABLE|INDEX)\s+(?!IF NOT EXISTS)/i.test(m.sql) && !/ADD\s+COLUMN\s+(?!IF NOT EXISTS)/i.test(m.sql)));
+  const ms = memoryStore(); t('almacén en memoria: ping y migrationStatus', (await ms.ping()) === true && (await ms.migrationStatus()).length === 0);
 }
 
 console.log(`\n${pass} ok, ${fail} fallos`);

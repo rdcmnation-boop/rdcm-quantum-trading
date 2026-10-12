@@ -1,3 +1,5 @@
+# IMPORTANTE: los `plan:` de abajo son los del Blueprint. Verifica en el panel de Render que el servicio web y la base de datos estén en un plan de pago
+# (la base gratuita de Render caduca; el servicio gratuito se duerme). Cambiar un plan aquí y sincronizar el Blueprint cambia la facturación.
 services:
   - type: web
     name: quantum-trading
