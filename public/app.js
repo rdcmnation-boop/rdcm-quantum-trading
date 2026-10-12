@@ -988,6 +988,7 @@ async function tabCuenta(main) {
       <button class="btn full" type="submit">Cambiar</button><div class="msg full" id="pm"></div>
     </form>`}
   </div>
+  ${state.user.role === 'owner' ? '' : '<div class="card" id="plancard"><h2>Mi plan</h2><div id="planb" class="muted">Cargando…</div></div>'}
   <div class="card" id="seccard"><h2>Seguridad de la cuenta</h2><div id="secb" class="muted">Cargando…</div></div>
   <div class="card"><h2>Mis datos</h2>
     <p class="muted" style="font-size:13px">Descarga una copia de tu perfil, configuración y órdenes. Tus llaves API no se incluyen.</p>
@@ -997,7 +998,7 @@ async function tabCuenta(main) {
     <p class="muted" style="font-size:13px">Borra tu cuenta, tus llaves cifradas, tu bot y tus órdenes. No se puede deshacer.</p>
     <form id="df" class="form"><label>Tu contraseña<input name="password" type="password" required autocomplete="current-password"></label>
       <button class="btn danger full" type="submit">Eliminar cuenta definitivamente</button><div class="msg full" id="dm"></div></form></div>`}`;
-  loadSecurityCard();
+  loadSecurityCard(); loadPlanCard();
   const pf = $('#pf');
   if (pf) pf.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1011,6 +1012,39 @@ async function tabCuenta(main) {
     try { await api('DELETE', '/api/me', { password: df.password.value }); state.user = null; render(); }
     catch (err) { setMsg($('#dm'), err.message); }
   });
+}
+
+const STATUS_ES = { trialing: 'en prueba', active: 'activo', past_due: 'pago vencido', ended: 'terminado', expired: 'prueba terminada' };
+async function loadPlanCard() {
+  const box = $('#planb'); if (!box) return;
+  let b; try { b = await api('GET', '/api/billing'); } catch (e) { box.textContent = e.message; return; }
+  const c = b.current; box.className = '';
+  const date = (t) => (t ? new Date(t).toLocaleDateString() : '—');
+  box.innerHTML = `
+    <p><b>${esc((b.plans.find((p) => p.id === c.plan) || {}).label || c.plan)}</b> · ${esc(STATUS_ES[c.status] || c.status)}${c.period_end ? ` · hasta ${esc(date(c.period_end))}` : ''}${c.cancel_at_period_end ? ' · no se renovará' : ''}</p>
+    ${c.reason ? `<p class="muted" style="font-size:13px">${esc(c.reason)}</p>` : ''}
+    ${b.enforced ? '' : '<p class="muted" style="font-size:12px">Los límites de plan aún no están activados en esta plataforma.</p>'}
+    <div class="aglist">${b.plans.map((p) => `<div class="agrow"><div class="agmain"><b>${esc(p.label)}</b> ${p.priceUsdMonth ? `<span class="chip">$${p.priceUsdMonth}/mes${p.priceIsProposal ? ' (propuesta)' : ''}</span>` : ''}
+      <div class="muted" style="font-size:12px">${esc(p.blurb)}${p.live ? ` Hasta $${p.maxOrderUsd}/orden y $${p.maxDailyUsd}/día.` : ''}</div></div>
+      ${p.id !== 'free_trial' && p.id !== c.plan ? `<button class="btn ghost sm" data-plan="${esc(p.id)}">Elegir</button>` : ''}</div>`).join('')}</div>
+    ${c.plan !== 'free_trial' && c.plan !== 'owner' ? '<button class="btn ghost" id="portal">Administrar pago y factura</button>' : ''}
+    <div class="msg" id="plm"></div>
+    <p class="muted" style="font-size:12px">${esc(b.note)}</p>`;
+  const go = async (path, body) => { try { const r = await api('POST', path, body); location.href = r.url; } catch (e) { setMsg($('#plm'), e.message); } };
+  box.querySelectorAll('[data-plan]').forEach((x) => { x.onclick = () => go('/api/billing/checkout', { plan: x.dataset.plan }); });
+  const pt = $('#portal'); if (pt) pt.onclick = () => go('/api/billing/portal');
+}
+
+async function loadBillingCard() {
+  const box = $('#billb'); if (!box) return;
+  let b; try { b = await api('GET', '/api/owner/billing'); } catch (e) { box.textContent = e.message; return; }
+  box.innerHTML = `
+    <p class="muted" style="font-size:13px">Cobro en línea: <b>${b.stripe_configured ? 'configurado' : 'NO configurado'}</b> · Correo: <b>${b.mail === 'none' ? 'NO configurado' : esc(b.mail)}</b> · Pagos activos: <b>${b.paid_active}</b> · Pagos vencidos: <b class="${b.past_due ? 'neg' : ''}">${b.past_due}</b> · Webhooks fallidos: <b class="${b.failed_webhooks ? 'neg' : ''}">${b.failed_webhooks}</b></p>
+    <p class="muted" style="font-size:12px">Clientes por plan: ${Object.entries(b.by_plan).map(([k, v]) => `${esc(k)}: ${v}`).join(' · ') || 'ninguno'}</p>
+    <label class="check"><input type="checkbox" id="b_enf" ${b.enforce ? 'checked' : ''}><span><b>Hacer cumplir los límites de plan</b>: sin plan vigente no hay trading real. Actívalo solo cuando el cobro y los correos funcionen y hayas probado el flujo.</span></label>
+    <div class="row" style="margin-top:10px"><button class="btn" id="b_save">Guardar</button></div><div class="msg" id="b_m"></div>
+    <table class="tbl"><thead><tr><th>Evento</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>${b.webhooks.slice(0, 10).map((h) => `<tr><td>${esc(h.type)}</td><td class="${h.status === 'failed' ? 'neg' : ''}">${esc(h.status)}${h.attempts > 1 ? ` ×${h.attempts}` : ''}</td><td>${esc(h.detail || '')}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Sin eventos todavía.</td></tr>'}</tbody></table>`;
+  $('#b_save').onclick = async () => { try { await api('PUT', '/api/owner/billing', { enforce: $('#b_enf').checked }); setMsg($('#b_m'), 'Guardado.', true); } catch (e) { setMsg($('#b_m'), e.message); } };
 }
 
 async function loadSecurityCard() {
@@ -1387,13 +1421,14 @@ async function tabAjustes(main) {
     <div class="row" style="margin-top:12px"><button class="btn" id="s_save">Guardar</button></div><div class="msg" id="sm"></div>
   </div>` : ''}
   ${s ? '<details class="card acc" id="riskc"><summary><h2>Riesgo y parada de emergencia</h2></summary><div class="accb" id="riskb"><p class="muted">Cargando…</p></div></details>' : ''}
+  ${s ? '<details class="card acc" id="billc"><summary><h2>Planes y facturación</h2></summary><div class="accb" id="billb"><p class="muted">Cargando…</p></div></details>' : ''}
   <details class="card acc" id="expo"><summary><h2>Exportar Cerebro y app</h2></summary><div class="accb" id="expo_b"><p class="muted">Toca para cargar…</p></div></details>
   <div class="card"><h2>Verificación en dos pasos (2FA) para tu cuenta de dueño</h2>
     <p class="muted" style="font-size:13px">Estado: ${state.user.totp ? '<b class="pos">activada</b>' : '<b class="neg">desactivada</b>'}. Recomendado: actívala. Usa Google Authenticator, Authy o 1Password.</p>
     <div class="row"><button class="btn ghost" id="t_setup">${state.user.totp ? 'Cambiar 2FA' : 'Activar 2FA'}</button></div>
     <div id="t_box"></div>
   </div>`;
-  if (s) loadRiskCard();
+  if (s) { loadRiskCard(); $('#billc').addEventListener('toggle', () => { if ($('#billc').open && !$('#billc').dataset.l) { $('#billc').dataset.l = '1'; loadBillingCard(); } }); }
   $('#expo').addEventListener('toggle', async () => { if ($('#expo').open && !$('#expo').dataset.l) { $('#expo').dataset.l = '1'; try { await tabExport($('#expo_b')); } catch (err) { $('#expo_b').textContent = err.message; } } });
   if (s) $('#s_save').addEventListener('click', async () => {
     try { await api('PUT', '/api/owner/settings', { live_scope: $('#s_scope').value, registration_open: $('#s_reg').checked }); setMsg($('#sm'), 'Guardado.', true); state.me = await api('GET', '/api/me'); } catch (err) { setMsg($('#sm'), err.message); }
@@ -1411,6 +1446,8 @@ async function tabAjustes(main) {
 // ============================ Arranque ============================
 // Enlaces del correo: #reset=TOKEN y #verify=TOKEN. El token se quita de la barra de direcciones de inmediato.
 async function consumeMailLinks() {
+  const bm = String(location.hash).match(/^#billing=(return|cancel)$/);
+  if (bm) { history.replaceState(null, '', location.pathname + location.search); state.flash = bm[1] === 'return' ? 'Gracias. Tu plan se activa cuando el procesador de pagos lo confirme (puede tardar un minuto). Revisa Cuenta → Mi plan.' : 'Pago cancelado. No se te cobró nada.'; if (bm[1] === 'return') state.tab = 'cuenta'; return; }
   const m = String(location.hash).match(/^#(reset|verify)=([A-Za-z0-9_-]{20,200})$/);
   if (!m) return;
   history.replaceState(null, '', location.pathname + location.search);
@@ -1534,8 +1571,8 @@ function render() {
   if (!state.user) { stopNewsWatch(); return viewAuth(); }
   startNewsWatch(); voice.refresh();
   shell();
-  loadTab();
+  loadTab().then(() => { if (state.flash) { const b = document.createElement('div'); b.className = 'banner'; b.textContent = state.flash; state.flash = ''; const m = $('#main'); if (m) m.prepend(b); } });
 }
 
-window.addEventListener('hashchange', () => { if (/^#(reset|verify)=/.test(location.hash)) boot(); }); // enlace del correo abierto en una pestaña que ya estaba abierta
+window.addEventListener('hashchange', () => { if (/^#(reset|verify)=|^#billing=/.test(location.hash)) boot(); }); // enlace del correo abierto en una pestaña que ya estaba abierta
 boot();

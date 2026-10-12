@@ -66,6 +66,23 @@ await store.saveBot(u.id, { symbol: 'BTC-USD', enabled: true, mode: 'live' }); a
   await store.deleteUserData(w.id); t('Postgres: borrar cuenta borra tokens y sesiones', (await store.getSession('S1')) === null && (await store.consumeAuthToken('T3', 'reset')) === null);
 }
 
+// Facturación: suscripciones y webhooks idempotentes
+{
+  const bu = await store.createUser({ email: 'bill@x.com', pass_hash: 'h' });
+  t('Postgres: sin suscripción devuelve null', (await store.getSubscription(bu.id)) === null);
+  await store.upsertSubscription(bu.id, { plan: 'pro', status: 'active', provider: 'stripe', provider_customer: 'cus_PG', provider_sub: 'sub_PG', current_period_end: 1893456000000, event_at: 100 });
+  await store.upsertSubscription(bu.id, { status: 'past_due', event_at: 200 });
+  const sb = await store.getSubscription(bu.id);
+  t('Postgres: upsert fusiona campos y conserva el plan', sb.plan === 'pro' && sb.status === 'past_due' && sb.event_at === 200 && sb.current_period_end === 1893456000000 && sb.cancel_at_period_end === false);
+  t('Postgres: búsqueda por cliente del proveedor', (await store.getSubscriptionByCustomer('cus_PG')).user_id === bu.id && (await store.getSubscriptionByCustomer('cus_NO')) === null);
+  const race = await Promise.all(Array.from({ length: 8 }, () => store.beginWebhook('evt_race', 'x')));
+  t('Postgres: 8 entregas simultáneas del mismo evento → exactamente 1 lo procesa', race.filter(Boolean).length === 1);
+  await store.finishWebhook('evt_race', 'done', 'ok'); t('Postgres: un evento terminado no se reprocesa', (await store.beginWebhook('evt_race', 'x')) === false);
+  await store.beginWebhook('evt_f', 'x'); await store.finishWebhook('evt_f', 'failed', 'boom');
+  t('Postgres: un evento fallido se puede reintentar (y cuenta intentos)', (await store.beginWebhook('evt_f', 'x')) === true && (await store.listWebhooks(10)).find((h) => h.id === 'evt_f').attempts === 2);
+  await store.deleteUserData(bu.id); t('Postgres: borrar cuenta borra su suscripción', (await store.getSubscription(bu.id)) === null);
+}
+
 // Borrado de cuenta: todo, incluido el libro de órdenes
 await store.deleteUserData(u.id);
 t('Postgres: borrar la cuenta borra órdenes, eventos y bot', (await store.listOrders(u.id)).length === 0 && (await store.listOrderEvents(u.id, first.id)).length === 0 && (await store.getBot(u.id)) === null && (await store.getUserById(u.id)) === null);

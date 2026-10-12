@@ -1213,6 +1213,119 @@ console.log('Fase 6: cuentas (correo, recuperación, 2FA de clientes, dispositiv
     t('mailer en producción sin proveedor: no guarda mensajes (llevan enlaces con token)', prodM.outbox.length === 0); }
 }
 
+console.log('Fase 7: planes, límites del servidor y webhooks de pago');
+{
+  const BL = await import('../lib/billing.js');
+  const WH = 'whsec_test_' + 'x'.repeat(20);
+  const env7 = { ...env, STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: WH, STRIPE_PRICE_STARTER: 'price_S', STRIPE_PRICE_PRO: 'price_P', STRIPE_PRICE_BUSINESS: 'price_B', PUBLIC_URL: 'https://ejemplo.test' };
+  const stripeCalls = [];
+  const fetch7 = async (u, o) => { stripeCalls.push({ u, o }); return { ok: true, json: async () => ({ url: 'https://checkout.stripe.test/c/1', id: 'cs_1' }) }; };
+  const app7 = createApp({ store, env: env7, adapters, feed, engine, director, market: fakeMarket, fetchFn: fetch7, log: { warn() {}, error() {} } });
+  const srv7 = http.createServer(app7.handler); await new Promise((r) => srv7.listen(0, r));
+  const base7 = `http://127.0.0.1:${srv7.address().port}`;
+  const post7 = async (p, raw, hdr = {}) => { const r = await fetch(base7 + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...hdr }, body: raw }); return { status: r.status, body: await r.json().catch(() => ({})) }; };
+
+  // firma
+  const rawEv = JSON.stringify({ id: 'evt_sig', type: 'x', created: 1, data: { object: {} } });
+  t('firma: válida con el secreto correcto', BL.verifyStripeSignature(Buffer.from(rawEv), BL.signStripe(rawEv, WH), WH));
+  t('firma: secreto equivocado, cuerpo alterado, sin encabezado y marca de tiempo vieja → rechazadas', !BL.verifyStripeSignature(Buffer.from(rawEv), BL.signStripe(rawEv, 'otro'), WH) && !BL.verifyStripeSignature(Buffer.from(rawEv + ' '), BL.signStripe(rawEv, WH), WH) && !BL.verifyStripeSignature(Buffer.from(rawEv), '', WH) && !BL.verifyStripeSignature(Buffer.from(rawEv), BL.signStripe(rawEv, WH, Math.floor(Date.now() / 1000) - 3600), WH) && !BL.verifyStripeSignature(Buffer.from(rawEv), BL.signStripe(rawEv, WH), ''));
+
+  // usuarios
+  const GA = client(); const GB = client();
+  const ga = await GA('POST', '/api/auth/register', { email: 'f7a@x.com', password: pw, acceptTos: true }); const gb = await GB('POST', '/api/auth/register', { email: 'f7b@x.com', password: pw, acceptTos: true });
+  for (const e of ['f7a@x.com', 'f7b@x.com']) await store.updateUser((await store.getUserByEmail(e)).id, { email_verified_at: Date.now() });
+  const uidA = ga.body.user.id; const uidB = gb.body.user.id;
+  const call7 = (c, m, p, b) => c(m, p, b);
+  // el cliente de pruebas apunta a `base`; para el app7 usamos otro cliente con base7
+  const client7 = () => { let cookie = ''; return async (method, p, body) => { const r = await fetch(base7 + p, { method, headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'qt', ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined }); for (const c of r.headers.getSetCookie()) { const kv = c.split(';')[0]; cookie = kv.endsWith('=') ? '' : kv; } const txt = await r.text(); let j; try { j = JSON.parse(txt); } catch { j = txt; } return { status: r.status, body: j }; }; };
+  const GA7 = client7(); const GB7 = client7(); const O7 = client7();
+  await GA7('POST', '/api/auth/login', { email: 'f7a@x.com', password: pw }); await GB7('POST', '/api/auth/login', { email: 'f7b@x.com', password: pw });
+  await O7('POST', '/api/auth/login', { email: 'owner@test.com', password: env.OWNER_PASSWORD, totp: sec.totp(setup.body.secret, Date.now() + 30000) });
+
+  const b0 = await GA7('GET', '/api/billing');
+  t('planes: lista los 4 planes, marca los precios como propuesta y empieza en prueba gratis', b0.status === 200 && b0.body.plans.map((p) => p.id).join() === 'free_trial,starter,pro,business' && b0.body.plans.filter((p) => p.priceIsProposal).length === 3 && b0.body.current.plan === 'free_trial' && b0.body.current.status === 'trialing');
+  t('planes: con la facturación apagada nada cambia (sin topes de plan)', (await BL.entitlement(store, await store.getUserById(uidA))).enforced === false);
+
+  // webhooks
+  const evSub = (id, created, over = {}, type = 'customer.subscription.created') => JSON.stringify({ id, type, created, data: { object: { id: 'sub_1', customer: 'cus_A', status: 'active', current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400, cancel_at_period_end: false, metadata: { user_id: uidA }, items: { data: [{ price: { id: 'price_S' } }] }, ...over } } });
+  const send7 = (raw, sig = BL.signStripe(raw, WH)) => post7('/api/billing/webhook/stripe', raw, { 'Stripe-Signature': sig });
+  t('webhook: sin firma / firma mala → 400 y no cambia nada', (await post7('/api/billing/webhook/stripe', evSub('e0', 100))).status === 400 && (await send7(evSub('e0', 100), 't=1,v1=00')).status === 400 && (await store.getSubscription(uidA)) === null);
+  t('webhook: el redireccionamiento de «pago exitoso» (checkout.session.completed) no concede acceso', (await send7(JSON.stringify({ id: 'e_co', type: 'checkout.session.completed', created: 100, data: { object: { client_reference_id: uidA, payment_status: 'paid' } } }))).body.result === 'ignored' && (await store.getSubscription(uidA)) === null);
+  const w1 = await send7(evSub('e1', 100));
+  const sA = await store.getSubscription(uidA);
+  t('webhook firmado: activa el plan Starter', w1.status === 200 && sA.plan === 'starter' && sA.status === 'active' && sA.provider_customer === 'cus_A');
+  const w1b = await send7(evSub('e1', 100)); t('webhook idempotente: el mismo evento otra vez no se reaplica', w1b.body.result === 'duplicate' && (await store.listWebhooks()).filter((h) => h.id === 'e1').length === 1);
+  await send7(evSub('e2', 200, { items: { data: [{ price: { id: 'price_P' } }] } }, 'customer.subscription.updated'));
+  t('webhook: cambio de plan a Pro', (await store.getSubscription(uidA)).plan === 'pro');
+  await send7(evSub('e_old', 150, { items: { data: [{ price: { id: 'price_S' } }] } }, 'customer.subscription.updated'));
+  t('webhook fuera de orden: un evento más viejo no pisa al más nuevo', (await store.getSubscription(uidA)).plan === 'pro');
+  const unk = await send7(evSub('e_unk', 300, { items: { data: [{ price: { id: 'price_DESCONOCIDO' } }] } }, 'customer.subscription.updated'));
+  t('webhook con precio desconocido: no concede nada y queda auditado', unk.body.result === 'ignored' && (await store.getSubscription(uidA)).plan === 'pro' && (await store.listAudit(300)).some((a) => a.action === 'billing_unknown_price'));
+  const nou = await send7(evSub('e_nu', 310, { customer: 'cus_X', metadata: { user_id: 'no-existe' } }));
+  t('webhook de un usuario inexistente: se ignora y se audita', nou.body.result === 'ignored' && (await store.listAudit(300)).some((a) => a.action === 'billing_unknown_user'));
+  t('el usuario no puede falsificar su plan: un cliente no alcanza el webhook ni las rutas de dueño', (await GA7('POST', '/api/owner/users/' + uidA + '/plan', { plan: 'business' })).status === 403 && (await GA7('PUT', '/api/owner/billing', { enforce: false })).status === 403);
+  t('el webhook está protegido por firma aunque no lleve cookie ni encabezado CSRF, y no se puede usar GET', (await fetch(base7 + '/api/billing/webhook/stripe')).status !== 200);
+  await send7(JSON.stringify({ id: 'e_pf', type: 'invoice.payment_failed', created: 400, data: { object: { customer: 'cus_A' } } }));
+  t('pago fallido → past_due', (await store.getSubscription(uidA)).status === 'past_due');
+  const raceEv = evSub('e_race', 500, { status: 'active' }, 'customer.subscription.updated');
+  const rr = await Promise.all([send7(raceEv), send7(raceEv), send7(raceEv)]);
+  t('tres entregas simultáneas del mismo evento → se procesa una sola vez', rr.filter((x) => x.body.result === 'done').length === 1 && (await store.getSubscription(uidA)).status === 'active');
+  // fallo transitorio → 500 y se puede reintentar
+  { const orig = store.upsertSubscription; let boom = true; store.upsertSubscription = async (...a) => { if (boom) { boom = false; throw new Error('db caída'); } return orig.apply(store, a); };
+    const failEv = evSub('e_fail', 600, { status: 'past_due' }, 'customer.subscription.updated');
+    const f1 = await send7(failEv); const f2 = await send7(failEv); store.upsertSubscription = orig;
+    t('si falla algo transitorio responde 500 (el proveedor reintenta) y el reintento sí se aplica', f1.status === 500 && f2.status === 200 && (await store.getSubscription(uidA)).status === 'past_due' && (await store.listWebhooks()).find((h) => h.id === 'e_fail').attempts === 2); }
+  await send7(evSub('e_back', 700, { status: 'active' }, 'customer.subscription.updated'));
+
+  // checkout
+  const ck = await GA7('POST', '/api/billing/checkout', { plan: 'pro' });
+  const cb = Object.fromEntries(new URLSearchParams(String(stripeCalls[0].o.body)));
+  t('checkout: crea la sesión en el servidor con el usuario en metadata, sin datos de tarjeta, y devuelve solo la URL', ck.status === 200 && ck.body.url.startsWith('https://checkout.stripe.test') && cb['subscription_data[metadata][user_id]'] === uidA && cb['line_items[0][price]'] === 'price_P' && cb.mode === 'subscription' && /Bearer sk_test_x/.test(stripeCalls[0].o.headers.Authorization) && !JSON.stringify(ck.body).includes('sk_test'));
+  t('checkout: plan inválido (incl. free_trial) → 400', (await GA7('POST', '/api/billing/checkout', { plan: 'free_trial' })).status === 400 && (await GA7('POST', '/api/billing/checkout', { plan: 'gratis-total' })).status === 400);
+  t('checkout sin configurar → 503 honesto (app principal sin claves de Stripe)', (await A('POST', '/api/billing/checkout', { plan: 'pro' })).status === 503);
+  t('portal: sin suscripción de pago → 400; con ella devuelve URL', (await GB7('POST', '/api/billing/portal')).status === 400 && (await GA7('POST', '/api/billing/portal')).status === 200);
+
+  // límites de servidor (facturación activada por el dueño)
+  t('dueño activa la facturación y queda auditado', (await O7('PUT', '/api/owner/billing', { enforce: true })).status === 200 && (await store.listAudit(300)).some((a) => a.action === 'billing_enforce'));
+  await store.setSetting('live_trading', 'on'); await store.updateUser(uidA, {});
+  const cA = await GA7('POST', '/api/connections', { exchange: 'coinbase', keyId: 'organizations/o/apiKeys/k', secret: secretPem, label: 'cb' });
+  const cB = await GB7('POST', '/api/connections', { exchange: 'coinbase', keyId: 'organizations/o/apiKeys/k', secret: secretPem, label: 'cb' });
+  const live7 = (cid2, over = {}) => ({ ...cfgPaper, mode: 'live', connectionId: cid2, liveAck: true, maxOrderUsd: 25, maxDailyUsd: 100, ...over });
+  t('(B en prueba gratis) conectar sigue permitido dentro de su límite de 1 conexión', cB.status === 201);
+  t('(B en prueba gratis) segunda conexión → 403 por plan', (await GB7('POST', '/api/connections', { exchange: 'coinbase', keyId: 'organizations/o/apiKeys/k2', secret: secretPem, label: 'cb2' })).status === 403);
+  const bLive = await GB7('PUT', '/api/bot', live7(cB.body.connection.id));
+  t('(B en prueba gratis) activar trading real → 403 need_plan', bLive.status === 403 && bLive.body.need_plan === true);
+  t('(B en prueba gratis) modo papel sigue funcionando', (await GB7('PUT', '/api/bot', { ...cfgPaper })).status === 200);
+  await store.upsertSubscription(uidA, { plan: 'starter', status: 'active', current_period_end: Date.now() + 20 * 86400000 });
+  const aLiveBig = await GA7('PUT', '/api/bot', live7(cA.body.connection.id, { maxOrderUsd: 200, maxDailyUsd: 250 }));
+  t('(A en plan Starter) topes por encima del plan → 400 con explicación', aLiveBig.status === 400 && /plan permite/.test(aLiveBig.body.error) && aLiveBig.body.caps.maxOrderUsd === 100);
+  t('(A en plan Starter) topes dentro del plan → aceptado', (await GA7('PUT', '/api/bot', live7(cA.body.connection.id))).status === 200);
+  // el motor aplica el plan aunque la config se haya guardado antes (p. ej. bajó de plan)
+  await store.patchBot(uidA, { last_run: 0 }); const before = (await store.listOrders(uidA, 100)).filter((o) => o.mode === 'live').length;
+  await store.upsertSubscription(uidA, { status: 'past_due' }); await engine.tick();
+  const botA = await store.getBot(uidA);
+  t('motor: con el pago vencido no sale ninguna orden real y el bot real se apaga con el motivo', (await store.listOrders(uidA, 100)).filter((o) => o.mode === 'live').length === before && botA.cfg.enabled === false);
+  await store.upsertSubscription(uidB, { plan: 'starter', status: 'active', provider: 'manual', current_period_end: Date.now() + 20 * 86400000 });
+  await store.saveBot(uidB, { ...live7(cB.body.connection.id, { maxOrderUsd: 400, maxDailyUsd: 900, usd: 150 }) }); await store.patchBot(uidB, { last_run: 0 });
+  await engine.tick();
+  { const lo = (await store.listOrders(uidB, 100)).filter((o) => o.mode === 'live'); t('motor: los topes del plan (Starter: $100/orden) se aplican aunque la config guardada diga $400/$150: la orden sale recortada o no sale, nunca mayor', lo.length >= 1 && lo.every((o) => o.usd <= 100)); }
+  await store.upsertSubscription(uidA, { status: 'active', current_period_end: Date.now() - 5 * 86400000 });
+  t('suscripción vencida hace más de 3 días (webhook de renovación no llegó) → sin trading real', (await BL.entitlement(store, await store.getUserById(uidA))).live === false);
+  await store.setSetting('live_trading', 'off');
+
+  // consola del dueño y soporte
+  const ob = await O7('GET', '/api/owner/billing');
+  t('consola de dueño: estado de facturación, planes, webhooks fallidos y correo', ob.status === 200 && ob.body.enforce === true && ob.body.stripe_configured === true && ob.body.mail === 'none' && Array.isArray(ob.body.webhooks) && typeof ob.body.failed_webhooks === 'number');
+  t('consola: un cliente no la ve', (await GA7('GET', '/api/owner/billing')).status === 403);
+  const sup = await O7('GET', `/api/owner/users/${uidB}/support`);
+  t('soporte: resumen operativo del cliente SIN llaves, hashes ni secretos, y queda auditado', sup.status === 200 && sup.body.user.email === 'f7b@x.com' && !JSON.stringify(sup.body).match(/pass_hash|secret|totp_secret|recovery|BEGIN/i) && (await store.listAudit(400)).some((a) => a.action === 'support_view' && a.detail.includes(uidB)));
+  t('soporte: un cliente no puede pedirlo ni sobre sí mismo', (await GA7('GET', `/api/owner/users/${uidA}/support`)).status === 403 && (await GB7('GET', `/api/owner/users/${uidA}/support`)).status === 403);
+  t('concesión manual: plan inválido rechazado; válida auditada', (await O7('POST', `/api/owner/users/${uidB}/plan`, { plan: 'gratis' })).status === 400 && (await O7('POST', `/api/owner/users/${uidB}/plan`, { plan: 'starter', days: 30 })).status === 200 && (await BL.entitlement(store, await store.getUserById(uidB))).live === true && (await store.listAudit(400)).some((a) => a.action === 'owner_set_plan'));
+  t('el dueño nunca queda limitado por planes', (await BL.entitlement(store, await store.getUserByEmail('owner@test.com'))).live === true);
+  await O7('PUT', '/api/owner/billing', { enforce: false });
+  srv7.close();
+}
+
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');
