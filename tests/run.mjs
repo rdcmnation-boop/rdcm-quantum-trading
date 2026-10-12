@@ -362,8 +362,7 @@ t('el Director corre todos los agentes disponibles', run.status === 200 && ['pro
 t('los agentes NO cambian nada por sí solos', (await store.getSetting('default_cfg', null)) === null
   && (await store.getSetting('brain_version', '1')) === v0 && (await store.getSetting('model:active:BTC-USD', null)) === null);
 const brain = (await O2('GET', '/api/owner/brain')).body;
-t('Cerebro: 11 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 11 && brain.agents.filter((a) => !a.available).length === 2
-  && brain.agents.filter((a) => !a.available).every((a) => /Claude/.test(a.reason)));
+t('Cerebro: 11 agentes, todos disponibles (sin modelo de lenguaje)', brain.agents.length === 11 && brain.agents.every((a) => a.available));
 t('Cerebro: propuestas pendientes con evidencia', brain.pending.length > 0 && brain.pending.every((p) => p.evidence && p.title));
 const mlProp = brain.pending.find((p) => p.kind === 'model_update');
 t('el ML propone activar el modelo solo cuando hay ventaja real (BTC sí, ETH no)', !!mlProp && mlProp.title.includes('BTC-USD')
@@ -427,7 +426,7 @@ await O2('PUT', '/api/owner/guardrails', { allowedKinds: ['strategy_defaults', '
 t('el dueño apaga un agente', (await O2('PUT', '/api/owner/agents/trading_improvement', { enabled: false })).status === 200);
 const run2 = await O2('POST', '/api/owner/brain/run');
 t('un agente apagado no corre', !run2.body.summary.some((x) => x.agent === 'trading_improvement'));
-t('no se puede encender un agente no disponible', (await O2('PUT', '/api/owner/agents/ui_landing', { enabled: true })).status === 404);
+t('no se puede encender un agente que no existe', (await O2('PUT', '/api/owner/agents/inventado', { enabled: true })).status === 404);
 await O2('PUT', '/api/owner/agents/trading_improvement', { enabled: true });
 t('el Director corre solo si los datos fallan sin romperse', await (async () => {
   const bad = createDirector({ store, feed: { getHistory: async () => { throw new Error('sin red'); } }, agents: { trading_improvement: (await import('../lib/agents.js')).AGENTS.trading_improvement } });
@@ -1049,6 +1048,11 @@ const { AGENTS: AG2 } = await import('../lib/agents.js');
 const lw = await AG2.legal_watch.run({ store }); const sup = await AG2.superintendent.run({ store: memoryStore(), now: Date.now() });
 t('Abogado Quantum: lista pendientes técnicos y avisa que no es asesoría legal', lw.notes[0].includes('No es asesoría legal') && lw.proposals.every((p) => ['ops_alert', 'risk_alert'].includes(p.kind) && p.touches.length === 0));
 t('Superintendente: detecta escáner y noticias sin datos y solo propone (no cambia nada)', sup.proposals.some((p) => p.key === 'sup:scanner_stale') && sup.proposals.some((p) => p.key === 'sup:news_stale') && sup.proposals.every((p) => p.touches.length === 0));
+const ui = await AG2.ui_landing.run({}); 
+t('Mejora de UI y landing: audita con datos reales y solo propone', Array.isArray(ui.proposals) && ui.notes.some((n) => /KB/.test(n)) && ui.proposals.every((p) => p.kind === 'insight' && p.touches.length === 0));
+const sstore = memoryStore(); await sstore.addOrder({ user_id: 'u1', status: 'error', note: 'Your asset quantity has too much precision. Please round it to nearest 0.01', created_at: Date.now() }); await sstore.addOrder({ user_id: 'u2', status: 'error', note: 'insufficient buying power', created_at: Date.now() });
+const sp = await AG2.client_support.run({ store: sstore, now: Date.now() + 1000 });
+t('Soporte al cliente: agrupa errores reales y deja respuestas sugeridas (no envía nada)', sp.proposals.length === 2 && sp.proposals.some((p) => /redondear/.test(p.detail.text)) && sp.proposals.some((p) => /saldo/.test(p.detail.text)) && sp.proposals.every((p) => p.kind === 'insight' && p.touches.length === 0));
 server.close();
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

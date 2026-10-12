@@ -466,6 +466,8 @@ const COORD = {
   problem_processing: ['procesa los problemas que reportan los clientes y propone arreglos', null, 'sus propuestas a ti, que decides'],
   legal_watch: ['vigila que los avisos legales y los datos de la empresa estén completos; no es un abogado, deja la lista para el tuyo', null, 'avisos para ti y para tu abogado'],
   superintendent: ['supervisa que el escáner, las noticias y los bots sigan corriendo', null, 'alertas de estado para ti'],
+  ui_landing: ['revisa la landing y la app (título, llamada a la acción, peso y traducciones) y propone mejoras', null, 'sus hallazgos para ti'],
+  client_support: ['agrupa los problemas de los clientes y deja respuestas listas para que tú las envíes', null, 'respuestas sugeridas para ti'],
   owner_analytics: ['analiza el negocio: clientes, uso y errores', null, 'avisos para ti'],
 };
 // Informe del Cerebro: lo que los agentes encontraron sobre trading y oportunidades (solo datos reales guardados; sin promesas).
@@ -1014,15 +1016,14 @@ async function tabCerebro(main) {
   const st = Object.fromEntries((b.agent_stats || []).map((x) => [x.name, x]));
   const agents = b.agents.map((a) => { const lr = lastRun(a.name); const x = st[a.name] || {}; return `<tr><td><b>${esc(a.label)}</b></td>
     <td>${a.available ? (a.enabled ? '<span class="pos">activo</span>' : 'apagado') : '<span class="muted">próximamente</span>'}</td>
-    <td class="muted" style="white-space:normal">${lr ? `${ago(lr.t)}${lr.error ? ' · <span class="neg">error</span>' : ''}` : '—'}</td>
-    <td class="r muted" title="corridas / propuestas / aplicadas / rechazadas">${a.available ? `${x.runs || 0} · ${x.created || 0} · <span class="pos">${x.applied || 0}</span> · ${x.rejected || 0}` : ''}</td>
+    <td class="muted agm">${lr ? `${ago(lr.t)}${lr.error ? ' · <span class="neg">error</span>' : ''}` : '—'}${a.available ? `<div title="corridas · propuestas · aplicadas · rechazadas">${x.runs || 0} · ${x.created || 0} · <span class="pos">${x.applied || 0}</span> · ${x.rejected || 0}</div>` : ''}</td>
     <td class="r">${a.available ? `<button class="btn ghost small" data-ag="${esc(a.name)}" data-en="${a.enabled ? '0' : '1'}">${a.enabled ? 'Apagar' : 'Encender'}</button>` : ''}</td></tr>`; }).join('');
   const pend = b.pending.map((p) => `<div class="prop"><div class="row"><span class="chip">${esc(KIND_LABEL[p.kind] || p.kind)}</span><span class="muted" style="font-size:12px">${esc(p.agent || '')}</span></div>
     <div style="margin:6px 0"><b>${esc(p.title)}</b></div>
     <details><summary class="muted" style="font-size:12px;cursor:pointer">Datos</summary><pre style="white-space:pre-wrap;font-size:11px;overflow-x:auto">${esc(JSON.stringify(p.evidence, null, 1))}</pre></details>
     <div class="row" style="margin-top:8px">${APPLIES.includes(p.kind) ? `<button class="btn small" data-dec="approve" data-id="${esc(p.id)}">Aprobar</button>` : `<button class="btn ghost small" data-dec="approve" data-id="${esc(p.id)}">Enterado</button>`}
     <button class="btn ghost small" data-dec="reject" data-id="${esc(p.id)}">Rechazar</button></div></div>`).join('');
-  const runs = b.runs.slice(0, 8).map((r) => `<tr><td>${esc(ago(r.t))}</td><td>${esc(r.trigger)}</td><td>${r.agents.map((a) => `${esc(a.agent)}: ${a.error ? '✗' : a.created}`).join(' · ')}</td></tr>`).join('');
+  const runs = b.runs.slice(0, 8).map((r) => `<tr><td>${esc(ago(r.t))}</td><td>${esc(r.trigger)}</td><td class="muted runs">${r.agents.map((a) => `${esc((b.agents.find((q) => q.name === a.agent) || {}).label || a.agent)}: ${a.error ? '✗' : a.created}`).join(' · ')}</td></tr>`).join('');
   const lessons = (lab.lessons || []).slice(0, 5).map((x) => `<li><span class="muted">${esc(ago(x.t))}</span> ${esc(x.text)}</li>`).join('');
   const hist = b.history.map((p) => `<tr><td>${esc(ago(p.decided_at || p.created_at))}</td><td style="white-space:normal">${esc(p.title)}</td><td>${esc(p.status)}</td></tr>`).join('');
   const models = b.models.map((m) => `<tr><td>${esc(m.symbol)}</td><td>${m.active ? '<span class="pos">activo</span>' : '—'}</td><td>${m.candidate ? `${(m.candidate.metrics.acc_test * 100).toFixed(1)} % vs ${(m.candidate.metrics.baseline_test * 100).toFixed(1)} %` : '—'}</td></tr>`).join('');

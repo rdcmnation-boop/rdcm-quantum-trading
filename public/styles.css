@@ -297,3 +297,5 @@ table td{padding-block:6px}
 .tpast{background:#c9c6b5}.tmedc{background:#ffd60a}.t50{background:rgba(255,214,10,.5);height:8px!important}.t90{background:rgba(255,214,10,.2);height:8px!important}
 .tmgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:6px 0}.tmgrid div{background:#0b0b0e;border-radius:10px;padding:7px 9px;min-width:0}.tmgrid small{display:block;font-size:10px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}.tmgrid b{font:700 14px ui-monospace,Menlo,monospace;color:var(--accent)}
 .tmrep{font-size:12px;color:#e8e4cf;margin-top:6px;line-height:1.5}
+.agm{white-space:normal;font-size:12px;line-height:1.35}.agm div{font-size:11px;font-variant-numeric:tabular-nums}
+td.runs{white-space:normal;font-size:11px;line-height:1.4}
