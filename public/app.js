@@ -643,7 +643,7 @@ function riskBarHtml(bn, d) {
   return `<div class="rkbar ${live ? 'live' : 'paper'}"><div class="rkhead"><span class="rkmode">${live ? '● DINERO REAL' : '● PAPEL · simulado, sin dinero'}</span><span class="rkst ${bn.enabled ? 'on' : ''}">${bn.enabled ? 'Cerebro activo' : 'Cerebro apagado'}</span></div>
     <div class="rkgrid"><div><small>Por compra</small><b>${money(L.usd, 0)}</b></div><div><small>Tope por orden</small><b>${money(L.maxOrderUsd, 0)}</b></div><div><small>Stop bajo costo</small><b>${L.stopLossPct ? `${L.stopLossPct} %` : '—'}</b></div><div><small>Tope diario${live ? '' : ' (real)'}</small><b>${money(sp, 0)} / ${money(mx, 0)}</b><i class="rkmeter"><u style="width:${pctD}%"></u></i></div></div>
     <div class="rkag"><span>🧭 Mercado: <b>${esc(sc('MERCADO'))}</b></span><span>📰 Noticias: <b>${esc(sc('NOTICIAS'))}</b></span><span>🛡 Riesgo: <b>${esc(sc('RIESGO'))}</b></span><span>⚡ Ejecución: <b>${esc(last)}</b></span></div>
-    <div class="rkfoot"><span class="muted">Nada se opera sin tus topes. El modo real solo opera con tu confirmación.</span>${bn.enabled ? '<button type="button" class="btn danger small" id="rk_kill">⏻ Kill switch</button>' : ''}</div></div>`;
+    <div class="rkfoot"><span class="muted">Nada se opera sin tus topes. El modo real solo opera con tu confirmación.</span><button type="button" class="btn danger small" id="rk_kill">⏻ Cerrar todo y apagar</button></div></div>`;
 }
 function evidenceHtml(d) {
   const rows = (d.rows || []).filter((r) => r.conf !== undefined || (r.ev && r.ev.length)).slice(0, 4);
@@ -654,9 +654,49 @@ function refreshRisk(bn) {
   const d = botViz(bn); const r = $('#rk_b'); if (r) { r.innerHTML = riskBarHtml(bn, d); bindKill(); }
   const e = $('#evd_b'); if (e) e.innerHTML = evidenceHtml(d);
 }
+// Doble toque: el primer toque arma el botón (5 s); el segundo ejecuta. Devuelve true solo en el segundo toque.
+function confirmTap(btn, armedText) {
+  if (btn.dataset.armed) { clearTimeout(Number(btn.dataset.armed)); delete btn.dataset.armed; return true; }
+  const orig = btn.textContent; btn.textContent = armedText; btn.classList.add('armed');
+  btn.dataset.armed = String(setTimeout(() => { delete btn.dataset.armed; btn.textContent = orig; btn.classList.remove('armed'); }, 5000));
+  return false;
+}
+function closeSummary(r) {
+  const list = r.closed || []; if (!list.length) return 'Bot apagado. No había posiciones abiertas.';
+  const ok = list.filter((x) => x.placed); const bad = list.filter((x) => !x.placed);
+  return `Bot apagado. ${ok.length} venta(s) enviada(s)${ok.some((x) => x.mode === 'live') ? ' (las reales quedan PENDIENTES hasta que tu exchange las confirme)' : ''}.${bad.length ? ` NO se pudo cerrar: ${bad.map((x) => `${x.symbol}${x.exchange ? '/' + x.exchange : ''} (${x.reason || 'sin motivo'})`).join('; ')}. Revisa tu exchange.` : ''} Las órdenes que ya estuvieran abiertas en el exchange no se cancelan: revísalas allí.`;
+}
+function showCloseResult(r, node) {
+  const msg = closeSummary(r);
+  if (node) setMsg(node, msg, !(r.failed > 0)); else alert(msg);
+}
+function bindManual(main, { connections, live }) {
+  const box = $('#mt_box', main); if (!box) return;
+  const msg = $('#mt_m', main); const posEl = $('#mt_pos', main);
+  const loadPos = async () => {
+    try { const p = await api('GET', '/api/positions'); const row = (x, m) => `<tr><td>${esc(x.symbol)}</td><td>${m}</td><td class="r">${num(x.qty, 8)}</td><td class="r">${money(x.avgCost)}</td></tr>`;
+      posEl.innerHTML = p.live.length || p.paper.length ? `<div class="scroll"><table><thead><tr><th>Cripto</th><th>Modo</th><th class="r">Cantidad</th><th class="r">Costo medio</th></tr></thead><tbody>${p.live.map((x) => row(x, 'REAL · ' + esc(x.exchange))).join('')}${p.paper.map((x) => row(x, 'papel')).join('')}</tbody></table></div>` : '<p class="muted" style="font-size:13px">Sin posiciones abiertas.</p>'; } catch { /* sin lista */ }
+  };
+  loadPos();
+  const trade = async (side, frac) => {
+    const f = $('#mt_f', main); const mode = f.mode.value; const body = { side, mode, symbol: f.symbol.value.trim().toUpperCase(), confirm: true };
+    if (side === 'buy') { body.usd = Number(f.usd.value); body.liveAck = f.ack.checked; body.connectionId = f.connectionId ? f.connectionId.value : null; } else body.fraction = frac;
+    try { const r = await api('POST', '/api/trade', body); const x = (r.results || [])[0];
+      setMsg(msg, x ? (x.placed ? `${side === 'buy' ? 'Compra' : 'Venta'} enviada${mode === 'live' ? ' (pendiente hasta que el exchange la confirme)' : ' (simulada)'}.` : `No se envió: ${x.reason || 'sin motivo'}`) : 'No tienes posición para vender en ese modo.', !!(x && x.placed)); loadPos(); }
+    catch (e) { setMsg(msg, e.message); }
+  };
+  const btn = (id, side, frac, txt) => { const b = $(id, main); b.onclick = () => { if (confirmTap(b, `Toca otra vez: ${txt}`)) trade(side, frac); }; };
+  btn('#mt_buy', 'buy', 1, 'COMPRAR'); btn('#mt_s25', 'sell', 0.25, 'VENDER 25%'); btn('#mt_s50', 'sell', 0.5, 'VENDER 50%'); btn('#mt_s100', 'sell', 1, 'VENDER 100%');
+}
+
 function bindKill() {
   const k = $('#rk_kill'); if (!k || k.dataset.b) return; k.dataset.b = '1';
-  k.onclick = async () => { k.disabled = true; try { await api('POST', '/api/bot/kill'); const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } updateViz(b); refreshRisk(b); } catch { k.disabled = false; } };
+  k.onclick = async () => {
+    if (!confirmTap(k, 'Toca otra vez: VENDER todo y apagar')) return;
+    k.disabled = true;
+    try { const r = await api('POST', '/api/bot/kill', { closeAll: true }); showCloseResult(r); const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } updateViz(b); refreshRisk(b); k.disabled = false; k.textContent = '⏻ Cerrar todo y apagar'; }
+    catch (e) { k.disabled = false; alert(e.message); }
+  };
 }
 
 const myBotCards = (bn) => `<div class="card" data-open id="rk"><h2>Controles de riesgo</h2><div id="rk_b">${riskBarHtml(bn, botViz(bn))}</div></div>\n  <div class="card" data-open id="bz"><h2>Cerebro en vivo</h2><div id="bz_b">${vizHtml(botViz(bn), 'bz_v')}</div></div>
@@ -803,6 +843,19 @@ async function tabBot(main) {
     <p class="muted" style="font-size:13px;margin:0 0 8px">El <b>Cerebro AUTO</b> prueba todas las criptos grandes con costos reales de Coinbase y Robinhood y solo compra las que pasan la prueba, en el exchange más barato. Empieza en papel (sin dinero).</p>
     <div class="row"><button class="btn" id="q_auto">▶ Cerebro AUTO · papel</button><button class="btn ghost" id="q_demo">Demo: BTC cada 15 min</button></div><div class="msg" id="qm"></div>
   </div>
+  <div class="card" data-open id="mt_box"><h2>Comprar / Vender a mano</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">Cada botón pide un segundo toque para confirmar. En <b>real</b>, comprar respeta tus topes, tu plan y la parada de emergencia; <b>vender</b> siempre se permite (solo reduce riesgo). Las órdenes reales quedan pendientes hasta que el exchange las confirme.</p>
+    <form id="mt_f" class="form">
+      <label>Modo<select name="mode"><option value="paper">Papel (simulado)</option>${live && connections.length ? '<option value="live">REAL</option>' : ''}</select></label>
+      <label>Cripto<input name="symbol" list="symlist" value="BTC-USD" autocomplete="off" autocapitalize="characters"></label>
+      ${live && connections.length ? `<label>Exchange (real)<select name="connectionId">${connections.map((c) => `<option value="${esc(c.id)}">${esc(c.exchange)} · ${esc(c.label)}</option>`).join('')}</select></label>` : ''}
+      <label>USD por compra<input name="usd" type="number" min="1" step="any" value="10"></label>
+      <label class="check full"><input type="checkbox" name="ack"><span>Si elegí REAL: entiendo que es dinero real y que puedo perder lo que invierta.</span></label>
+      <div class="full row"><button class="btn" type="button" id="mt_buy">Comprar</button><button class="btn danger" type="button" id="mt_s25">Vender 25%</button><button class="btn danger" type="button" id="mt_s50">Vender 50%</button><button class="btn danger" type="button" id="mt_s100">Vender 100%</button></div>
+      <div class="msg full" id="mt_m"></div>
+    </form>
+    <h3 style="margin-top:12px">Mis posiciones abiertas</h3><div id="mt_pos" class="muted">Cargando…</div>
+  </div>
   <div class="card" data-open><h2>Real: comprar ya</h2>
     ${live && connections.length ? `<p class="muted" style="font-size:13px;margin:0 0 8px">Compra con dinero REAL en tu exchange, una orden pequeña cada cierto tiempo (DCA), empezando de inmediato. Empieza con montos mínimos.</p>
     <form id="rf" class="form">
@@ -835,7 +888,7 @@ async function tabBot(main) {
       <label class="check full real"><input type="checkbox" name="sizing" ${cfg.sizing === 'balance' ? 'checked' : ''}><span>Usar el saldo disponible en mi exchange (se reparte entre posiciones y nunca pasa los topes de abajo)</span></label>
       <label class="check full real"><input type="checkbox" name="liveAck" ${cfg.liveAck ? 'checked' : ''}><span>Entiendo que el modo REAL usa mi dinero, que puedo perder todo lo que invierta, que los resultados pasados o simulados no garantizan resultados futuros y que Quantum Trading no es asesor financiero.</span></label>
       <label class="check full"><input type="checkbox" name="enabled" ${cfg.enabled ? 'checked' : ''}><span><b>Bot encendido</b></span></label>
-      <div class="full row"><button class="btn" type="submit">Guardar</button><button class="btn ghost" type="button" id="pz">Pausar</button><button class="btn danger" type="button" id="kill">Apagar ya</button></div>
+      <div class="full row"><button class="btn" type="submit">Guardar</button><button class="btn ghost" type="button" id="pz">Pausar</button><button class="btn danger" type="button" id="kill">⏻ Cerrar todo y apagar</button></div>
       <p class="muted full" id="bstate" style="font-size:12px;margin:0"></p>
       <div class="msg full" id="bm"></div>
     </form>
@@ -935,8 +988,10 @@ async function tabBot(main) {
         <p class="muted" style="font-size:12px">Capital virtual ${money(r.capital, 0)} (sin dinero real), ${r.candles} velas. Costos: ${esc(r.cost_profile)}. Son estimaciones; verifica tarifas y spreads reales en tu exchange.</p>`;
     } catch (err) { setMsg($('#bt_m'), err.message); }
   });
+  bindManual(main, { connections, live });
   $('#kill').addEventListener('click', async () => {
-    try { await api('POST', '/api/bot/kill'); $('#bf').enabled.checked = false; setMsg($('#bm'), 'Bot apagado.', true); showBotState(); } catch (err) { setMsg($('#bm'), err.message); }
+    if (!confirmTap($('#kill'), 'Toca otra vez: VENDER todo y apagar')) return;
+    try { const r = await api('POST', '/api/bot/kill', { closeAll: true }); $('#bf').enabled.checked = false; showCloseResult(r, $('#bm')); showBotState(); $('#kill').textContent = '⏻ Cerrar todo y apagar'; } catch (err) { setMsg($('#bm'), err.message); }
   });
   // Estado real del ciclo de vida (lo guarda el servidor) y pausa/reanudar.
   const STATE_ES = { CREATED: 'creado', CONFIGURED: 'configurado', VALIDATING: 'validando', RUNNING: 'en marcha', PAUSED: 'en pausa', STOPPING: 'deteniéndose', STOPPED: 'detenido', ERROR: 'con error', EMERGENCY_STOP: 'PARADA DE EMERGENCIA' };

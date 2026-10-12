@@ -306,3 +306,5 @@ td.runs{overflow-wrap:anywhere}
 .rnrow{padding:8px 0;border-top:1px solid var(--line,#2a2a2a)}.rnrow:first-child{border-top:0}.rnh{display:flex;gap:10px;align-items:baseline}.rnrow .runs{font-size:12px;line-height:1.4;margin-top:2px}
 
 .btn.sm{padding:6px 12px;font-size:13px}
+
+.btn.armed{outline:2px solid #fff;animation:pulse .6s infinite alternate}@keyframes pulse{to{filter:brightness(1.4)}}

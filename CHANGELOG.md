@@ -1,6 +1,9 @@
 # Notas de versión
 
 ## 19.32 — Planes y facturación
+## 19.34 — Cerrar todo y operación manual
+El kill switch ahora **cierra todas las posiciones y apaga** (solo vende, permitido incluso con parada de emergencia). Botones Comprar / Vender (25/50/100 %) con confirmación de doble toque y las mismas compuertas de riesgo.
+
 ## 19.33 — Lanzamiento
 Borradores legales (para abogado), revisión de licencias, onboarding y checklist de aceptación, página de estado (`/status.html`) e informe de preparación con bloqueos (`docs/LAUNCH-READINESS.md`).
 

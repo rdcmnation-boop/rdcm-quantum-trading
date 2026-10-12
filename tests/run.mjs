@@ -1338,6 +1338,73 @@ console.log('Fase 8: lanzamiento (documentos y página de estado)');
   t('página de estado pública y sin datos internos (solo /api/ready, sin versión ni secretos)', st.status === 200 && stj.status === 200 && /api\/ready/.test(await stj.clone().text()) && !/version|secret|token/i.test(await stj.text()));
   t('la página de estado cumple la CSP (sin scripts en línea)', !/<script(?![^>]*src=)/i.test(await st.text()));
 }
+console.log('Cierre de posiciones, botones Comprar/Vender y kill switch');
+{
+  const calls = []; const origSell = good.marketSell; const origBuy = good.marketBuy; const origBal = good.balances;
+  let btcBal = 0.001;
+  good.balances = async () => [{ asset: 'USD', available: 500, hold: 0 }, { asset: 'BTC', available: btcBal, hold: 0 }];
+  good.marketSell = async (c, a) => { calls.push({ side: 'sell', ...a }); return { ok: true, id: 'sell-' + calls.length }; };
+  good.marketBuy = async (c, a) => { calls.push({ side: 'buy', ...a }); return { ok: true, id: 'buy-' + calls.length }; };
+  const mk = async (email) => { const c = client(); const r = await c('POST', '/api/auth/register', { email, password: pw, acceptTos: true }); await store.updateUser(r.body.user.id, { email_verified_at: Date.now() }); const cn = await c('POST', '/api/connections', { exchange: 'coinbase', keyId: 'organizations/o/apiKeys/k', secret: secretPem }); return { c, id: r.body.user.id, cid: cn.body.connection.id }; };
+  const H = await mk('f9h@x.com'); const J = await mk('f9j@x.com');
+  const addLive = (id, qty, usd = 50) => store.addOrder({ user_id: id, mode: 'live', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd, qty, price: 50000, status: 'ok', created_at: Date.now() - 3600000 });
+  await addLive(H.id, 0.001); await addLive(J.id, 0.001);
+  const prevScope = await store.getSetting('live_trading', 'off');
+
+  // papel
+  await H.c('PUT', '/api/bot', { ...cfgPaper, enabled: true }); await store.patchBot(H.id, { last_run: 0 }); await engine.tick();
+  t('papel: hay posición simulada', (await H.c('GET', '/api/positions')).body.paper.length >= 1);
+  // kill + cerrar todo con trading real APAGADO y parada de emergencia ACTIVA: salir siempre se permite
+  await store.setSetting('live_trading', 'off');
+  await O2('POST', '/api/owner/emergency', { on: true, reason: 'prueba f9' });
+  const k = await H.c('POST', '/api/bot/kill', { closeAll: true });
+  const sells = calls.filter((x) => x.side === 'sell');
+  t('kill switch cierra todo: apaga el bot y VENDE la posición real aunque el real esté apagado y haya parada de emergencia', k.status === 200 && k.body.closed.some((x) => x.mode === 'live' && x.placed) && sells.length === 1 && (await H.c('GET', '/api/bot')).body.cfg.enabled === false);
+  t('la venta lleva ID idempotente y no excede el saldo disponible', typeof sells[0].clientOrderId === 'string' && sells[0].clientOrderId.length >= 30 && sells[0].qty <= 0.001 * 0.999 + 1e-12 && sells[0].symbol === 'BTC-USD');
+  t('papel también se cierra con el kill switch', k.body.closed.some((x) => x.mode === 'paper' && x.placed) && (await H.c('GET', '/api/positions')).body.paper.length === 0);
+  const ord = (await store.listOrders(H.id, 50)).find((o) => o.mode === 'live' && o.side === 'sell');
+  t('la venta real queda «enviada, pendiente» (nunca «ejecutada» sin confirmar el broker) y auditada', ord && ord.lifecycle === 'submitted' && (await store.listAudit(300)).some((a) => a.action === 'close_positions' && a.user_id === H.id));
+  const k2 = await H.c('POST', '/api/bot/kill', { closeAll: true });
+  t('doble pulsación: no se vende dos veces (misma orden en el mismo minuto)', calls.filter((x) => x.side === 'sell').length === 1 && k2.body.closed.every((x) => x.mode !== 'live' || !x.placed));
+  t('aislamiento: cerrar las posiciones de H no tocó las de J', (await J.c('GET', '/api/positions')).body.live.length === 1 && calls.filter((x) => x.side === 'sell').length === 1);
+  t('el kill switch sin closeAll solo apaga (compatibilidad)', (await J.c('POST', '/api/bot/kill')).body.closed.length === 0 && calls.filter((x) => x.side === 'sell').length === 1);
+  await O2('POST', '/api/owner/emergency', { on: false });
+
+  { const fm = feed.getPrice; feed.getPrice = async () => { throw new Error('sin red'); }; await new Promise((r) => setTimeout(r, 0)); const e = await H.c('POST', '/api/trade', { side: 'buy', mode: 'paper', symbol: 'AVAX-USD', usd: 5, confirm: true }); feed.getPrice = fm;
+    t('si el precio no se puede leer: mensaje claro, sin error 500 ni orden', e.status === 200 && e.body.results[0].placed === false && /precio/.test(e.body.results[0].reason)); }
+  // vender: fracción, saldo menor que el libro, sin conexión, fallar cerrado
+  btcBal = 0.0004;
+  const s50 = await J.c('POST', '/api/trade', { side: 'sell', mode: 'live', symbol: 'BTC-USD', fraction: 0.5, confirm: true });
+  t('vender 50% nunca pasa del saldo real del exchange (libro 0.001, saldo 0.0004)', s50.status === 200 && calls.filter((x) => x.side === 'sell').length === 2 && calls[calls.length - 1].qty <= 0.0004 * 0.999 + 1e-12);
+  t('vender sin confirmar / fracción inválida → 400', (await J.c('POST', '/api/trade', { side: 'sell', mode: 'live', symbol: 'BTC-USD', fraction: 1 })).status === 400 && (await J.c('POST', '/api/trade', { side: 'sell', mode: 'live', symbol: 'BTC-USD', fraction: 3, confirm: true })).status === 400);
+  { const before = calls.length; await store.setSetting('risk:platform', '{roto'); const r = await J.c('POST', '/api/trade', { side: 'sell', mode: 'live', symbol: 'ETH-USD', fraction: 1, confirm: true });
+    await addLive(J.id, 0.002); await store.setSetting('risk:platform', '{roto'); const r2 = await J.c('POST', '/api/bot/kill', { closeAll: true });
+    t('fallar cerrado: con los límites de plataforma ilegibles NO sale ninguna venta', calls.length === before && r2.body.closed.some((x) => !x.placed)); await store.setSetting('risk:platform', LOOSE); }
+  { const conns = await store.listConnections(J.id); for (const c of conns) await store.deleteConnection(J.id, c.id); const before = calls.length; const r = await J.c('POST', '/api/bot/kill', { closeAll: true });
+    t('sin conexión segura: lo dice claramente y no inventa nada', calls.length === before && r.body.closed.some((x) => /conexión segura/.test(x.reason || ''))); }
+
+  // comprar en real: compuertas
+  await store.setSetting('live_trading', 'off');
+  const bodyBuy = { side: 'buy', mode: 'live', symbol: 'BTC-USD', usd: 10, confirm: true, liveAck: true, connectionId: H.cid };
+  t('comprar real con el trading real apagado → 403', (await H.c('POST', '/api/trade', bodyBuy)).status === 403);
+  await store.setSetting('live_trading', 'on');
+  t('comprar real sin confirmar el riesgo → 400; sin «confirm» → 400', (await H.c('POST', '/api/trade', { ...bodyBuy, liveAck: false })).status === 400 && (await H.c('POST', '/api/trade', { ...bodyBuy, confirm: false })).status === 400);
+  t('comprar real por encima del tope por orden → 400', (await H.c('POST', '/api/trade', { ...bodyBuy, usd: 5000 })).status === 400);
+  await O2('POST', '/api/owner/emergency', { on: true, reason: 'prueba f9' });
+  { const before = calls.filter((x) => x.side === 'buy').length; const r = await H.c('POST', '/api/trade', bodyBuy);
+    t('con parada de emergencia, COMPRAR queda bloqueado y no llega al broker (vender sí se permite)', calls.filter((x) => x.side === 'buy').length === before && r.body.results[0].placed === false); }
+  await O2('POST', '/api/owner/emergency', { on: false });
+  const okBuy = await H.c('POST', '/api/trade', bodyBuy);
+  t('comprar real permitido: pasa por el riesgo, usa ID idempotente y queda pendiente', okBuy.status === 200 && okBuy.body.results[0].placed === true && calls.filter((x) => x.side === 'buy').length === 1 && typeof calls.find((x) => x.side === 'buy').clientOrderId === 'string');
+  t('comprar dos veces seguidas lo mismo no duplica (mismo minuto)', ((await H.c('POST', '/api/trade', bodyBuy)).body.results[0].placed === false) && calls.filter((x) => x.side === 'buy').length === 1);
+  { const U = client(); await U('POST', '/api/auth/register', { email: 'f9u@x.com', password: pw, acceptTos: true });
+    t('correo sin verificar: no puede comprar en real', (await U('POST', '/api/trade', { ...bodyBuy, connectionId: 'x' })).status === 403); }
+  t('comprar en papel funciona con confirmación y no llama al broker', (await H.c('POST', '/api/trade', { side: 'buy', mode: 'paper', symbol: 'BTC-USD', usd: 10, confirm: true })).status === 200 && calls.filter((x) => x.side === 'buy').length === 1);
+  t('anónimo no puede operar', (await nobody('POST', '/api/trade', bodyBuy)).status === 401 && (await nobody('POST', '/api/bot/kill', { closeAll: true })).status === 401);
+  await store.setSetting('live_trading', prevScope);
+  good.marketSell = origSell; good.marketBuy = origBuy; good.balances = origBal;
+}
+
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');

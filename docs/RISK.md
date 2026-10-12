@@ -31,3 +31,10 @@ Limitación conocida: mientras no exista la reconciliación (Fase 4), las órden
 1. Levanta la emergencia solo después de revisar `Últimas decisiones de riesgo`, el estado del broker y las órdenes `unknown`.
 2. Si los límites de plataforma salen ilegibles, corrige con `PUT /api/owner/risk` (valores > 0) o borra el ajuste `risk:platform` para volver a los valores por defecto.
 3. Para ver por qué se bloqueó una orden: auditoría, actor `risk`.
+
+## Cerrar posiciones y operación manual (v19.34)
+- **Kill switch = «Cerrar todo y apagar»** (`POST /api/bot/kill {closeAll:true}`): apaga el bot y **vende** todas las posiciones abiertas del cliente (real y papel) a mercado. No cancela órdenes que ya estén abiertas en el exchange (hay que revisarlas allí).
+- **Cerrar = solo vender (`reduceOnly`)**: se permite aunque el administrador haya apagado el trading real y aunque haya parada de emergencia, porque solo reduce riesgo. No se salta: límites de plataforma legibles (si están corruptos, **no vende**: falla cerrado), precio válido y fresco, ID idempotente (doble pulsación en el mismo minuto no vende dos veces), libro de órdenes y auditoría.
+- La cantidad vendida es `min(posición del libro, saldo disponible del exchange × 0.999)`. Si el exchange no muestra saldo, no se envía nada.
+- **Comprar a mano** (`POST /api/trade`) en real pasa por TODAS las compuertas: correo verificado, trading real habilitado, plan, tope por orden y por día, parada de emergencia, riesgo central y confirmación explícita. En la app, cada botón exige un segundo toque.
+- Las ventas/compras reales quedan «enviadas/pendientes» hasta que la conciliación confirme con el broker.
