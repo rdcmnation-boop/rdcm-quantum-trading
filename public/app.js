@@ -203,10 +203,11 @@ function dashHtml(d) {
   return `${start}<div class="real ${r.total > 0 ? 'up' : r.total < 0 ? 'down' : ''}">
       <div class="row" style="justify-content:space-between"><span class="chip live">DINERO REAL</span><span class="muted" style="font-size:12px">${d.bot.enabled && d.bot.mode === 'live' ? '● bot real activo' : 'bot real apagado'}</span></div>
       <div class="bigv ${cls(r.total)}">${none ? '$0.00' : money(r.total)}</div>
-      <div class="muted" style="font-size:12px">resultado total real · ${money(r.realized)} cerrado · ${r.unrealized === null ? '—' : money(r.unrealized)} abierto</div>
+      <div class="muted" style="font-size:12px">resultado total real${r.estimated ? ' (estimado)' : ''} · ${money(r.realized)} cerrado · ${r.unrealized === null ? '—' : money(r.unrealized)} abierto</div>
       <div class="kpis" style="margin-top:8px"><div class="kpi"><div class="l">Invertido ahora</div><div class="v" style="font-size:16px">${money(r.invested_now)}</div></div>
         <div class="kpi"><div class="l">Compras / ventas</div><div class="v" style="font-size:16px">${r.orders}</div><div class="s">${money(r.bought, 0)} / ${money(r.sold, 0)}</div></div>
         <div class="kpi"><div class="l">Errores (6 h)</div><div class="v ${r.errors ? 'neg' : ''}" style="font-size:16px">${r.errors}</div>${r.errors_old ? `<div class="s">${r.errors_old} anteriores</div>` : ''}</div></div>
+      ${none ? '' : `<div class="muted" style="font-size:12px;margin-top:6px">${r.confirmed} confirmada(s) por el broker${r.legacy ? ` · ${r.legacy} anterior(es) sin verificar` : ''}${r.pending ? ` · <b>${r.pending} pendiente(s) de confirmar</b>` : ''}${r.fees_usd ? ` · comisiones reales ${money(r.fees_usd)}` : ''}. ${r.estimated ? 'Hasta que el broker confirme todo, las cifras son estimadas.' : 'Cifras confirmadas por el broker.'}</div>`}
       ${none ? '<p class="muted" style="margin:8px 0 0">Aún no hay operaciones reales. Ve a Bot → «Real: comprar ya» (con trading real activado en Ajustes).</p>' : ''}
       ${r.holdings.length ? `<div class="row" style="margin-top:8px">${r.holdings.map((h) => `<span class="chip"><b>${esc(h.symbol.replace('-USD', ''))}</b> ${h.value !== null ? money(h.value) : '—'} · ${esc(h.venue || '')}</span>`).join(' ')}</div>` : ''}
       ${rows ? `<div class="scroll" style="margin-top:6px"><table><tbody>${rows}</tbody></table></div>` : ''}

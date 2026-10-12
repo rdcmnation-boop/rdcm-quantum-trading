@@ -1430,6 +1430,20 @@ console.log('Meta de ganancia (toma de ganancia)');
   t('AUTO: +1.5% bruto con costo 1.6% NO cuenta como ganancia (neto negativo): no vende por meta', !(e2.sell && /Toma de ganancia/.test(e2.reason)));
   t('validación: meta fuera de rango o no numérica se rechaza', ST.validateCfg({ ...ST.DEFAULT_CFG, takeProfitPct: 150 }).ok === false && ST.validateCfg({ ...ST.DEFAULT_CFG, takeProfitPct: 'x' }).ok === false && ST.validateCfg({ ...ST.DEFAULT_CFG, takeProfitPct: 2 }).ok === true && ST.validateCfg({ ...ST.DEFAULT_CFG }).cfg.takeProfitPct === 0);
 }
+
+console.log('Panel: cifras confirmadas vs estimadas');
+{
+  const c = client(); const r = await c('POST', '/api/auth/register', { email: 'dash9@x.com', password: pw, acceptTos: true }); const id = r.body.user.id;
+  const mkO = (extra) => store.addOrder({ user_id: id, mode: 'live', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0002, price: 50000, created_at: Date.now() - 3600000, ...extra });
+  await mkO({ status: 'ok', lifecycle: 'filled', fee_usd: 0.06 }); await mkO({ status: 'ok' }); await mkO({ status: 'pending', lifecycle: 'submitted' }); await mkO({ status: 'error', lifecycle: 'rejected', note: 'rechazada' });
+  const d = (await c('GET', '/api/dashboard')).body.real;
+  t('panel: una orden «pendiente de confirmar» NO cuenta como error', d.pending === 1 && d.errors === 1);
+  t('panel: separa confirmadas por el broker, anteriores sin verificar y pendientes; suma comisiones reales', d.confirmed === 1 && d.legacy === 1 && Math.abs(d.fees_usd - 0.06) < 1e-9);
+  t('panel: mientras haya pendientes o sin verificar, el resultado se marca como estimado', d.estimated === true);
+  const c2 = client(); const r2 = await c2('POST', '/api/auth/register', { email: 'dash10@x.com', password: pw, acceptTos: true });
+  await store.addOrder({ user_id: r2.body.user.id, mode: 'live', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0002, price: 50000, status: 'ok', lifecycle: 'filled', fee_usd: 0.06, created_at: Date.now() - 3600000 });
+  t('panel: con todo confirmado por el broker, las cifras no se marcan como estimadas', (await c2('GET', '/api/dashboard')).body.real.estimated === false);
+}
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');

@@ -1,6 +1,9 @@
 # Notas de versión
 
 ## 19.32 — Planes y facturación
+## 19.37 — Panel honesto
+Las órdenes «pendientes de confirmar» ya no cuentan como error. El panel de dinero real muestra cuántas órdenes confirmó el broker, cuántas siguen estimadas, las comisiones reales y marca el resultado como «estimado» hasta que todo esté confirmado.
+
 ## 19.36 — Audio y meta de ganancia
 Botón 🔈 en cada sección (lee título y contenido). Nueva «meta de ganancia» (neta de costos en AUTO) para vender y seguir buscando; el stop-loss se mantiene.
 
