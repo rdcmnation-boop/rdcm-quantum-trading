@@ -47,6 +47,25 @@ const b = await store.getBot(u.id); await store.patchBot(u.id, { cfg: { ...b.cfg
 t('Postgres: apagar → STOPPED', (await store.getBot(u.id)).state === 'STOPPED' && (await store.getBot(u.id)).strategy_version === 'qt-2026.10');
 await store.saveBot(u.id, { symbol: 'BTC-USD', enabled: true, mode: 'live' }); await store.setBotState(u.id, 'EMERGENCY_STOP', 'prueba'); t('Postgres: EMERGENCY_STOP y vuelta a RUNNING', (await store.getBot(u.id)).state === 'EMERGENCY_STOP' && (await store.setBotState(u.id, 'RUNNING', 'levantada')).state === 'RUNNING');
 
+// Cuentas: tokens de un solo uso y sesiones
+{
+  const w = await store.createUser({ email: 'tok@x.com', pass_hash: 'h' }); const w2 = await store.createUser({ email: 'tok2@x.com', pass_hash: 'h' });
+  await store.createAuthToken({ hash: 'T1', user_id: w.id, kind: 'reset', expires_at: Date.now() + 60000 });
+  const race = await Promise.all(Array.from({ length: 8 }, () => store.consumeAuthToken('T1', 'reset')));
+  t('Postgres: 8 canjes simultáneos del mismo token → exactamente 1', race.filter(Boolean).length === 1);
+  await store.createAuthToken({ hash: 'T2', user_id: w.id, kind: 'reset', expires_at: Date.now() + 60000 }); await store.createAuthToken({ hash: 'T3', user_id: w.id, kind: 'reset', expires_at: Date.now() + 60000 });
+  t('Postgres: un token nuevo anula el anterior sin usar', (await store.consumeAuthToken('T2', 'reset')) === null && (await store.consumeAuthToken('T3', 'reset')) !== null);
+  await store.createAuthToken({ hash: 'T4', user_id: w.id, kind: 'verify', expires_at: Date.now() - 5 });
+  t('Postgres: token vencido o de otro tipo no se canjea', (await store.consumeAuthToken('T4', 'verify')) === null && (await store.consumeAuthToken('T3', 'verify')) === null);
+  await store.updateUser(w.id, { email_verified_at: 123, recovery_codes: '["x"]' });
+  t('Postgres: correo verificado y códigos de respaldo persisten', (await store.getUserById(w.id)).email_verified_at === 123 && (await store.getUserById(w.id)).recovery_codes === '["x"]');
+  await store.createSession({ id: 'S1', user_id: w.id, expires_at: Date.now() + 60000, ip: '1.1.1.1', ua: 'a' }); await store.createSession({ id: 'S2', user_id: w.id, expires_at: Date.now() + 60000, ip: '1.1.1.2', ua: 'b' }); await store.createSession({ id: 'S3', user_id: w2.id, expires_at: Date.now() + 60000, ip: 'x', ua: 'c' });
+  t('Postgres: lista solo las sesiones del usuario', (await store.listSessions(w.id)).length === 2 && (await store.listSessions(w2.id)).length === 1);
+  t('Postgres: no se puede revocar la sesión de otro usuario', (await store.revokeSession(w2.id, 'S1')) === false && (await store.getSession('S1')).revoked_at === null);
+  t('Postgres: revoke-others conserva la actual', (await store.revokeSessions(w.id, 'S1')) === 1 && (await store.getSession('S2')).revoked_at > 0 && (await store.getSession('S1')).revoked_at === null);
+  await store.deleteUserData(w.id); t('Postgres: borrar cuenta borra tokens y sesiones', (await store.getSession('S1')) === null && (await store.consumeAuthToken('T3', 'reset')) === null);
+}
+
 // Borrado de cuenta: todo, incluido el libro de órdenes
 await store.deleteUserData(u.id);
 t('Postgres: borrar la cuenta borra órdenes, eventos y bot', (await store.listOrders(u.id)).length === 0 && (await store.listOrderEvents(u.id, first.id)).length === 0 && (await store.getBot(u.id)) === null && (await store.getUserById(u.id)) === null);

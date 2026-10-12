@@ -22,3 +22,8 @@ Plataforma SaaS **no-custodial** de bots cripto (Coinbase Advanced y Robinhood C
 
 ## Legal
 `public/legal.html` es un **borrador**. Revísalo con un abogado de Florida antes de cobrar o activar trading real para clientes.
+
+## Cuentas y correo (v19.31)
+- Variables nuevas (opcionales): `RESEND_API_KEY` + `EMAIL_FROM` (correo transaccional vía Resend; integración NO verificada con cuenta real) y `PUBLIC_URL` (base de los enlaces de los correos, p. ej. `https://tu-dominio`).
+- Sin proveedor de correo no se envía nada y la app lo dice (`/api/health` → `mail: "none"`). Mientras tanto el dueño puede verificar correos a mano (`POST /api/owner/users/:id/verify-email`, auditado).
+- Operar en real exige correo verificado (clientes). La recuperación de contraseña no aplica al dueño (se cambia con `OWNER_PASSWORD`).

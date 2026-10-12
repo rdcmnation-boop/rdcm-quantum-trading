@@ -9,6 +9,7 @@ import { createApp, buildBotBundle } from '../lib/app.js';
 import { createEngine } from '../lib/engine.js';
 import { memoryStore } from '../lib/store.js';
 import * as sec from '../lib/security.js';
+import { createMailer } from '../lib/mailer.js';
 import { coinbaseJwt, robinhoodSign } from '../lib/exchanges.js';
 import { decide, validateCfg, positionFromOrders } from '../lib/strategy.js';
 import { rsi, macd, ema, bollinger, sma } from '../lib/indicators.js';
@@ -250,6 +251,9 @@ t('2FA: login con código malo falla', (await O2('POST', '/api/auth/login', { em
 t('2FA: login con código bueno', (await O2('POST', '/api/auth/login', { email: 'owner@test.com', password: env.OWNER_PASSWORD, totp: sec.totp(setup.body.secret) })).status === 200);
 
 t('2FA: el mismo código no se puede reusar (anti-replay)', (await client()('POST', '/api/auth/login', { email: 'owner@test.com', password: env.OWNER_PASSWORD, totp: sec.totp(setup.body.secret) })).status === 401);
+
+// (fase 6) operar en real exige correo verificado: aquí se verifica a A y B como si hubieran abierto el enlace
+for (const e of ['a@x.com', 'b@x.com']) await store.updateUser((await store.getUserByEmail(e)).id, { email_verified_at: Date.now() });
 
 // aislamiento de datos
 const secretPem = ['-----BEGIN EC PRIVATE KEY-----', ['SECRET-PEM', 'XYZ', '123'].join('-'), '-----END EC PRIVATE KEY-----'].join('\n');
@@ -1096,6 +1100,119 @@ console.log('Fase 2: rutas de riesgo y emergencia');
   t('dueño activa la emergencia: queda registrada, auditada y con la política documentada', em.status === 200 && ov.body.emergency.on === true && /NO cancela/.test(ov.body.policy) && (await store.listAudit(20)).some((a) => a.action === 'emergency_stop_on'));
   await O2('POST', '/api/owner/emergency', { on: false }); await O2('PUT', '/api/owner/risk', { maxOrderUsd: 1000 });
 }
+console.log('Fase 6: cuentas (correo, recuperación, 2FA de clientes, dispositivos, aislamiento)');
+{
+  const mails = (to) => app.mailer.outbox.filter((m) => m.to === to);
+  const tokOf = (to, kind) => { const m = mails(to).filter((x) => x.text.includes(`#${kind}=`)).pop(); const r = m && m.text.match(new RegExp(`#${kind}=([A-Za-z0-9_-]+)`)); return r && r[1]; };
+  const pw1 = 'Clave-Fase6-ABCDE'; const pw2 = 'Clave-Nueva-Fase6-Z';
+  const U = client();
+  const prevScope = await store.getSetting('live_trading', 'off');
+  await store.setSetting('live_trading', 'on');
+
+  t('sin proveedor de correo: se dice con honestidad (health.mail = none) y no se finge envío', (await anon('GET', '/api/health')).body.mail === 'none' && (await app.mailer.send({ to: 'x@x.com', subject: 's', text: 't' })).sent === false);
+  const reg = await U('POST', '/api/auth/register', { email: 'f6u@x.com', password: pw1, acceptTos: true });
+  await app.idle();
+  t('registro: queda sin verificar y se genera correo con enlace', reg.status === 201 && reg.body.user.email_verified === false && !!tokOf('f6u@x.com', 'verify'));
+  t('la API nunca devuelve el token (solo va por correo)', !JSON.stringify(reg.body).includes(tokOf('f6u@x.com', 'verify')));
+  t('sin verificar: trading real no disponible aunque esté habilitado para todos', (await U('GET', '/api/me')).body.liveTradingEnabled === false);
+  const liveTry = await U('PUT', '/api/bot', { symbol: 'BTC-USD', strategy: 'dca', usd: 5, intervalMin: 60, mode: 'live', enabled: true, liveAck: true, connectionId: 'x', maxOrderUsd: 25, maxDailyUsd: 100 });
+  t('sin verificar: activar bot en real → 403 need_email_verify', liveTry.status === 403 && liveTry.body.need_email_verify === true);
+  t('verificar con token falso → 400', (await anon('POST', '/api/auth/verify-email', { token: 'x'.repeat(43) })).status === 400);
+  const vt = tokOf('f6u@x.com', 'verify');
+  t('verificar con el token real → 200', (await anon('POST', '/api/auth/verify-email', { token: vt })).status === 200);
+  t('el token es de un solo uso', (await anon('POST', '/api/auth/verify-email', { token: vt })).status === 400);
+  const meV = await U('GET', '/api/me');
+  t('verificado: perfil lo refleja y el real queda disponible', meV.body.user.email_verified === true && meV.body.liveTradingEnabled === true);
+  await store.setSetting('live_trading', prevScope);
+
+  // token vencido
+  { const u = await store.getUserByEmail('f6u@x.com'); await store.createAuthToken({ hash: 'h'.repeat(64), user_id: u.id, kind: 'reset', expires_at: Date.now() - 1000 });
+    t('token vencido no se acepta', (await store.consumeAuthToken('h'.repeat(64), 'reset')) === null);
+    await store.createAuthToken({ hash: 'k'.repeat(64), user_id: u.id, kind: 'verify', expires_at: Date.now() + 99999 });
+    t('un token de verificación no sirve para restablecer contraseña (tipo distinto)', (await store.consumeAuthToken('k'.repeat(64), 'reset')) === null); }
+
+  // recuperación de contraseña
+  const nMail = app.mailer.outbox.length;
+  const f1 = await anon('POST', '/api/auth/forgot', { email: 'f6u@x.com' });
+  const f2 = await anon('POST', '/api/auth/forgot', { email: 'noexiste-f6@x.com' });
+  const f3 = await anon('POST', '/api/auth/forgot', { email: 'owner@test.com' });
+  await app.idle();
+  t('forgot: misma respuesta exista o no la cuenta (no revela cuentas)', f1.status === 200 && JSON.stringify(f1.body) === JSON.stringify(f2.body) && JSON.stringify(f2.body) === JSON.stringify(f3.body));
+  t('forgot: solo se envía correo a la cuenta real (ni inexistente ni dueño)', app.mailer.outbox.length === nMail + 1 && mails('noexiste-f6@x.com').length === 0 && mails('owner@test.com').length === 0);
+  { const lim = client(); let last; for (let i = 0; i < 5; i++) last = await lim('POST', '/api/auth/forgot', { email: 'limite-f6@x.com' }); t('forgot: limitado por correo (3/hora)', last.status === 429); }
+  const rt = tokOf('f6u@x.com', 'reset');
+  t('reset: contraseña corta → 400', (await anon('POST', '/api/auth/reset', { token: rt, password: 'corta' })).status === 400);
+  t('reset: token falso → 400', (await anon('POST', '/api/auth/reset', { token: 'z'.repeat(43), password: pw2 })).status === 400);
+  const [r1, r2] = await Promise.all([client()('POST', '/api/auth/reset', { token: rt, password: pw2 }), client()('POST', '/api/auth/reset', { token: rt, password: 'Otra-Distinta-Fase6' })]);
+  t('reset: dos canjes simultáneos del mismo token → solo uno gana', [r1.status, r2.status].sort().join() === '200,400');
+  t('reset: la sesión anterior queda cerrada', (await U('GET', '/api/me')).status === 401);
+  const winner = r1.status === 200 ? pw2 : 'Otra-Distinta-Fase6';
+  t('reset: la clave vieja ya no entra y la nueva sí', (await client()('POST', '/api/auth/login', { email: 'f6u@x.com', password: pw1 })).status === 401 && (await client()('POST', '/api/auth/login', { email: 'f6u@x.com', password: winner })).status === 200);
+  t('reset: el token ya usado no sirve otra vez', (await anon('POST', '/api/auth/reset', { token: rt, password: pw1 + 'x' })).status === 400);
+  t('reset: se avisa por correo del cambio', mails('f6u@x.com').some((m) => /cambió/.test(m.subject)));
+
+  // 2FA de clientes
+  const C = client();
+  await C('POST', '/api/auth/register', { email: 'f6m@x.com', password: winner, acceptTos: true });
+  t('2FA cliente: setup exige la contraseña', (await C('POST', '/api/me/2fa/setup', { password: 'mala' })).status === 400);
+  const s2 = await C('POST', '/api/me/2fa/setup', { password: winner });
+  t('2FA cliente: setup entrega secreto', s2.status === 200 && s2.body.secret.length >= 16);
+  t('2FA cliente: enable con código malo falla', (await C('POST', '/api/me/2fa/enable', { code: '000000' })).status === 400 || sec.totp(s2.body.secret) === '000000');
+  const en = await C('POST', '/api/me/2fa/enable', { code: sec.totp(s2.body.secret) });
+  t('2FA cliente: se activa y entrega 8 códigos de respaldo', en.status === 200 && en.body.recovery_codes.length === 8 && new Set(en.body.recovery_codes).size === 8);
+  const stored = await store.getUserByEmail('f6m@x.com');
+  t('los códigos de respaldo se guardan solo como hash y el secreto cifrado', !stored.recovery_codes.includes(en.body.recovery_codes[0]) && String(stored.totp_secret).startsWith('v1.'));
+  const need2 = await client()('POST', '/api/auth/login', { email: 'f6m@x.com', password: winner });
+  t('2FA cliente: login sin código lo pide', need2.status === 401 && need2.body.need_totp === true);
+  t('2FA cliente: login con código malo falla', (await client()('POST', '/api/auth/login', { email: 'f6m@x.com', password: winner, totp: '111111' })).status === 401);
+  const goodCode = sec.totp(s2.body.secret);
+  t('2FA cliente: login con código bueno', (await client()('POST', '/api/auth/login', { email: 'f6m@x.com', password: winner, totp: goodCode })).status === 200);
+  t('2FA cliente: el mismo código no se reutiliza', (await client()('POST', '/api/auth/login', { email: 'f6m@x.com', password: winner, totp: goodCode })).status === 401);
+  const rc = en.body.recovery_codes[0];
+  t('respaldo: código inválido falla', (await client()('POST', '/api/auth/login', { email: 'f6m@x.com', password: winner, recovery: 'aaaaa-bbbbb' })).status === 401);
+  t('respaldo: un código válido entra una sola vez', (await client()('POST', '/api/auth/login', { email: 'f6m@x.com', password: winner, recovery: rc })).status === 200 && (await client()('POST', '/api/auth/login', { email: 'f6m@x.com', password: winner, recovery: rc })).status === 401);
+  t('2FA cliente: no se puede quitar sin contraseña y código', (await C('POST', '/api/me/2fa/disable', { password: winner, code: '000000' })).status === 400 && (await C('POST', '/api/me/2fa/disable', { password: 'mala', code: sec.totp(s2.body.secret) })).status === 400);
+  t('2FA: queda registrado en auditoría', (await store.listAudit(200)).some((a) => a.action === 'mfa_enabled') && (await store.listAudit(200)).some((a) => a.action === '2fa_recovery_used'));
+  t('2FA cliente: se desactiva con contraseña + código', (await C('POST', '/api/me/2fa/disable', { password: winner, code: sec.totp(s2.body.secret) })).status === 200 && !(await store.getUserByEmail('f6m@x.com')).totp_secret);
+  t('el dueño no puede usar la ruta de 2FA de clientes', (await O2('POST', '/api/me/2fa/setup', { password: env.OWNER_PASSWORD })).status === 400);
+
+  // dispositivos / sesiones
+  const S1 = client(); const S2 = client(); const Z = client();
+  await client()('POST', '/api/auth/register', { email: 'f6s@x.com', password: pw1, acceptTos: true });
+  await S1('POST', '/api/auth/login', { email: 'f6s@x.com', password: pw1 }); await S2('POST', '/api/auth/login', { email: 'f6s@x.com', password: pw1 });
+  await Z('POST', '/api/auth/register', { email: 'f6z@x.com', password: pw1, acceptTos: true });
+  const l1 = await S1('GET', '/api/me/sessions');
+  t('dispositivos: lista las sesiones activas con una marcada como actual', l1.status === 200 && l1.body.sessions.length >= 2 && l1.body.sessions.filter((x) => x.current).length === 1);
+  t('dispositivos: no expone tokens ni hashes', !JSON.stringify(l1.body).match(/hash|token|secret/i));
+  const other = l1.body.sessions.find((x) => !x.current);
+  const zl = await Z('GET', '/api/me/sessions');
+  t('aislamiento: otro cliente no puede revocar mi sesión', (await Z('POST', '/api/me/sessions/revoke', { id: other.id })).status === 404 && (await S2('GET', '/api/me')).status === 200 && (await S1('GET', '/api/me')).status === 200);
+  t('aislamiento: la lista de otro cliente no incluye mis sesiones', !zl.body.sessions.some((x) => l1.body.sessions.some((y) => y.id === x.id)));
+  const rv = await S1('POST', '/api/me/sessions/revoke', { id: other.id });
+  const dead = [(await S1('GET', '/api/me')).status, (await S2('GET', '/api/me')).status].sort().join();
+  t('dispositivos: revocar una sesión la cierra y deja la otra viva', rv.status === 200 && dead === '200,401');
+  const alive = (await S1('GET', '/api/me')).status === 200 ? S1 : S2; const gone = alive === S1 ? S2 : S1;
+  await gone('POST', '/api/auth/login', { email: 'f6s@x.com', password: pw1 });
+  t('dispositivos: «cerrar las demás» deja solo la actual', (await alive('POST', '/api/me/sessions/revoke-others')).body.revoked >= 1 && (await gone('GET', '/api/me')).status === 401 && (await alive('GET', '/api/me')).status === 200);
+  { const L1 = client(); const L2 = client(); await L1('POST', '/api/auth/login', { email: 'f6s@x.com', password: pw1 }); await L2('POST', '/api/auth/login', { email: 'f6s@x.com', password: pw1 });
+    await L1('POST', '/api/auth/logout'); t('logout cierra solo ese dispositivo', (await L1('GET', '/api/me')).status === 401 && (await L2('GET', '/api/me')).status === 200); }
+  { const real = (await alive('GET', '/api/me')).cookie; const forged = real.replace(/^qt_session=[^.]+/, 'qt_session=' + Buffer.from(JSON.stringify({ uid: 'otro', sv: 0, sid: 'x', exp: Date.now() + 1e6 })).toString('base64url'));
+    t('cookie falsificada o con firma ajena se rechaza', (await client()('GET', '/api/me', null, { Cookie: forged })).status === 401 && (await client()('GET', '/api/me', null, { Cookie: real })).status === 200); }
+
+  // soporte: verificación manual por el dueño (sin proveedor de correo)
+  t('cliente no puede verificar correos', (await Z('POST', `/api/owner/users/${(await store.getUserByEmail('f6u@x.com')).id}/verify-email`)).status === 403);
+  { const zu = await store.getUserByEmail('f6z@x.com'); t('dueño verifica a mano y queda auditado', !zu.email_verified_at && (await O2('POST', `/api/owner/users/${zu.id}/verify-email`)).status === 200 && !!(await store.getUserById(zu.id)).email_verified_at && (await store.listAudit(300)).some((a) => a.action === 'owner_verified_email')); }
+
+  // mailer con proveedor (mock de red)
+  { const calls = []; const mm = createMailer({ env: { RESEND_API_KEY: 'k', EMAIL_FROM: 'a@b.c' }, f: async (u, o) => { calls.push({ u, o }); return { ok: true }; } });
+    const r = await mm.send({ to: 'x@y.z', subject: 's', text: 't' });
+    t('mailer con proveedor: llama a su API con la clave en el encabezado, no en el cuerpo', r.sent && calls[0].u.includes('resend.com') && calls[0].o.headers.Authorization === 'Bearer k' && !calls[0].o.body.includes('"k"'));
+    const bad = createMailer({ env: { RESEND_API_KEY: 'k', EMAIL_FROM: 'a@b.c' }, f: async () => ({ ok: false, status: 500 }) });
+    t('mailer: si el proveedor falla NO se afirma que se envió', (await bad.send({ to: 'x@y.z', subject: 's', text: 't' })).sent === false);
+    const prodM = createMailer({ env: { NODE_ENV: 'production' } }); await prodM.send({ to: 'x@y.z', subject: 's', text: 'link#reset=abc' });
+    t('mailer en producción sin proveedor: no guarda mensajes (llevan enlaces con token)', prodM.outbox.length === 0); }
+}
+
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');

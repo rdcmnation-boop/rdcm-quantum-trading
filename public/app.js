@@ -12,7 +12,7 @@ const num = (n, d = 6) => (n === null || n === undefined ? '—' : Number(n).toL
 const when = (t) => (t ? new Date(t).toLocaleString() : '—');
 const cls = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
 
-const state = { user: null, me: null, tab: 'resumen', authMode: 'login', needTotp: false };
+const state = { user: null, me: null, tab: 'resumen', authMode: 'login', needTotp: false, useRecovery: false, resetToken: null, flash: '' };
 
 async function api(method, path, body) {
   const r = await fetch(path, { method, credentials: 'same-origin',
@@ -31,7 +31,36 @@ function setMsg(node, text, ok = false) {
 }
 
 // ============================ Autenticación ============================
+// Recuperar contraseña (pedir el enlace / elegir una nueva con el token del enlace)
+function viewRecover() {
+  const reset = state.authMode === 'reset';
+  $('#root').innerHTML = `
+  <div class="auth">
+    <div class="brand"><small>RDCMNATION</small>Quantum Trading</div>
+    <div class="card"><h2>${reset ? 'Elige una contraseña nueva' : 'Recuperar contraseña'}</h2>
+      <form id="rf" class="form" style="margin-top:10px">
+        ${reset ? '<label class="full">Contraseña nueva (mínimo 10 caracteres)<input name="password" type="password" required minlength="10" autocomplete="new-password"></label>'
+          : '<label class="full">Correo de tu cuenta<input name="email" type="email" required autocomplete="username"></label>'}
+        <button class="btn full" type="submit">${reset ? 'Guardar contraseña' : 'Enviar enlace'}</button>
+        <div class="msg full" id="m"></div>
+        <button class="btn ghost full" type="button" id="back">Volver a entrar</button>
+      </form>
+      ${reset ? '' : '<p class="muted" style="font-size:12px">Te enviaremos un enlace válido 30 minutos. Si no llega, revisa spam; si el servicio de correo aún no está activo, escríbenos y te ayudamos a mano.</p>'}
+    </div>
+  </div>`;
+  $('#back').onclick = () => { state.authMode = 'login'; state.resetToken = null; viewAuth(); };
+  $('#rf').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target)); const m = $('#m');
+    try {
+      if (reset) { await api('POST', '/api/auth/reset', { token: state.resetToken, password: f.password }); state.authMode = 'login'; state.resetToken = null; state.flash = 'Contraseña cambiada. Ya puedes entrar.'; viewAuth(); }
+      else { const r = await api('POST', '/api/auth/forgot', { email: f.email }); setMsg(m, r.message, true); }
+    } catch (err) { setMsg(m, err.message); }
+  });
+}
+
 function viewAuth() {
+  if (state.authMode === 'forgot' || state.authMode === 'reset') return viewRecover();
   const reg = state.authMode === 'register';
   $('#root').innerHTML = `
   <div class="auth">
@@ -41,26 +70,30 @@ function viewAuth() {
       <form id="f" class="form" style="margin-top:14px" autocomplete="on">
         <label class="full">Correo<input name="email" type="email" required autocomplete="username"></label>
         <label class="full">Contraseña${reg ? ' (mínimo 10 caracteres)' : ''}<input name="password" type="password" required minlength="${reg ? 10 : 1}" autocomplete="${reg ? 'new-password' : 'current-password'}"></label>
-        ${state.needTotp ? '<label class="full">Código 2FA (6 dígitos)<input name="totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>' : ''}
+        ${state.needTotp ? (state.useRecovery ? '<label class="full">Código de respaldo (xxxxx-xxxxx)<input name="recovery" autocomplete="off" required></label>' : '<label class="full">Código 2FA (6 dígitos)<input name="totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>') + `<button class="btn ghost full" type="button" id="rec">${state.useRecovery ? 'Usar la app de 2FA' : 'Perdí mi teléfono: usar código de respaldo'}</button>` : ''}
         ${reg ? `<label class="check full"><input type="checkbox" name="tos" required><span>Soy mayor de 18 años y acepto los <a href="/legal.html#terminos" target="_blank" rel="noopener">Términos</a>, la <a href="/legal.html#privacidad" target="_blank" rel="noopener">Privacidad</a> y el <a href="/legal.html#riesgo" target="_blank" rel="noopener">Aviso de riesgo</a>. Entiendo que esto no es asesoría financiera y que puedo perder dinero.</span></label>` : ''}
         <button class="btn full" type="submit">${reg ? 'Crear cuenta' : 'Entrar'}</button>
         <div class="msg full" id="m"></div>
+        ${reg ? '' : '<button class="btn ghost full" type="button" id="fg">¿Olvidaste tu contraseña?</button>'}
       </form>
     </div>
     <p class="muted" style="font-size:12px">Cada cuenta es privada: ningún cliente puede ver los datos de otro.</p>
   </div>`;
   document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => { state.authMode = b.dataset.m; state.needTotp = false; viewAuth(); }));
+  if (state.flash) { setMsg($('#m'), state.flash, true); state.flash = ''; }
+  const fg = $('#fg'); if (fg) fg.onclick = () => { state.authMode = 'forgot'; viewAuth(); };
+  const rec = $('#rec'); if (rec) rec.onclick = () => { state.useRecovery = !state.useRecovery; viewAuth(); };
   $('#f').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
     const m = $('#m');
     try {
       const r = await api('POST', reg ? '/api/auth/register' : '/api/auth/login',
-        reg ? { email: f.email, password: f.password, acceptTos: f.tos === 'on' } : { email: f.email, password: f.password, totp: f.totp });
-      state.user = r.user; state.needTotp = false; state.tab = r.user.role === 'owner' ? 'o_hoy' : 'resumen';
+        reg ? { email: f.email, password: f.password, acceptTos: f.tos === 'on' } : { email: f.email, password: f.password, totp: f.totp, recovery: f.recovery });
+      state.user = r.user; state.needTotp = false; state.useRecovery = false; state.tab = r.user.role === 'owner' ? 'o_hoy' : 'resumen';
       await boot();
     } catch (err) {
-      if (err.data && err.data.need_totp) { state.needTotp = true; viewAuth(); $('#m').textContent = err.message; $('#m').className = 'msg err'; return; }
+      if (err.data && err.data.need_totp) { const keep = { e: f.email, p: f.password }; state.needTotp = true; viewAuth(); $('#f').email.value = keep.e; $('#f').password.value = keep.p; $('#m').textContent = err.message; $('#m').className = 'msg err'; return; }
       setMsg(m, err.message);
     }
   });
@@ -955,6 +988,7 @@ async function tabCuenta(main) {
       <button class="btn full" type="submit">Cambiar</button><div class="msg full" id="pm"></div>
     </form>`}
   </div>
+  <div class="card" id="seccard"><h2>Seguridad de la cuenta</h2><div id="secb" class="muted">Cargando…</div></div>
   <div class="card"><h2>Mis datos</h2>
     <p class="muted" style="font-size:13px">Descarga una copia de tu perfil, configuración y órdenes. Tus llaves API no se incluyen.</p>
     <a class="btn ghost" href="/api/me/export" download>Descargar mis datos (JSON)</a>
@@ -963,6 +997,7 @@ async function tabCuenta(main) {
     <p class="muted" style="font-size:13px">Borra tu cuenta, tus llaves cifradas, tu bot y tus órdenes. No se puede deshacer.</p>
     <form id="df" class="form"><label>Tu contraseña<input name="password" type="password" required autocomplete="current-password"></label>
       <button class="btn danger full" type="submit">Eliminar cuenta definitivamente</button><div class="msg full" id="dm"></div></form></div>`}`;
+  loadSecurityCard();
   const pf = $('#pf');
   if (pf) pf.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -975,6 +1010,46 @@ async function tabCuenta(main) {
     if (!df.dataset.sure) { df.dataset.sure = '1'; setMsg($('#dm'), 'Pulsa otra vez para confirmar la eliminación.'); return; }
     try { await api('DELETE', '/api/me', { password: df.password.value }); state.user = null; render(); }
     catch (err) { setMsg($('#dm'), err.message); }
+  });
+}
+
+async function loadSecurityCard() {
+  const box = $('#secb'); if (!box) return;
+  const u = state.user; let ss = [];
+  try { ss = (await api('GET', '/api/me/sessions')).sessions; } catch { /* se muestra sin lista */ }
+  const dev = (x) => `<div class="agrow"><div class="agmain"><b>${x.current ? 'Este dispositivo' : 'Otro dispositivo'}</b><div class="muted" style="font-size:12px">${esc(String(x.ua || 'navegador').slice(0, 80))} · ${esc(x.ip || '—')} · activo ${esc(ago(x.last_seen))}</div></div>${x.current ? '' : `<button class="btn ghost sm" data-rv="${esc(x.id)}">Cerrar</button>`}</div>`;
+  box.className = '';
+  box.innerHTML = `
+    <p><b>Correo:</b> ${esc(u.email)} — ${u.email_verified ? '<span class="pos">verificado</span>' : '<span class="neg">sin verificar</span> (hace falta para operar en real)'}</p>
+    ${u.email_verified ? '' : '<button class="btn ghost" id="vsend">Enviarme el correo de verificación</button><div class="msg" id="vm"></div>'}
+    ${u.role === 'owner' ? '' : `<h3 style="margin-top:14px">Verificación en dos pasos (2FA)</h3>
+      <p class="muted" style="font-size:13px">${u.totp ? 'Activa. Al entrar se pide un código de tu app (Google Authenticator, etc.).' : 'Opcional pero recomendada: protege tu cuenta aunque alguien conozca tu contraseña.'}</p>
+      <form id="mf" class="form">
+        <label class="full">Tu contraseña<input name="password" type="password" required autocomplete="current-password"></label>
+        ${u.totp ? '<label class="full">Código actual de 6 dígitos<input name="code" inputmode="numeric" maxlength="6" required></label><button class="btn danger full" type="submit">Desactivar 2FA</button>' : '<button class="btn full" type="submit">Activar 2FA</button>'}
+        <div class="msg full" id="mm"></div>
+      </form><div id="mfx"></div>`}
+    <h3 style="margin-top:14px">Dispositivos con sesión abierta</h3>
+    <div class="aglist">${ss.length ? ss.map(dev).join('') : '<p class="muted">Sin datos.</p>'}</div>
+    ${ss.length > 1 ? '<button class="btn ghost" id="rvo">Cerrar todas las demás sesiones</button>' : ''}`;
+  const vs = $('#vsend'); if (vs) vs.onclick = async () => { try { const r = await api('POST', '/api/auth/verify-email/send'); setMsg($('#vm'), r.warning || 'Te enviamos el correo. Revisa tu bandeja y spam.', !r.warning); } catch (e) { setMsg($('#vm'), e.message); } };
+  box.querySelectorAll('[data-rv]').forEach((b) => { b.onclick = async () => { try { await api('POST', '/api/me/sessions/revoke', { id: b.dataset.rv }); loadSecurityCard(); } catch (e) { alert(e.message); } }; });
+  const ro = $('#rvo'); if (ro) ro.onclick = async () => { try { await api('POST', '/api/me/sessions/revoke-others'); loadSecurityCard(); } catch (e) { alert(e.message); } };
+  const mf = $('#mf'); if (!mf) return;
+  mf.addEventListener('submit', async (e) => {
+    e.preventDefault(); const mm = $('#mm');
+    try {
+      if (u.totp) { await api('POST', '/api/me/2fa/disable', { password: mf.password.value, code: mf.code.value }); state.user = (await api('GET', '/api/me')).user; loadSecurityCard(); return; }
+      const s = await api('POST', '/api/me/2fa/setup', { password: mf.password.value });
+      $('#mfx').innerHTML = `<p>1) En tu app de autenticación elige «Ingresar clave de configuración» y pega: <code style="user-select:all">${esc(s.secret)}</code></p>
+        <form id="mf2" class="form"><label class="full">2) Escribe el código de 6 dígitos<input name="code" inputmode="numeric" maxlength="6" required></label><button class="btn full" type="submit">Confirmar y activar</button><div class="msg full" id="mm2"></div></form>`;
+      $('#mf2').addEventListener('submit', async (e2) => {
+        e2.preventDefault();
+        try { const r = await api('POST', '/api/me/2fa/enable', { code: e2.target.code.value }); state.user = (await api('GET', '/api/me')).user;
+          $('#mfx').innerHTML = `<div class="card"><b>Guarda estos códigos de respaldo ahora</b><p class="muted" style="font-size:13px">Cada uno sirve una sola vez si pierdes tu teléfono. No se vuelven a mostrar.</p><pre style="user-select:all">${r.recovery_codes.map(esc).join('\n')}</pre></div>`; }
+        catch (er) { setMsg($('#mm2'), er.message); }
+      });
+    } catch (er) { setMsg(mm, er.message); }
   });
 }
 
@@ -1334,11 +1409,23 @@ async function tabAjustes(main) {
 }
 
 // ============================ Arranque ============================
+// Enlaces del correo: #reset=TOKEN y #verify=TOKEN. El token se quita de la barra de direcciones de inmediato.
+async function consumeMailLinks() {
+  const m = String(location.hash).match(/^#(reset|verify)=([A-Za-z0-9_-]{20,200})$/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  if (m[1] === 'reset') { state.authMode = 'reset'; state.resetToken = m[2]; return; }
+  try { await api('POST', '/api/auth/verify-email', { token: m[2] }); state.flash = 'Correo verificado. ¡Gracias!'; }
+  catch (e) { state.flash = e.message; }
+}
+
 async function boot() {
+  await consumeMailLinks();
   try {
     state.me = await api('GET', '/api/me');
     state.user = state.me.user;
     if (!state.tab || (state.tab.startsWith('o_') && state.user.role !== 'owner')) state.tab = 'resumen';
+    if (state.authMode === 'reset') state.authMode = 'login';
   } catch { state.user = null; }
   render();
 }
@@ -1450,4 +1537,5 @@ function render() {
   loadTab();
 }
 
+window.addEventListener('hashchange', () => { if (/^#(reset|verify)=/.test(location.hash)) boot(); }); // enlace del correo abierto en una pestaña que ya estaba abierta
 boot();
