@@ -362,7 +362,7 @@ t('el Director corre todos los agentes disponibles', run.status === 200 && ['pro
 t('los agentes NO cambian nada por sí solos', (await store.getSetting('default_cfg', null)) === null
   && (await store.getSetting('brain_version', '1')) === v0 && (await store.getSetting('model:active:BTC-USD', null)) === null);
 const brain = (await O2('GET', '/api/owner/brain')).body;
-t('Cerebro: 9 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 9 && brain.agents.filter((a) => !a.available).length === 2
+t('Cerebro: 11 agentes, 2 marcados como no disponibles (requieren LLM)', brain.agents.length === 11 && brain.agents.filter((a) => !a.available).length === 2
   && brain.agents.filter((a) => !a.available).every((a) => /Claude/.test(a.reason)));
 t('Cerebro: propuestas pendientes con evidencia', brain.pending.length > 0 && brain.pending.every((p) => p.evidence && p.title));
 const mlProp = brain.pending.find((p) => p.kind === 'model_update');
@@ -557,7 +557,7 @@ console.log('Estado del bot y operaciones pequeñas de los agentes');
   const bt = backtest(Array.from({ length: 400 }, (_, i) => 100 + 10 * Math.sin(i / 15)), { strategy: 'sma', fast: 5, slow: 20, usd: 100, maxOrderUsd: 1000, maxDailyUsd: 5000, stopLossPct: 8, symbol: 'BTC-USD' }, { capital: 10000, exchange: 'coinbase' });
   t('backtest devuelve el registro de operaciones (compras y ventas con P&L)', bt.trades.length >= 2 && bt.trades.some((x) => x.side === 'buy') && bt.trades.some((x) => x.side === 'sell' && Number.isFinite(x.pnl)));
   const as = (await O2('GET', '/api/owner/brain')).body.agent_stats;
-  t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 9 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
+  t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 11 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
 }
 
 console.log('Trading real: alcance solo-dueño e inicio inmediato');
@@ -923,7 +923,7 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
 console.log('Exportación del Cerebro y del app');
 const eb = await O2('GET', '/api/owner/export/brain');
 t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
-t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 9
+t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 11
   && eb.body.models['BTC-USD']?.active && eb.body.changelog.length >= 2 && eb.body.agent_audit.length > 0);
 t('el Cerebro exportado no contiene secretos', !eb.text.includes(secretPem) && !eb.text.includes('pass_hash') && !eb.text.includes('organizations/o/apiKeys'));
 const ea = await fetch(base + '/api/owner/export/app', { headers: { Cookie: eb.cookie } });
@@ -1044,6 +1044,11 @@ const stk = await tmm.fetchStock('AAPL', async (u) => ({ ok: true, status: 200, 
 let stkErr = ''; try { await tmm.fetchStock('../etc', async () => ({})); } catch (e) { stkErr = e.message; }
 t('acciones: lee datos diarios, valida el símbolo y falla con mensaje claro', stk.length === 60 && stk[59] === 159 && /inválido/.test(stkErr) && tmm.STOCK_RE.test('AAPL') && !tmm.STOCK_RE.test('A/B'));
 t('futuro: exige sesión y símbolo válido', (await client()('GET', '/api/future?symbol=BTC-USD')).status === 401 && (await A('GET', '/api/future?symbol=../x')).status === 400);
+t('Cerebro + Máquina del Tiempo: freno de riesgo (≥55 % no compra, ≥35 % compra la mitad, si no igual)', tmm.futureGate(0.6).skip && !tmm.futureGate(0.4).skip && tmm.futureGate(0.4).mult === 0.5 && tmm.futureGate(0.1).mult === 1);
+const { AGENTS: AG2 } = await import('../lib/agents.js');
+const lw = await AG2.legal_watch.run({ store }); const sup = await AG2.superintendent.run({ store: memoryStore(), now: Date.now() });
+t('Abogado Quantum: lista pendientes técnicos y avisa que no es asesoría legal', lw.notes[0].includes('No es asesoría legal') && lw.proposals.every((p) => ['ops_alert', 'risk_alert'].includes(p.kind) && p.touches.length === 0));
+t('Superintendente: detecta escáner y noticias sin datos y solo propone (no cambia nada)', sup.proposals.some((p) => p.key === 'sup:scanner_stale') && sup.proposals.some((p) => p.key === 'sup:news_stale') && sup.proposals.every((p) => p.touches.length === 0));
 server.close();
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

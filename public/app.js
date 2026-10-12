@@ -464,6 +464,8 @@ const COORD = {
   trading_improvement: ['propone cambios a la configuración del bot según lo que aprendió el laboratorio', null, 'sus propuestas a ti, que decides'],
   ml_models: ['entrena modelos de predicción y solo los activa si le ganan al azar en datos que no vio', 'trading_improvement', 'los modelos candidatos'],
   problem_processing: ['procesa los problemas que reportan los clientes y propone arreglos', null, 'sus propuestas a ti, que decides'],
+  legal_watch: ['vigila que los avisos legales y los datos de la empresa estén completos; no es un abogado, deja la lista para el tuyo', null, 'avisos para ti y para tu abogado'],
+  superintendent: ['supervisa que el escáner, las noticias y los bots sigan corriendo', null, 'alertas de estado para ti'],
   owner_analytics: ['analiza el negocio: clientes, uso y errores', null, 'avisos para ti'],
 };
 // Informe del Cerebro: lo que los agentes encontraron sobre trading y oportunidades (solo datos reales guardados; sin promesas).
