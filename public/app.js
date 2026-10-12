@@ -1251,6 +1251,7 @@ async function tabCerebro(main) {
   <div class="card" ${b.pending.length ? "data-open" : ""}><h2>Por decidir (${b.pending.length})</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
   <div class="card"><h2>Agentes</h2><div class="aglist">${agents}</div><div class="msg" id="ag_m"></div></div>
   <div class="card"><h2>Corridas</h2>${runs ? `<div class="aglist">${runs}</div>` : '<p class="muted">Sin corridas.</p>'}</div>
+  <details class="card" id="tr_card"><summary><h2 style="display:inline">Rastros y reproducción</h2></summary><p class="muted" style="font-size:12px">Cada corrida guarda qué versión de cada agente corrió y qué propuso. «Reproducir» lo vuelve a correr en seco con los datos de hoy: no crea propuestas ni cambia nada.</p><div id="tr_box" class="muted">Abre para cargar…</div><div class="msg" id="tr_m"></div></details>
   <details class="card"><summary><h2 style="display:inline">Modelos ML</h2></summary><div class="scroll"><table><thead><tr><th>Par</th><th>Estado</th><th>Precisión vs base</th></tr></thead><tbody>${models}</tbody></table></div></details>
   <details class="card"><summary><h2 style="display:inline">Historial (${b.history.length})</h2></summary>${hist ? `<div class="scroll"><table><tbody>${hist}</tbody></table></div>` : '<p class="muted">Vacío.</p>'}</details>
   <details class="card"><summary><h2 style="display:inline">Límites inviolables</h2></summary>
@@ -1260,6 +1261,21 @@ async function tabCerebro(main) {
       <label class="full">Tipos permitidos<span class="row">${Object.keys(KIND_LABEL).map((k) => `<label class="check"><input type="checkbox" name="kind_${k}" ${g.allowedKinds.includes(k) ? 'checked' : ''}><span>${esc(KIND_LABEL[k])}</span></label>`).join('')}</span></label>
       <p class="muted full" style="font-size:12px">Protegido: ${g.protectedAreas.map((a) => `<code>${esc(a)}</code>`).join(' ')}</p>
       <button class="btn full" type="submit">Guardar</button><div class="msg full" id="gm"></div></form></details>`;
+  { let loaded = false; $('#tr_card').addEventListener('toggle', async (ev) => {
+    if (!ev.target.open || loaded) return; loaded = true;
+    try {
+      const r = await api('GET', '/api/owner/director/traces');
+      $('#tr_box').innerHTML = r.traces.length ? r.traces.slice(0, 6).map((t) => `<div class="rnrow"><div class="rnh"><b>${esc(ago(t.t))}</b><span class="muted">${esc(t.trigger)}</span></div>${t.agents.map((a) => `<div class="muted runs">${esc(a.agent)} <code>v${esc(a.version)}</code> · ${a.error ? `<span class="neg">error: ${esc(a.error)}</span>` : `${a.proposals.length} propuesta(s)`} · ${a.ms} ms ${a.error ? '' : `<button class="btn ghost small" data-rp="${esc(t.id)}|${esc(a.agent)}">Reproducir</button>`}</div>`).join('')}</div>`).join('') : 'Aún no hay rastros: corre el Director una vez.';
+      document.querySelectorAll('[data-rp]').forEach((x) => x.addEventListener('click', async () => {
+        const [trace, agent] = x.dataset.rp.split('|'); setMsg($('#tr_m'), 'Reproduciendo en seco…', true);
+        try {
+          const q = await api('POST', '/api/owner/director/replay', { trace, agent });
+          $('#tr_m').className = 'msg ok';
+          $('#tr_m').textContent = q.ok ? `${agent}: ${q.same ? 'mismo resultado' : `distinto (antes ${q.only_before.length} / ahora ${q.only_now.length} propuestas distintas)`}. ${q.note}` : `${agent}: falló al reproducir (${q.error})`;
+        } catch (err) { setMsg($('#tr_m'), err.message); }
+      }));
+    } catch (err) { $('#tr_box').textContent = err.message; }
+  }); }
   mountCity($('#ag_v'), agentsViz(b));
   $('#br_run').addEventListener('click', async (e) => {
     e.target.disabled = true; setMsg($('#br_m'), 'Corriendo agentes…', true);

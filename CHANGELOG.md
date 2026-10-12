@@ -1,5 +1,8 @@
 # Notas de versión
 
+## 19.40 — Pantalla de rastros y guía de lanzamiento
+Cerebro → «Rastros y reproducción»: ver qué versión de cada agente corrió y reproducirlo en seco. Nueva guía `docs/GO-LIVE-STEPS.md` con los pasos que solo puede hacer el dueño.
+
 ## 19.39 — Probar conexión, contrato de Coinbase y rastros del Director
 - Botón «Probar» en cada conexión: revisa llave, permisos (sin retiros), lectura de saldos y precio. Solo lectura: no envía ninguna orden.
 - 24 pruebas de contrato del conector de Coinbase (firma JWT, forma de pedidos, errores). Usan un servidor falso con las reglas documentadas; no sustituyen una orden mínima real.
