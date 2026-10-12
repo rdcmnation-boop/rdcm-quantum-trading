@@ -10,12 +10,12 @@ let queue = []; let busy = false; let lastEnd = 0; let current = ''; const said 
 const speechEn = (t) => String(t).replace(/×/g, ' times ').replace(/(\d)\s*%/g, '$1 percent').replace(/\bUSD\b/g, 'dollars').replace(/\+(\d)/g, 'plus $1').replace(/-(\d)/g, 'minus $1').replace(/(\d)\.(\d)/g, '$1 point $2').replace(/\s+/g, ' ').trim();
 const speechEs = (t) => String(t).replace(/×/g, ' veces').replace(/(\d)\s*%/g, '$1 por ciento').replace(/\bUSD\b/g, 'dólares').replace(/\+(\d)/g, 'más $1').replace(/-(\d)/g, 'menos $1').replace(/(\d)\.(\d)/g, '$1 punto $2').replace(/\s+/g, ' ').trim();
 export const speechText = (t) => (lang() === 'en' ? speechEn(tr(String(t))) : speechEs(String(t)));
-const pickVoice = () => { const vs = speechSynthesis.getVoices(); if (lang() === 'en') { const g = (x) => /premium|enhanced|siri|natural|neural|google/i.test(x.name || ''); return vs.find((x) => /^en[-_]US/i.test(x.lang) && g(x)) || vs.find((x) => /^en[-_]US/i.test(x.lang)) || vs.find((x) => /^en/i.test(x.lang)) || null; } const good = (x) => /premium|enhanced|siri|natural|neural|google/i.test(x.name || ''); const best = (re) => vs.find((x) => re.test(x.lang) && good(x)) || vs.find((x) => re.test(x.lang)); const bs = best(/^es[-_]US/i) || best(/^es[-_]MX/i) || best(/^es/i); if (bs) return bs; return vs.find((v) => /^es[-_]US/i.test(v.lang)) || vs.find((v) => /^es[-_]MX/i.test(v.lang)) || vs.find((v) => /^es/i.test(v.lang)) || null; };
+const pickVoice = (L = lang()) => { const vs = speechSynthesis.getVoices(); if (L === 'en') { const g = (x) => /premium|enhanced|siri|natural|neural|google/i.test(x.name || ''); return vs.find((x) => /^en[-_]US/i.test(x.lang) && g(x)) || vs.find((x) => /^en[-_]US/i.test(x.lang)) || vs.find((x) => /^en/i.test(x.lang)) || null; } const good = (x) => /premium|enhanced|siri|natural|neural|google/i.test(x.name || ''); const best = (re) => vs.find((x) => re.test(x.lang) && good(x)) || vs.find((x) => re.test(x.lang)); const bs = best(/^es[-_]US/i) || best(/^es[-_]MX/i) || best(/^es/i); if (bs) return bs; return vs.find((v) => /^es[-_]US/i.test(v.lang)) || vs.find((v) => /^es[-_]MX/i.test(v.lang)) || vs.find((v) => /^es/i.test(v.lang)) || null; };
 const emit = () => subs.forEach((f) => { try { f({ on, speaking: busy, text: current }); } catch { /* ignora */ } });
 function pump() {
-  if (!on || busy || !queue.length) return;
-  const it = queue.shift(); current = it.text;
-  const u = new SpeechSynthesisUtterance(speechText(it.text)); u.lang = lang() === 'en' ? 'en-US' : 'es-US'; const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } u.rate = 1.03; u.pitch = 1.05;
+  if (busy || !queue.length || !(on || queue[0].force)) return;
+  const it = queue.shift(); current = it.text; const L = it.lang || lang();
+  const u = new SpeechSynthesisUtterance(it.lang ? speechEn(it.text) : speechText(it.text)); u.lang = L === 'en' ? 'en-US' : 'es-US'; const v = pickVoice(L); if (v) { u.voice = v; u.lang = v.lang; } u.rate = 1.03; u.pitch = 1.05;
   const done = () => { busy = false; lastEnd = Date.now(); emit(); pump(); };
   u.onend = done; u.onerror = done; busy = true; emit();
   try { speechSynthesis.speak(u); } catch { done(); }
@@ -30,6 +30,9 @@ export const voice = {
     emit();
   },
   // Informe largo: dice todas las frases en orden (sin recortar la fila ni ignorar repetidas).
+  // Radio de noticias: suena aunque la voz del Cerebro esté apagada (el usuario lo pidió); lang 'en' lee el titular tal cual en inglés.
+  radio(text, L) { if (!ok || !text) return; queue.push({ text, hi: true, force: true, lang: L === 'en' ? 'en' : undefined }); pump(); },
+  stopRadio() { queue = queue.filter((x) => !x.force); if (busy && current && !on) { try { speechSynthesis.cancel(); } catch { /* ignora */ } busy = false; } },
   sayAll(list) {
     if (!on) return; queue = []; for (const text of list) if (text) queue.push({ text, hi: true });
     pump();

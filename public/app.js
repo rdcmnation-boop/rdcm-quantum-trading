@@ -1,6 +1,7 @@
 // Interfaz de Quantum Trading. Sin librerías; todo dato dinámico pasa por esc() antes de insertarse.
 import { genEd25519 } from '/keygen.js';
 import { voice } from '/voice.js';
+import { keyOf, freshItems, isUrgent, introFor, notifyFor, agoNews, store as nstore } from '/newsradio.js';
 import { intentOf, answerFor, statusPhrases, listenOnce, autoPace } from '/voicecmd.js';
 import { initI18n, mountSwitch, tr, onLang, lang } from '/i18n.js';
 await initI18n(); mountSwitch(null);
@@ -1100,12 +1101,13 @@ async function tabMercado(main) {
     <div class="kpi"><div class="l">Dominancia BTC</div><div class="v" style="font-size:20px">${g && g.btcDom !== null ? g.btcDom.toFixed(1) + ' %' : '—'}</div><div class="s">del mercado cripto</div></div>
     <div class="kpi"><div class="l">Mercado 24 h</div><div class="v ${g ? cls(g.mcap24) : ''}" style="font-size:20px">${g ? pc(g.mcap24) : '—'}</div><div class="s">capitalización total</div></div>
   </div>
+  ${newsCardHtml(nw)}
   <div class="card" data-open><h2>Precios y tendencia</h2>${coins ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Precio</th><th class="r">24 h</th><th class="r">7 d</th><th class="r">30 d</th></tr></thead><tbody>${coins}</tbody></table></div>` : '<p class="muted">Sin datos de CoinGecko ahora mismo.</p>'}</div>
   <div class="card" data-open><h2>Ranking del Cerebro: todas las criptos grandes</h2>${scannerHtml(sc)}</div>
-  <div class="card"><h2>Noticias (freno de riesgo del bot)</h2>${nw && nw.items.length ? nw.items.slice(0, 8).map((i) => `<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:13px">${i.neg ? '<span class="neg">⚠</span> ' : ''}${esc(i.title)} ${i.coins.map((c) => `<span class="chip">${esc(c)}</span>`).join(' ')}</div>`).join('') : '<p class="muted">Sin titulares todavía.</p>'}<p class="muted" style="font-size:11px;margin:6px 0 0">Titulares públicos (CoinDesk, Cointelegraph). Solo detienen compras ante noticias negativas; no predicen precios.</p></div>
   <div class="card"><h2>Liquidez real (Coinbase Exchange)</h2>${books ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Spread</th><th class="r">Profundidad ±0.5 %</th><th class="r">Volumen 24 h</th></tr></thead><tbody>${books}</tbody></table></div>` : '<p class="muted">Sin libro de órdenes ahora mismo.</p>'}</div>
   <div class="card"><h2>Tendencia en CoinGecko</h2>${m.trending.length ? `<div class="row">${m.trending.map((t) => `<span class="chip">${esc(t.name)} ${esc(t.symbol.toUpperCase())}</span>`).join('')}</div>` : '<p class="muted">Sin datos.</p>'}</div>
   <p class="muted" style="font-size:12px">${esc(m.note)} Actualizado ${esc(ago(m.t))}.${m.errors.length ? ' Fuentes con problemas: ' + esc(m.errors.join('; ')) : ''}</p>`;
+  bindNewsCard();
 }
 
 // ============================ Dueño ============================
@@ -1244,8 +1246,51 @@ async function boot() {
   render();
 }
 
+// ---- Noticias en vivo: vigilante cada 90 s, radio (audio) y avisos. Solo lectura; los avisos del navegador funcionan con la app abierta. ----
+let nwTimer = null; let nwItems = []; let radioOn = false;
+const NSENT = (i) => (i.neg ? '<b class="neg" title="negativa">▼</b>' : i.pos ? '<b class="pos" title="positiva">▲</b>' : '<b class="muted">•</b>');
+const newsListHtml = (items) => (items && items.length ? items.slice(0, 12).map((i) => `<div class="nrow">${NSENT(i)}<div class="nbody"><div class="ntit">${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer">${esc(i.title)}</a>` : esc(i.title)}</div><div class="nmeta">${esc(i.src || 'noticias')} · ${esc(agoNews(i.t))} ${(i.coins || []).map((c) => `<span class="chip">${esc(c)}</span>`).join(' ')}</div></div></div>`).join('') : '<p class="muted">Sin titulares todavía.</p>');
+const notifState = () => (!('Notification' in window) ? 'no' : Notification.permission === 'granted' && nstore.get('notif') ? 'on' : 'off');
+function newsCardHtml(nw) {
+  nwItems = (nw && nw.items) || nwItems;
+  return `<div class="card" data-open id="nws"><h2>Noticias de trading en vivo</h2>
+    <div class="nctl"><button type="button" class="btn small ${radioOn ? '' : 'ghost'}" id="nws_radio" aria-pressed="${radioOn}">${radioOn ? '⏹ Parar radio' : '📻 Radio en vivo'}</button>
+    <button type="button" class="btn small ${notifState() === 'on' ? '' : 'ghost'}" id="nws_notif">${notifState() === 'on' ? '🔔 Avisos activados' : '🔔 Avisarme'}</button></div>
+    <div class="msg" id="nws_m"></div><div id="nws_list">${newsListHtml(nwItems)}</div>
+    <p class="muted" style="font-size:11px;margin:6px 0 0">Titulares públicos (CoinDesk, Cointelegraph, Decrypt, Bitcoin Magazine), en inglés; se actualizan cada 5 min. ▼ negativa, ▲ positiva. Solo informan y frenan compras ante noticias negativas; no predicen precios. Los avisos llegan mientras la app esté abierta.</p></div>`;
+}
+function readNews(list) { for (const i of list) { voice.radio(introFor(i, lang() === 'en')); voice.radio(i.title, 'en'); } }
+function bindNewsCard() {
+  const rb = $('#nws_radio'); const nb = $('#nws_notif'); const m = $('#nws_m'); if (!rb || rb.dataset.b) return; rb.dataset.b = '1';
+  rb.onclick = () => { if (!voice.supported) { m.textContent = 'Tu navegador no tiene voz para leer noticias.'; return; } radioOn = !radioOn; if (radioOn) { readNews(nwItems.slice(0, 4)); m.textContent = ''; } else voice.stopRadio(); rb.textContent = radioOn ? '⏹ Parar radio' : '📻 Radio en vivo'; rb.classList.toggle('ghost', !radioOn); rb.setAttribute('aria-pressed', String(radioOn)); };
+  nb.onclick = async () => {
+    if (!('Notification' in window)) { m.textContent = 'Este navegador no permite avisos. Verás las noticias nuevas dentro de la app mientras esté abierta. (En iPhone: añade la app a la pantalla de inicio.)'; return; }
+    if (notifState() === 'on') { nstore.set('notif', false); } else { let p = Notification.permission; if (p === 'default') { try { p = await Notification.requestPermission(); } catch { p = 'denied'; } } if (p === 'granted') { nstore.set('notif', true); try { new Notification('🔔 Avisos activados', { body: 'Te avisaré de las noticias nuevas de trading.', tag: 'qt-news' }); } catch { /* ignora */ } } else m.textContent = 'El permiso de avisos está bloqueado en tu navegador. Actívalo en los ajustes del sitio.'; }
+    nb.textContent = notifState() === 'on' ? '🔔 Avisos activados' : '🔔 Avisarme'; nb.classList.toggle('ghost', notifState() !== 'on');
+  };
+}
+function newsToast(note) {
+  if (!note) return; let t = $('#ntoast'); if (!t) { t = document.createElement('div'); t.id = 'ntoast'; t.setAttribute('role', 'status'); document.body.appendChild(t); t.onclick = () => { t.classList.remove('on'); if (state.user && state.tab !== 'mercado') { state.tab = 'mercado'; render(); } }; }
+  t.innerHTML = `<b>${esc(note.title)}</b><span>${esc(note.body)}</span>`; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 9000);
+}
+async function pollNews(first) {
+  try {
+    const n = await api('GET', '/api/news'); nwItems = n.items || []; const seen = nstore.seen(); const fresh = freshItems(nwItems, seen);
+    if (first && seen.size === 0) { nwItems.forEach((i) => seen.add(keyOf(i))); nstore.saveSeen(seen); }
+    else if (fresh.length) {
+      fresh.forEach((i) => seen.add(keyOf(i))); nstore.saveSeen(seen); const note = notifyFor(fresh); newsToast(note);
+      if (nstore.get('notif') && 'Notification' in window && Notification.permission === 'granted') { try { new Notification(note.title, { body: note.body, tag: note.tag }); } catch { /* ignora */ } }
+      if (radioOn) readNews(fresh.slice(0, 3));
+    }
+    const l = $('#nws_list'); if (l) l.innerHTML = newsListHtml(nwItems);
+  } catch { /* sin red: se reintenta */ }
+}
+function startNewsWatch() { if (nwTimer) return; pollNews(true); nwTimer = setInterval(() => pollNews(false), 90000); }
+function stopNewsWatch() { if (nwTimer) clearInterval(nwTimer); nwTimer = null; radioOn = false; voice.stopRadio(); }
+
 function render() {
-  if (!state.user) return viewAuth();
+  if (!state.user) { stopNewsWatch(); return viewAuth(); }
+  startNewsWatch();
   shell();
   loadTab();
 }

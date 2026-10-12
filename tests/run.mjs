@@ -819,7 +819,7 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   const an = news.analyze(news.parseRss(rss));
   t('noticias: detecta titulares negativos por cripto y descarta los viejos', an.risk.SOL === 1 && !an.risk.ADA && an.items.length === 2 && an.items.find((x) => /Bitcoin ETF/.test(x.title)).neg === false);
   const nf = await news.fetchNews(async (u) => { if (/coindesk/.test(u)) return { ok: true, status: 200, text: async () => rss }; throw new Error('sin red'); });
-  t('noticias: si una fuente falla se ignora y se informa', nf.sources === 1 && nf.errors.length === 1 && nf.items.length === 2);
+  t('noticias: si una fuente falla se ignora y se informa', nf.sources === 1 && nf.errors.length === 3 && nf.items.length === 2);
 
   // Motor en modo pro (papel): compra con tendencia y luego vende al romperse
   let cl = up; const feedP = { getPrice: async () => cl.at(-1), getCloses: async () => cl, getHistory: async () => cl };
@@ -1000,6 +1000,10 @@ const vsrc = fs.readFileSync('public/voicecmd.js', 'utf8').replace(/\/\/.*$/gm, 
 t('voz: el módulo de voz no tiene red, sesión ni acceso a cuentas', !/\b(fetch|XMLHttpRequest|WebSocket|sendBeacon|document\.cookie|localStorage\.getItem\('qt_(tok|sess)|location\s*=|eval\(|import\()/.test(vsrc) && !/api\(/.test(vsrc));
 const appsrc = fs.readFileSync('public/app.js', 'utf8'); const vi = appsrc.indexOf("const m = $('.bmic', r)"); const vj = appsrc.indexOf('function narrate');
 t('voz: los manejadores de voz en la app no llaman al servidor', vi > 0 && vj > vi && !/\bapi\(|fetch\(|location\./.test(appsrc.slice(vi, vj)));
+const nr = await import('../public/newsradio.js');
+const nws = (await import('../lib/news.js')).analyze((await import('../lib/news.js')).parseRss('<rss><channel><item><title>Bitcoin ETF approved, price surges</title><link>https://www.coindesk.com/x</link><pubDate>' + new Date().toUTCString() + '</pubDate></item><item><title>Exchange hacked, funds stolen</title><link>javascript:alert(1)</link><pubDate>' + new Date().toUTCString() + '</pubDate></item></channel></rss>'));
+t('noticias: positiva/negativa, enlace https y fuente; enlaces raros se descartan', nws.items.some((i) => i.pos && i.link === 'https://www.coindesk.com/x' && i.src === 'coindesk.com' && i.coins.includes('BTC')) && nws.items.some((i) => i.neg && i.link === null));
+t('noticias: lo nuevo se detecta una sola vez y el aviso prioriza lo negativo', nr.freshItems(nws.items, new Set([nr.keyOf(nws.items[0])])).length === 1 && /negativa/.test(nr.notifyFor(nws.items).title) && /negativa/.test(nr.introFor({ neg: true, coins: ['BTC'], src: 'decrypt.co' })) && /negative news about BTC/.test(nr.introFor({ neg: true, coins: ['BTC'] }, true)));
 server.close();
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);
