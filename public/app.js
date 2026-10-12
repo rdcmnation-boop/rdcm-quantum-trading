@@ -468,6 +468,7 @@ const COORD = {
   superintendent: ['supervisa que el escáner, las noticias y los bots sigan corriendo', null, 'alertas de estado para ti'],
   ui_landing: ['revisa la landing y la app (título, llamada a la acción, peso y traducciones) y propone mejoras', null, 'sus hallazgos para ti'],
   client_support: ['agrupa los problemas de los clientes y deja respuestas listas para que tú las envíes', null, 'respuestas sugeridas para ti'],
+  ia_explainer: ['explica con IA, en palabras simples, qué hizo el Cerebro y por qué (solo con datos reales)', null, 'una explicación en lenguaje simple'],
   owner_analytics: ['analiza el negocio: clientes, uso y errores', null, 'avisos para ti'],
 };
 // Informe del Cerebro: lo que los agentes encontraron sobre trading y oportunidades (solo datos reales guardados; sin promesas).

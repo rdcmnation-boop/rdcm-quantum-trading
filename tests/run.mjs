@@ -362,7 +362,7 @@ t('el Director corre todos los agentes disponibles', run.status === 200 && ['pro
 t('los agentes NO cambian nada por sí solos', (await store.getSetting('default_cfg', null)) === null
   && (await store.getSetting('brain_version', '1')) === v0 && (await store.getSetting('model:active:BTC-USD', null)) === null);
 const brain = (await O2('GET', '/api/owner/brain')).body;
-t('Cerebro: 11 agentes, todos disponibles (sin modelo de lenguaje)', brain.agents.length === 11 && brain.agents.every((a) => a.available));
+t('Cerebro: 12 agentes, todos disponibles', brain.agents.length === 12 && brain.agents.every((a) => a.available));
 t('Cerebro: propuestas pendientes con evidencia', brain.pending.length > 0 && brain.pending.every((p) => p.evidence && p.title));
 const mlProp = brain.pending.find((p) => p.kind === 'model_update');
 t('el ML propone activar el modelo solo cuando hay ventaja real (BTC sí, ETH no)', !!mlProp && mlProp.title.includes('BTC-USD')
@@ -556,7 +556,7 @@ console.log('Estado del bot y operaciones pequeñas de los agentes');
   const bt = backtest(Array.from({ length: 400 }, (_, i) => 100 + 10 * Math.sin(i / 15)), { strategy: 'sma', fast: 5, slow: 20, usd: 100, maxOrderUsd: 1000, maxDailyUsd: 5000, stopLossPct: 8, symbol: 'BTC-USD' }, { capital: 10000, exchange: 'coinbase' });
   t('backtest devuelve el registro de operaciones (compras y ventas con P&L)', bt.trades.length >= 2 && bt.trades.some((x) => x.side === 'buy') && bt.trades.some((x) => x.side === 'sell' && Number.isFinite(x.pnl)));
   const as = (await O2('GET', '/api/owner/brain')).body.agent_stats;
-  t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 11 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
+  t('estadísticas por agente: corridas, propuestas, aplicadas, rechazadas y errores', as.length === 12 && as.every((a) => 'runs' in a && 'applied' in a && 'rejected' in a && 'errors' in a) && as.find((a) => a.name === 'paper_lab').runs >= 1);
 }
 
 console.log('Trading real: alcance solo-dueño e inicio inmediato');
@@ -922,7 +922,7 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
 console.log('Exportación del Cerebro y del app');
 const eb = await O2('GET', '/api/owner/export/brain');
 t('exportar Cerebro: JSON versionado y descargable', eb.status === 200 && /attachment/.test(eb.headers.get('content-disposition')) && eb.body.format === 'quantum-brain/1' && eb.body.brain_version >= 2);
-t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 11
+t('el Cerebro exportado trae límites, agentes, modelos, historial y auditoría de agentes', eb.body.guardrails && eb.body.agents.length === 12
   && eb.body.models['BTC-USD']?.active && eb.body.changelog.length >= 2 && eb.body.agent_audit.length > 0);
 t('el Cerebro exportado no contiene secretos', !eb.text.includes(secretPem) && !eb.text.includes('pass_hash') && !eb.text.includes('organizations/o/apiKeys'));
 const ea = await fetch(base + '/api/owner/export/app', { headers: { Cookie: eb.cookie } });
@@ -1054,5 +1054,21 @@ const sstore = memoryStore(); await sstore.addOrder({ user_id: 'u1', status: 'er
 const sp = await AG2.client_support.run({ store: sstore, now: Date.now() + 1000 });
 t('Soporte al cliente: agrupa errores reales y deja respuestas sugeridas (no envía nada)', sp.proposals.length === 2 && sp.proposals.some((p) => /redondear/.test(p.detail.text)) && sp.proposals.some((p) => /saldo/.test(p.detail.text)) && sp.proposals.every((p) => p.kind === 'insight' && p.touches.length === 0));
 server.close();
+{ // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
+  const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');
+  const st = memoryStore(); const now = Date.now();
+  await st.addOrder({ user_id: 'u1', mode: 'paper', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', usd: 10, qty: 0.0001, price: 100000, status: 'ok', note: 'edge alto', created_at: now - 60000 });
+  const off = await AGENTS.ia_explainer.run({ store: st, now, llm: createExplainer({ env: {} }) });
+  t('IA explicadora: sin ANTHROPIC_API_KEY no hace nada ni falla', off.proposals.length === 0 && /ANTHROPIC_API_KEY/.test(off.notes[0]));
+  let sent = null; const fakeF = async (url, o) => { sent = { url, o }; return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'Compró BTC por edge alto.' }] }) }; };
+  const on = createExplainer({ env: { ANTHROPIC_API_KEY: 'k' }, f: fakeF });
+  const r1 = await AGENTS.ia_explainer.run({ store: st, now, llm: on });
+  t('IA explicadora: con llave propone una explicación (insight, sin tocar nada)', r1.proposals.length === 1 && r1.proposals[0].kind === 'insight' && r1.proposals[0].touches.length === 0 && /BTC/.test(r1.proposals[0].detail.text) && sent.url.includes('anthropic.com') && JSON.parse(sent.o.body).messages[0].content.includes('BTC-USD'));
+  for (let i = 0; i < 5; i++) await AGENTS.ia_explainer.run({ store: st, now, llm: on });
+  const lim = await AGENTS.ia_explainer.run({ store: st, now, llm: on });
+  t('IA explicadora: máximo 4 llamadas al día', lim.proposals.length === 0 && /límite/.test(lim.notes[0]));
+  t('IA explicadora: errores de la API no rompen y el texto se limpia', (await createExplainer({ env: { ANTHROPIC_API_KEY: 'k' }, f: async () => ({ ok: false, status: 500 }) }).explain({})).ok === false && clean('a\u0000  b\n c', 10) === 'a b c');
+}
+
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);
