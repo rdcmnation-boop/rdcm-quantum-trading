@@ -643,7 +643,7 @@ function riskBarHtml(bn, d) {
   return `<div class="rkbar ${live ? 'live' : 'paper'}"><div class="rkhead"><span class="rkmode">${live ? '● DINERO REAL' : '● PAPEL · simulado, sin dinero'}</span><span class="rkst ${bn.enabled ? 'on' : ''}">${bn.enabled ? 'Cerebro activo' : 'Cerebro apagado'}</span></div>
     <div class="rkgrid"><div><small>Por compra</small><b>${money(L.usd, 0)}</b></div><div><small>Tope por orden</small><b>${money(L.maxOrderUsd, 0)}</b></div><div><small>Stop bajo costo</small><b>${L.stopLossPct ? `${L.stopLossPct} %` : '—'}</b></div><div><small>Tope diario${live ? '' : ' (real)'}</small><b>${money(sp, 0)} / ${money(mx, 0)}</b><i class="rkmeter"><u style="width:${pctD}%"></u></i></div></div>
     <div class="rkag"><span>🧭 Mercado: <b>${esc(sc('MERCADO'))}</b></span><span>📰 Noticias: <b>${esc(sc('NOTICIAS'))}</b></span><span>🛡 Riesgo: <b>${esc(sc('RIESGO'))}</b></span><span>⚡ Ejecución: <b>${esc(last)}</b></span></div>
-    <div class="rkfoot"><span class="muted">Nada se opera sin tus topes. El modo real solo opera con tu confirmación.</span><button type="button" class="btn danger small" id="rk_kill">⏻ Cerrar todo y apagar</button></div></div>`;
+    <div class="rkfoot"><span class="muted">Nada se opera sin tus topes. El modo real solo opera con tu confirmación.</span><span class="row"><button type="button" class="btn small" id="rk_trade">Comprar / Vender</button><button type="button" class="btn danger small" id="rk_kill">⏻ Cerrar todo y apagar</button></span></div></div>`;
 }
 function evidenceHtml(d) {
   const rows = (d.rows || []).filter((r) => r.conf !== undefined || (r.ev && r.ev.length)).slice(0, 4);
@@ -670,6 +670,18 @@ function showCloseResult(r, node) {
   const msg = closeSummary(r);
   if (node) setMsg(node, msg, !(r.failed > 0)); else alert(msg);
 }
+async function bindPicks(main) {
+  const el = $('#pk_list', main); if (!el) return;
+  try {
+    const sc = await api('GET', '/api/scanner'); const top = (sc.items || []).filter((i) => i.qualified).slice(0, 5);
+    el.className = '';
+    el.innerHTML = top.length ? top.map((i) => `<div class="agrow"><div class="agmain"><b>${esc(i.symbol)}</b> <span class="chip">${esc(i.label || '')}</span>
+      <div class="muted" style="font-size:12px">Prueba: Coinbase ${pc(i.coinbase.ret)} · Robinhood ${pc(i.robinhood.ret)} (${esc(String(i.test_days))} días) · más barato: ${esc(cheapTxt[i.cheaper] || i.cheaper)}</div></div>
+      <button class="btn small" data-pk="${esc(i.symbol)}">Elegir</button></div>`).join('') : '<p class="muted">Ninguna cripto pasa la prueba ahora mismo: es mejor no comprar. El Cerebro vuelve a revisar cada hora.</p>';
+    el.querySelectorAll('[data-pk]').forEach((b) => { b.onclick = () => { const f = $('#mt_f', main); if (f) { f.symbol.value = b.dataset.pk; f.scrollIntoView({ behavior: 'smooth' }); setMsg($('#mt_m', main), `Elegiste ${b.dataset.pk}. Revisa modo y monto, y toca Comprar dos veces.`, true); } }; });
+  } catch (e) { el.textContent = e.message; }
+}
+
 function bindManual(main, { connections, live }) {
   const box = $('#mt_box', main); if (!box) return;
   const msg = $('#mt_m', main); const posEl = $('#mt_pos', main);
@@ -690,6 +702,7 @@ function bindManual(main, { connections, live }) {
 }
 
 function bindKill() {
+  const tr = $('#rk_trade'); if (tr && !tr.dataset.b) { tr.dataset.b = '1'; tr.onclick = () => { state.tab = 'bot'; shell(); loadTab().then(() => { const m = $('#mt_box'); if (m) m.scrollIntoView({ behavior: 'smooth' }); }); }; }
   const k = $('#rk_kill'); if (!k || k.dataset.b) return; k.dataset.b = '1';
   k.onclick = async () => {
     if (!confirmTap(k, 'Toca otra vez: VENDER todo y apagar')) return;
@@ -843,6 +856,10 @@ async function tabBot(main) {
     <p class="muted" style="font-size:13px;margin:0 0 8px">El <b>Cerebro AUTO</b> prueba todas las criptos grandes con costos reales de Coinbase y Robinhood y solo compra las que pasan la prueba, en el exchange más barato. Empieza en papel (sin dinero).</p>
     <div class="row"><button class="btn" id="q_auto">▶ Cerebro AUTO · papel</button><button class="btn ghost" id="q_demo">Demo: BTC cada 15 min</button></div><div class="msg" id="qm"></div>
   </div>
+  <div class="card" data-open id="pk_box"><h2>Mejores compras ahora</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">Las criptos que hoy pasan la prueba del Cerebro (historial con costos reales de Coinbase y Robinhood), de mejor a peor. <b>Es una selección por historial, no una promesa de ganancia</b>: el precio puede bajar.</p>
+    <div id="pk_list" class="muted">Cargando…</div>
+  </div>
   <div class="card" data-open id="mt_box"><h2>Comprar / Vender a mano</h2>
     <p class="muted" style="font-size:13px;margin:0 0 8px">Cada botón pide un segundo toque para confirmar. En <b>real</b>, comprar respeta tus topes, tu plan y la parada de emergencia; <b>vender</b> siempre se permite (solo reduce riesgo). Las órdenes reales quedan pendientes hasta que el exchange las confirme.</p>
     <form id="mt_f" class="form">
@@ -988,7 +1005,7 @@ async function tabBot(main) {
         <p class="muted" style="font-size:12px">Capital virtual ${money(r.capital, 0)} (sin dinero real), ${r.candles} velas. Costos: ${esc(r.cost_profile)}. Son estimaciones; verifica tarifas y spreads reales en tu exchange.</p>`;
     } catch (err) { setMsg($('#bt_m'), err.message); }
   });
-  bindManual(main, { connections, live });
+  bindManual(main, { connections, live }); bindPicks(main);
   $('#kill').addEventListener('click', async () => {
     if (!confirmTap($('#kill'), 'Toca otra vez: VENDER todo y apagar')) return;
     try { const r = await api('POST', '/api/bot/kill', { closeAll: true }); $('#bf').enabled.checked = false; showCloseResult(r, $('#bm')); showBotState(); $('#kill').textContent = '⏻ Cerrar todo y apagar'; } catch (err) { setMsg($('#bm'), err.message); }
