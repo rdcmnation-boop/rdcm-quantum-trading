@@ -8,6 +8,7 @@ import { memoryStore, pgStore } from './lib/store.js';
 import { runScanner, getScanner } from './lib/scanner.js';
 import { fetchNews } from './lib/news.js';
 import { notifyNews } from './lib/push.js';
+import { reconcileAll } from './lib/reconcile.js';
 import { ADAPTERS, getPrice, getCloses, getHistory } from './lib/exchanges.js';
 
 const env = { ...process.env };
@@ -56,6 +57,11 @@ const autoTimer = setInterval(async () => {
     if (Date.now() - last >= g.autoRunHours * 3600000) await director.run({ trigger: 'auto' });
   } catch (e) { console.error('director', e.message); }
 }, 30 * 60000);
+// Conciliación con el broker cada minuto: confirma ejecuciones, parciales, cancelaciones y rechazos reales (una sola instancia a la vez).
+const recTimer = setInterval(async () => {
+  try { if (!(await leader('reconcile', 50000))) return; const r = await reconcileAll({ store, adapters: ADAPTERS, encKey: env.ENCRYPTION_KEY }); if (r.checked) console.log('conciliación', JSON.stringify(r)); }
+  catch (e) { console.error('conciliación', e.message); }
+}, 60000);
 // El escáner de criptos (alimenta el modo AUTO) corre al arrancar y se refresca cada 6 h, sin esperar al Director.
 const scan = async () => {
   try { if (!(await leader('scanner', 5 * 60000))) return; const sc = await getScanner(store); if (!sc || Date.now() - sc.t > 6 * 3600000) await runScanner({ store, feed }); } catch (e) { console.error('escáner', e.message); }
@@ -69,4 +75,4 @@ const newsTimer = setInterval(newsRun, 5 * 60000);
 let keepTimer = null;
 if (env.RENDER_EXTERNAL_URL) keepTimer = setInterval(() => { fetch(`${env.RENDER_EXTERNAL_URL}/api/health`).catch(() => {}); }, 10 * 60000);
 const scanTimer = setInterval(scan, 30 * 60000);
-process.on('SIGTERM', () => { clearInterval(timer); clearInterval(autoTimer); clearInterval(scanTimer); clearInterval(newsTimer); if (keepTimer) clearInterval(keepTimer); server.close(() => process.exit(0)); });
+process.on('SIGTERM', () => { clearInterval(timer); clearInterval(recTimer); clearInterval(autoTimer); clearInterval(scanTimer); clearInterval(newsTimer); if (keepTimer) clearInterval(keepTimer); server.close(() => process.exit(0)); });

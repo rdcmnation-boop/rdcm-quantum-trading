@@ -1263,5 +1263,66 @@ console.log('Fase 3: candado de líder, estados y emergencia');
     t('3 errores seguidos: el bot pasa a ERROR, se apaga y queda el motivo', bb.state === 'ERROR' && bb.cfg.enabled === false && /3 errores/.test(bb.state_reason)); }
 }
 
+console.log('Fase 4: conciliación con el broker (contratos y flujos)');
+{
+  const RC = await import('../lib/reconcile.js'); const N = RC.normalizeBrokerOrder;
+  // Contratos: forma de las respuestas según la documentación (Coinbase: docs.cdp.coinbase.com «get order»; Robinhood: spec público)
+  const cbo = (o) => ({ order_id: 'cb-1', client_order_id: 'c1', product_id: 'BTC-USD', status: 'FILLED', filled_size: '0.0002', filled_value: '20.1', average_filled_price: '100500', total_fees: '0.12', completion_percentage: '100', ...o });
+  t('contrato Coinbase: FILLED → filled con cantidad, precio medio y comisión REALES', (() => { const n = N('coinbase', cbo()); return n.state === 'filled' && n.filledQty === 0.0002 && n.avgPrice === 100500 && n.filledUsd === 20.1 && n.feeUsd === 0.12; })());
+  t('contrato Coinbase: todos los estados documentados mapean y los desconocidos NO se toman como ejecutados', ['PENDING', 'OPEN', 'QUEUED', 'EDIT_QUEUED'].every((x) => N('coinbase', cbo({ status: x, filled_size: '0' })).state === 'open') && N('coinbase', cbo({ status: 'OPEN', filled_size: '0.0001' })).state === 'partial' && ['CANCELLED', 'EXPIRED', 'CANCEL_QUEUED'].every((x) => N('coinbase', cbo({ status: x })).state === 'cancelled') && N('coinbase', cbo({ status: 'FAILED', reject_message: 'sin fondos' })).state === 'rejected' && N('coinbase', cbo({ status: 'UNKNOWN_ORDER_STATUS' })).state === 'unknown' && N('coinbase', cbo({ status: 'ALGO_NUEVO' })).state === 'unknown');
+  const rho = (o) => ({ id: 'rh-1', client_order_id: 'c1', symbol: 'ADA-USD', side: 'buy', type: 'market', state: 'filled', average_price: '0.5', filled_asset_quantity: '40', executions: [{ effective_price: '0.5', quantity: '40', timestamp: 'x' }], ...o });
+  t('contrato Robinhood: estados filled/partially_filled/open/canceled/failed y comisión NO inventada', N('robinhood', rho()).state === 'filled' && N('robinhood', rho()).filledQty === 40 && N('robinhood', rho()).feeUsd === null && N('robinhood', rho({ state: 'partially_filled', filled_asset_quantity: '10' })).state === 'partial' && N('robinhood', rho({ state: 'open', filled_asset_quantity: '0', executions: [] })).state === 'open' && N('robinhood', rho({ state: 'canceled', executions: [], filled_asset_quantity: '0' })).state === 'cancelled' && N('robinhood', rho({ state: 'failed' })).state === 'rejected' && N('robinhood', rho({ state: 'raro' })).state === 'unknown');
+  t('contrato Robinhood: sin filled_asset_quantity usa las ejecuciones (cantidad y precio medio ponderado)', (() => { const n = N('robinhood', rho({ filled_asset_quantity: null, average_price: null, executions: [{ quantity: '10', effective_price: '1' }, { quantity: '30', effective_price: '2' }] })); return n.filledQty === 40 && Math.abs(n.avgPrice - 1.75) < 1e-9; })());
+  t('respuestas basura no revientan', N('coinbase', null).state === 'unknown' && N('robinhood', 'x').state === 'unknown' && N('otro', {}).state === 'unknown');
+
+  // Flujos con la base de datos de memoria y un broker simulado
+  const setup = async (exchange = 'coinbase') => {
+    const s2 = memoryStore(); const us = await s2.createUser({ email: `f4${Math.random()}@demo.com`, pass_hash: 'x' });
+    const cn = await s2.addConnection({ user_id: us.id, exchange, label: 'x', key_id: 'k', secret_enc: sec.encrypt(env.ENCRYPTION_KEY, 's'), can_trade: true, can_transfer: false });
+    await s2.saveBot(us.id, { symbol: 'BTC-USD', mode: 'live', enabled: false, connectionId: cn.id, maxOrderUsd: 25, maxDailyUsd: 100 });
+    let brokerOrders = {}; let fail = null; const seen = { n: 0 };
+    const ad = { [exchange]: { getOrder: async (_c, q) => { seen.n++; if (fail) throw new Error(fail); const o = q.extId ? brokerOrders[q.extId] : Object.values(brokerOrders).find((x) => x.client_order_id === q.clientOrderId); return o ? { found: true, raw: o } : { found: false }; } } };
+    const mkOrder = async (id, lc = 'submitted', extra = {}) => { const r = await s2.reserveOrder({ user_id: us.id, mode: 'live', exchange, symbol: 'BTC-USD', side: 'buy', usd: 20, qty: 0.0002, price: 100000, client_order_id: id, ...extra }); if (lc !== 'submitting') { await s2.transitionOrder(us.id, r.order.id, 'submitted', { ext_id: extra.noExt ? null : `broker-${id}` }); if (lc === 'unknown') await s2.transitionOrder(us.id, r.order.id, 'unknown'); } return r.order.id; };
+    const run = (now = Date.now() + 20000) => RC.reconcileAll({ store: s2, adapters: ad, encKey: env.ENCRYPTION_KEY, now });
+    const get = async (id) => (await s2.listOrders(us.id)).find((o) => o.id === id);
+    return { s2, us, brokerOrders: (v) => { if (v) brokerOrders = v; return brokerOrders; }, setFail: (v) => { fail = v; }, mkOrder, run, get, seen };
+  };
+  { const x = await setup(); const id = await x.mkOrder('A1'); x.brokerOrders({ 'broker-A1': cbo({ order_id: 'broker-A1', client_order_id: 'A1' }) });
+    const r = await x.run(); const o = await x.get(id);
+    t('conciliar: submitted → filled con cantidad/precio/USD/comisión REALES del broker (reemplazan la estimación)', r.changed === 1 && o.lifecycle === 'filled' && o.status === 'ok' && o.qty === 0.0002 && o.price === 100500 && Math.abs(o.usd - 20.22) < 1e-9 && o.fee_usd === 0.12 && o.filled_qty === 0.0002);
+    const r2 = await x.run(); t('conciliar es idempotente: repetirlo no cambia nada', r2.checked === 0 && (await x.s2.listOrderEvents(x.us.id, id)).filter((e) => e.to_state === 'filled').length === 1); }
+  { const x = await setup(); const id = await x.mkOrder('P1'); x.brokerOrders({ 'broker-P1': cbo({ order_id: 'broker-P1', client_order_id: 'P1', status: 'OPEN', filled_size: '0.0001', filled_value: '10', average_filled_price: '100000', completion_percentage: '50' }) });
+    await x.run(); let o = await x.get(id); t('llenado parcial: queda «partial» con lo realmente ejecutado', o.lifecycle === 'partial' && o.filled_qty === 0.0001 && o.qty === 0.0001);
+    x.brokerOrders({ 'broker-P1': cbo({ order_id: 'broker-P1', client_order_id: 'P1', status: 'FILLED', filled_size: '0.0002' }) }); await x.run(Date.now() + 40000); o = await x.get(id);
+    t('parcial → completa cuando el broker la completa', o.lifecycle === 'filled' && o.filled_qty === 0.0002); }
+  { const x = await setup(); const id = await x.mkOrder('C1'); x.brokerOrders({ 'broker-C1': cbo({ order_id: 'broker-C1', client_order_id: 'C1', status: 'CANCELLED', filled_size: '0.00005', filled_value: '5', average_filled_price: '100000' }) });
+    await x.run(); const o = await x.get(id); t('cancelada tras llenado parcial: solo se registra lo ejecutado (no la cantidad pedida)', o.lifecycle === 'filled' && o.qty === 0.00005 && Math.abs(o.usd - 5.12) < 1e-9); }
+  { const x = await setup(); const id = await x.mkOrder('C2'); x.brokerOrders({ 'broker-C2': cbo({ order_id: 'broker-C2', client_order_id: 'C2', status: 'CANCELLED', filled_size: '0', filled_value: '0' }) });
+    await x.run(); const o = await x.get(id); t('cancelada sin llenado: cancelled, no cuenta como posición ni gasto', o.lifecycle === 'cancelled' && o.status === 'error' && (await x.s2.liveUsdSince(x.us.id, 0)) === 0); }
+  { const x = await setup(); const id = await x.mkOrder('R1'); x.brokerOrders({ 'broker-R1': cbo({ order_id: 'broker-R1', client_order_id: 'R1', status: 'FAILED', filled_size: '0', reject_message: 'Insufficient funds' }) });
+    await x.run(); const o = await x.get(id); t('rechazada por el broker después de aceptarla: rejected con el motivo', o.lifecycle === 'rejected' && /Insufficient/.test(o.note) && o.status === 'error'); }
+  { const x = await setup(); const id = await x.mkOrder('E1'); x.brokerOrders({}); x.setFail('Coinbase: HTTP 429');
+    const r = await x.run(); const o = await x.get(id); t('API del broker caída/limitada: la orden NO cambia, se anota el error y se reintenta', r.errors === 1 && o.lifecycle === 'submitted' && (await x.s2.listAudit(20)).some((a) => a.action === 'reconcile_error' && /429/.test(a.detail)));
+    x.setFail(null); x.brokerOrders({ 'broker-E1': cbo({ order_id: 'broker-E1', client_order_id: 'E1' }) }); await x.run(Date.now() + 60000); t('al volver la API se concilia', (await x.get(id)).lifecycle === 'filled'); }
+  { const x = await setup(); const id = await x.mkOrder('U1', 'unknown', { noExt: true }); x.brokerOrders({ 'zz': cbo({ order_id: 'bro-U1', client_order_id: 'U1' }) });
+    await x.run(); const o = await x.get(id); t('«unknown» sin ID del broker se encuentra por client_order_id y se confirma', o.lifecycle === 'filled' && o.ext_id === 'bro-U1'); }
+  { const x = await setup(); const id = await x.mkOrder('U2', 'unknown', { noExt: true }); x.brokerOrders({});
+    await x.run(Date.now() + 120000); t('«unknown» que el broker no lista: espera (no se da por perdida enseguida)', (await x.get(id)).lifecycle === 'unknown');
+    await x.run(Date.now() + 11 * 60000); const o = await x.get(id); t('«unknown» que el broker sigue sin listar tras 10 min: rejected («no se envió») y libera el cupo', o.lifecycle === 'rejected' && (await x.s2.liveUsdSince(x.us.id, 0)) === 0 && (await x.s2.listAudit(20)).some((a) => a.action === 'reconcile_not_found')); }
+  { const x = await setup(); const id = await x.mkOrder('S1', 'submitting'); x.brokerOrders({ 'zz': cbo({ order_id: 'bro-S1', client_order_id: 'S1' }) });
+    await x.run(Date.now() + 30000); t('«submitting» reciente no se toca (el envío puede estar en curso)', (await x.get(id)).lifecycle === 'submitting');
+    await x.run(Date.now() + 3 * 60000); const o = await x.get(id); t('reinicio a mitad de envío: «submitting» viejo → unknown → se resuelve consultando al broker, sin reenviar', o.lifecycle === 'filled' && (await x.s2.listOrderEvents(x.us.id, id)).map((e) => e.to_state).join() === 'submitting,unknown,filled'); }
+  { const x = await setup(); const id = await x.mkOrder('X1'); x.brokerOrders({ 'broker-X1': cbo({ order_id: 'broker-X1', client_order_id: 'X1', status: 'ALGO_NUEVO' }) }); await x.run();
+    t('estado desconocido del broker: se mantiene sin resolver y queda auditado (jamás «ejecutada»)', (await x.get(id)).lifecycle === 'submitted' && (await x.s2.listAudit(20)).some((a) => a.action === 'reconcile_unknown_state')); }
+  { const x = await setup(); const id = await x.mkOrder('M1'); x.brokerOrders({ 'broker-M1': cbo({ order_id: 'broker-M1', client_order_id: 'M1', filled_size: '0.00018', filled_value: '18.09' }) }); await x.run();
+    t('diferencia >1% entre lo estimado y lo real queda auditada', (await x.s2.listAudit(20)).some((a) => a.action === 'reconcile_adjusted')); }
+  { const x = await setup('robinhood'); const id = await x.mkOrder('H1'); x.brokerOrders({ 'broker-H1': rho({ id: 'broker-H1', client_order_id: 'H1', filled_asset_quantity: '0.0002', average_price: '100100', executions: [] }) }); await x.run();
+    const o = await x.get(id); t('Robinhood: conciliada con cantidad y precio reales y comisión desconocida (null, no inventada)', o.lifecycle === 'filled' && o.price === 100100 && (o.fee_usd === null || o.fee_usd === undefined)); }
+  { const x = await setup(); const id = await x.mkOrder('W1'); x.brokerOrders({}); await x.s2.deleteConnection(x.us.id, (await x.s2.listConnections(x.us.id))[0].id); await x.run();
+    t('sin conexión activa no inventa nada: la orden queda igual y se audita', (await x.get(id)).lifecycle === 'submitted' && (await x.s2.listAudit(20)).some((a) => a.action === 'reconcile_no_credentials')); }
+  { const x = await setup(); await x.mkOrder('Q1'); const o2 = await x.mkOrder('Q2'); x.brokerOrders({}); await x.s2.transitionOrder(x.us.id, o2, 'filled', {});
+    const r = await RC.reconcileAll({ store: x.s2, adapters: { coinbase: { getOrder: async () => { throw new Error('x'); } } }, encKey: env.ENCRYPTION_KEY, now: Date.now() + 20000 }); t('solo concilia órdenes pendientes (las terminales no se consultan)', r.checked === 1); }
+}
+
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);
