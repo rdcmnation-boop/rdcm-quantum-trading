@@ -1035,6 +1035,15 @@ t('azure: el endpoint exige sesión y sin llave dice que no está configurado', 
 t('voz real: el endpoint de evaluar ahora rechaza dinero real y exige sesión', (await client()('POST', '/api/bot/evaluate-now')).status === 401);
 const vc2 = await import('../public/voicecmd.js');
 t('voz: más preguntas (posiciones, topes, listas) se responden con datos en pantalla', /BTC \$6\.00/.test(vc2.answerFor('holdings', {}, { holdings: [{ symbol: 'BTC-USD', value: 6 }] })) && /\$25\.00 por orden/.test(vc2.answerFor('limits', {}, { limits: { usd: 10, maxOrderUsd: 25, maxDailyUsd: 100, spent24: 5, stopLossPct: 8 } })) && /SOL con confianza 78/.test(vc2.answerFor('ready', { rows: [{ sym: 'SOL', state: 'listo p/comprar', conf: 78 }] })) && vc2.intentOf('compra cuando esté listo') === 'buy' && vc2.intentOf('por qué compraste') === 'why');
+const tmm = await import('../lib/timemachine.js');
+const tc = []; { let v = 100; for (let i = 0; i < 250; i++) { v *= 1 + Math.sin(i / 9) * 0.012 + (((i * 53) % 17) - 8) / 700; tc.push(v); } }
+const pj = tmm.project(tc, { horizon: 30, key: 'T' }); const pj2 = tmm.project(tc, { horizon: 30, key: 'T' });
+t('máquina del tiempo: rangos ordenados, probabilidades válidas y resultado repetible', pj && pj.bands.p5.length === 30 && pj.bands.p5[29] < pj.bands.p50[29] && pj.bands.p50[29] < pj.bands.p95[29] && pj.prob_up > 0 && pj.prob_up < 1 && pj.range90_pct[0] < pj.median_pct && pj.median_pct < pj.range90_pct[1] && JSON.stringify(pj2.bands.p50) === JSON.stringify(pj.bands.p50) && tmm.project(tc.slice(0, 20)) === null);
+t('máquina del tiempo: más horizonte = más incertidumbre, y el pasado se repasa bien', tmm.project(tc, { horizon: 90, key: 'T' }).range90_pct[1] - tmm.project(tc, { horizon: 90, key: 'T' }).range90_pct[0] > pj.range90_pct[1] - pj.range90_pct[0] && Math.abs(tmm.replay([100, 110, 99, 121], 3).ret_pct - 21) < 1e-9 && tmm.replay([100, 110, 99, 121], 3).max_drawdown_pct < -9.9);
+const stk = await tmm.fetchStock('AAPL', async (u) => ({ ok: true, status: 200, text: async () => 'Date,Open,High,Low,Close,Volume\n' + Array.from({ length: 60 }, (_, i) => `2025-01-${i},1,1,1,${100 + i},5`).join('\n') }));
+let stkErr = ''; try { await tmm.fetchStock('../etc', async () => ({})); } catch (e) { stkErr = e.message; }
+t('acciones: lee datos diarios, valida el símbolo y falla con mensaje claro', stk.length === 60 && stk[59] === 159 && /inválido/.test(stkErr) && tmm.STOCK_RE.test('AAPL') && !tmm.STOCK_RE.test('A/B'));
+t('futuro: exige sesión y símbolo válido', (await client()('GET', '/api/future?symbol=BTC-USD')).status === 401 && (await A('GET', '/api/future?symbol=../x')).status === 400);
 server.close();
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

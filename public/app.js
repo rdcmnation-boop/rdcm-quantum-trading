@@ -555,7 +555,7 @@ async function answerVoice(txt) {
   const it = intentOf(txt); if (it === 'mute' || it === 'none') return it;
   if (it === 'buy') return voiceBuy();
   const pf = $('#pf_c'); const profit = pf ? pf.innerText.replace(/\s+/g, ' ').trim().slice(0, 180) : '';
-  return answerFor(it, lastD || {}, lastBn || {}, { profit });
+  return answerFor(it, lastD || {}, lastBn || {}, { profit, future: lastFuture });
 }
 function listenLoop(m, b) {
   if (!convoOn || convoListening) return; convoListening = true; let got = false;
@@ -1160,12 +1160,13 @@ async function tabMercado(main) {
     <div class="kpi"><div class="l">Mercado 24 h</div><div class="v ${g ? cls(g.mcap24) : ''}" style="font-size:20px">${g ? pc(g.mcap24) : '—'}</div><div class="s">capitalización total</div></div>
   </div>
   ${newsCardHtml(nw)}
+  ${futureCardHtml(m.coins)}
   <div class="card" data-open><h2>Precios y tendencia</h2>${coins ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Precio</th><th class="r">24 h</th><th class="r">7 d</th><th class="r">30 d</th></tr></thead><tbody>${coins}</tbody></table></div>` : '<p class="muted">Sin datos de CoinGecko ahora mismo.</p>'}</div>
   <div class="card" data-open><h2>Ranking del Cerebro: todas las criptos grandes</h2>${scannerHtml(sc)}</div>
   <div class="card"><h2>Liquidez real (Coinbase Exchange)</h2>${books ? `<div class="scroll"><table><thead><tr><th>Par</th><th class="r">Spread</th><th class="r">Profundidad ±0.5 %</th><th class="r">Volumen 24 h</th></tr></thead><tbody>${books}</tbody></table></div>` : '<p class="muted">Sin libro de órdenes ahora mismo.</p>'}</div>
   <div class="card"><h2>Tendencia en CoinGecko</h2>${m.trending.length ? `<div class="row">${m.trending.map((t) => `<span class="chip">${esc(t.name)} ${esc(t.symbol.toUpperCase())}</span>`).join('')}</div>` : '<p class="muted">Sin datos.</p>'}</div>
   <p class="muted" style="font-size:12px">${esc(m.note)} Actualizado ${esc(ago(m.t))}.${m.errors.length ? ' Fuentes con problemas: ' + esc(m.errors.join('; ')) : ''}</p>`;
-  bindNewsCard();
+  bindNewsCard(); bindFuture();
 }
 
 // ============================ Dueño ============================
@@ -1363,6 +1364,46 @@ async function pollNews(first) {
 }
 function startNewsWatch() { if (nwTimer) return; pollNews(true); nwTimer = setInterval(() => pollNews(false), 90000); }
 function stopNewsWatch() { if (nwTimer) clearInterval(nwTimer); nwTimer = null; radioOn = false; voice.stopRadio(); }
+
+// ---- Máquina del Tiempo: futuros posibles (simulación) y viaje al pasado. No es predicción. ----
+let lastFuture = '';
+const fpx = (v) => (v >= 100 ? v.toFixed(2) : v >= 1 ? v.toFixed(3) : v.toPrecision(3));
+const pct1 = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} %`;
+function fanSvg(d) {
+  const W = 320; const H = 150; const h = d.history; const nH = h.length; const nF = d.days; const all = [...h, ...d.bands.p5, ...d.bands.p95]; const mn = Math.min(...all); const mx = Math.max(...all); const pad = (mx - mn) * 0.06 || 1;
+  const x = (i) => (i / (nH + nF - 1)) * (W - 4) + 2; const y = (v) => H - 6 - ((v - (mn - pad)) / (mx - mn + 2 * pad)) * (H - 12);
+  const line = (arr, off) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(off + i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const area = (lo, hi) => `${lo.map((v, i) => `${i ? 'L' : 'M'}${x(nH + i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ')} ${hi.map((v, i) => `L${x(nH + nF - 1 - i).toFixed(1)} ${y(hi[nF - 1 - i]).toFixed(1)}`).join(' ')}Z`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="tmsvg" role="img" aria-label="Pasado y futuros posibles"><line x1="${x(nH - 1)}" x2="${x(nH - 1)}" y1="2" y2="${H - 2}" class="tmnow"/><path d="${area(d.bands.p5, d.bands.p95)}" class="tm90"/><path d="${area(d.bands.p25, d.bands.p75)}" class="tm50"/><path d="${line(h, 0)}" class="tmpast"/><path d="${line(d.bands.p50, nH)}" class="tmmed"/></svg>`;
+}
+function futureHtml(d) {
+  const up = Math.round(d.prob_up * 100);
+  const txt = `${d.symbol} en ${d.days} días: en la mitad de los futuros simulados termina ${pct1(d.median_pct)}; el rango del 90 % va de ${pct1(d.range90_pct[0])} a ${pct1(d.range90_pct[1])}. Sube en ${up} de cada 100 escenarios y en ${Math.round(d.prob_drop10 * 100)} de cada 100 pasa por una caída de 10 % o más. No es una predicción.`;
+  lastFuture = txt;
+  return `${fanSvg(d)}<div class="tmleg"><span><i class="tpast"></i>pasado 90 d</span><span><i class="tmedc"></i>mediana</span><span><i class="t50"></i>50 % de los casos</span><span><i class="t90"></i>90 % de los casos</span></div>
+    <div class="tmgrid"><div><small>Mediana en <span>${d.days}</span> d</small><b class="${cls(d.median_pct)}">${pct1(d.median_pct)}</b></div><div><small>Rango 90 %</small><b>${pct1(d.range90_pct[0])} · ${pct1(d.range90_pct[1])}</b></div><div><small>Prob. de subir</small><b>${up} %</b></div><div><small>Caída ≥ 10 % en el camino</small><b>${Math.round(d.prob_drop10 * 100)} %</b></div></div>
+    <div class="tmrep"><b>🕰 Viaje al pasado</b> <span>(si hubieras comprado antes, sin costos)</span>${d.replay.map((r) => `<div><span>${r.days} d:</span> <b class="${cls(r.ret_pct)}">${pct1(r.ret_pct)}</b> <span>peor caída</span> <b>${pct1(r.max_drawdown_pct)}</b></div>`).join('')}</div>
+    <div class="muted" style="font-size:12px;margin-top:6px"><span>Contexto:</span> <span>tendencia</span> <b>${esc(d.context.trend)}</b> · <span>RSI</span> <b>${d.context.rsi}</b> · <b>${esc(d.regime)}</b> · <span>${d.kind}, movimiento típico diario</span> <b>${d.vol_daily_pct.toFixed(1)} %</b> · <span>Precio hoy</span> <b>${money(d.start, d.start < 10 ? 4 : 2)}</b></div>
+    <div class="row" style="margin-top:8px"><button type="button" class="btn small ghost" id="tm_say">🔊 Contármelo</button></div>
+    <p class="muted" style="font-size:11px;margin:6px 0 0"><span>${esc(d.note)}</span> <span>Simulación con</span> <b>${d.paths.toLocaleString('en-US')}</b> <span>caminos.</span></p>`;
+}
+function futureCardHtml(coins) {
+  const opts = [...new Set([...(coins || []).map((c) => c.symbol), 'BTC-USD', 'ETH-USD', 'SOL-USD', 'AAPL', 'TSLA', 'NVDA', 'MSFT', 'SPY'])].map((s) => `<option value="${esc(s)}"></option>`).join('');
+  return `<div class="card" data-open id="tmc"><h2>Máquina del Tiempo</h2><p class="muted" style="margin:0 0 8px;font-size:13px">Elige una cripto o una acción y viaja a miles de futuros posibles, con probabilidades reales. No predice: simula.</p>
+    <div class="tmctl"><input id="tm_sym" list="tm_list" value="BTC-USD" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Símbolo"><datalist id="tm_list">${opts}</datalist>
+    <select id="tm_days" aria-label="Días"><option value="7">7 días</option><option value="30" selected>30 días</option><option value="90">90 días</option></select><button type="button" class="btn small" id="tm_go">🕰 Viajar al futuro</button></div>
+    <div id="tm_out" class="muted" style="margin-top:8px"></div></div>`;
+}
+function bindFuture() {
+  const go = $('#tm_go'); if (!go || go.dataset.b) return; go.dataset.b = '1'; const out = $('#tm_out');
+  const run = async () => {
+    const sym = ($('#tm_sym').value || '').trim().toUpperCase().replace(/\s+/g, ''); if (!sym) return; const sy = /-/.test(sym) ? sym : (['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'LINK', 'DOT', 'LTC'].includes(sym) ? `${sym}-USD` : sym);
+    out.className = 'muted'; out.textContent = 'Viajando… simulando miles de futuros'; go.disabled = true;
+    try { const d = await api('GET', `/api/future?symbol=${encodeURIComponent(sy)}&days=${$('#tm_days').value}`); out.className = ''; out.innerHTML = futureHtml(d); const s = $('#tm_say'); if (s) s.onclick = () => voice.radio(lastFuture); }
+    catch (e) { out.className = 'neg'; out.textContent = e.message; } finally { go.disabled = false; }
+  };
+  go.onclick = run; $('#tm_sym').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+}
 
 function render() {
   if (!state.user) { stopNewsWatch(); return viewAuth(); }

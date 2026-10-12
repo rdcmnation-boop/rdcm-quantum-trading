@@ -7,6 +7,7 @@ const clean = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀
 export function intentOf(text) {
   const t = clean(text); if (!t) return 'none';
   if (has(t, /\b(silencio|callate|calla|basta|para ya|stop|mute|quiet|shut up|terminar|adios|bye)\b/)) return 'mute';
+  if (has(t, /\b(futuro|prediccion|predecir|proyeccion|time machine|maquina del tiempo|forecast|future|pronostico)\b/)) return 'future';
   if (has(t, /\b(noticia|noticias|news|headline)\b/)) return 'news';
   if (has(t, /\b(por que|porque|razon|why|reason|motivo|compraste|compro por|bought)\b/)) return 'why';
   if (has(t, /\b(compra|compres|comprar|compralo|compramelo|buy|adquiere)\b/)) return 'buy';
@@ -54,6 +55,7 @@ export function answerFor(intent, d, bn = {}, extra = {}) {
     case 'profit': return extra.profit ? `Esto es lo que ves en pantalla: ${extra.profit}` : 'Mira la tarjeta Ganado desde que se encendió el bot para el resultado exacto.';
     case 'errors': { const n = (bn.recent || []).filter((o) => o.status && o.status !== 'ok').length; return n ? `Hay ${n} orden${n > 1 ? 'es' : ''} reciente${n > 1 ? 's' : ''} con error. El motivo está en el Tablero.` : 'No veo errores recientes.'; }
     case 'buy': { const r = (d.rows || []).find((x) => /listo/i.test(x.state || '')); return r ? `${r.sym} está lista${r.conf ? ` con confianza ${r.conf} por ciento` : ''}.` : 'Ninguna cripto cumple todas las reglas todavía.'; }
+    case 'future': return extra.future ? extra.future : 'Abre Mercado y usa la Máquina del Tiempo: elige una cripto o una acción y te cuento los futuros posibles. No puedo predecir, solo simular.';
     case 'help': return 'Pregúntame qué hago, las noticias, por qué compré, qué está listo, mis posiciones, mis topes o el riesgo. En papel también puedes decirme: compra cuando esté listo.';
     case 'hello': return 'Hola. Soy Superintelligence. Pregúntame lo que quieras sobre lo que hago.';
     default: return 'Solo puedo contarte lo que hago, las noticias y por qué compro. Con dinero real no puedo operar ni abrir cuentas por voz.';
