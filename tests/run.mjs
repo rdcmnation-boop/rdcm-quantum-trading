@@ -998,8 +998,9 @@ t('voz: pedir login, dueño u operar solo recibe una negativa', ['entra a la cue
 t('voz: la respuesta usa lo que hay en pantalla', /frenó|frené/.test(vc.answerFor('news', { scouts: [{ name: 'NOTICIAS', val: 'freno · 2 negativas' }] })) && vc.answerFor('why', { thoughts: [{ k: 'buy', text: 'Compré BTC porque sube.' }] }) === 'Compré BTC porque sube.');
 const vsrc = fs.readFileSync('public/voicecmd.js', 'utf8').replace(/\/\/.*$/gm, '');
 t('voz: el módulo de voz no tiene red, sesión ni acceso a cuentas', !/\b(fetch|XMLHttpRequest|WebSocket|sendBeacon|document\.cookie|localStorage\.getItem\('qt_(tok|sess)|location\s*=|eval\(|import\()/.test(vsrc) && !/api\(/.test(vsrc));
-const appsrc = fs.readFileSync('public/app.js', 'utf8'); const vi = appsrc.indexOf("const m = $('.bmic', r)"); const vj = appsrc.indexOf('function narrate');
-t('voz: los manejadores de voz en la app no llaman al servidor', vi > 0 && vj > vi && !/\bapi\(|fetch\(|location\./.test(appsrc.slice(vi, vj)));
+const appsrc = fs.readFileSync('public/app.js', 'utf8'); const vi = appsrc.indexOf('async function voiceBuy'); const vj = appsrc.indexOf('async function answerVoice');
+const vbody = appsrc.slice(vi, vj);
+t('voz: comprar por voz solo en papel; en real responde que no y no llama al servidor', vi > 0 && vj > vi && /bn\.mode === 'live'\) return/.test(vbody) && (vbody.match(/api\(/g) || []).length === 2 && !/mode: 'live'|liveAck/.test(vbody) && /AUTO_PRESET/.test(vbody) && /mode: 'paper'/.test(appsrc.slice(appsrc.indexOf('const AUTO_PRESET'), appsrc.indexOf('const AUTO_PRESET') + 400)));
 const nr = await import('../public/newsradio.js');
 const nws = (await import('../lib/news.js')).analyze((await import('../lib/news.js')).parseRss('<rss><channel><item><title>Bitcoin ETF approved, price surges</title><link>https://www.coindesk.com/x</link><pubDate>' + new Date().toUTCString() + '</pubDate></item><item><title>Exchange hacked, funds stolen</title><link>javascript:alert(1)</link><pubDate>' + new Date().toUTCString() + '</pubDate></item></channel></rss>'));
 t('noticias: positiva/negativa, enlace https y fuente; enlaces raros se descartan', nws.items.some((i) => i.pos && i.link === 'https://www.coindesk.com/x' && i.src === 'coindesk.com' && i.coins.includes('BTC')) && nws.items.some((i) => i.neg && i.link === null));
@@ -1025,6 +1026,15 @@ t('push: la primera lectura no avisa; una noticia negativa nueva sí, con aviso 
 t('push: suscripción caída (410) se elimina y no se repite el aviso en menos de 10 min', JSON.parse(await fstore.getSetting('push:subs', '[]')).length === 1 && r2.sent === 0);
 t('push: endpoints exigen sesión y rechazan servicios no permitidos', (await client()('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/x' })).status === 401 && (await A('POST', '/api/push/subscribe', { endpoint: 'https://evil.example/x' })).status === 400 && (await A('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/mine' })).status === 200 && (await A('GET', '/api/push/key')).body.key.length > 60);
 t('push: el service worker y el manifiesto se sirven', (await anon('GET', '/sw.js')).text.startsWith('// Service worker') && JSON.parse((await anon('GET', '/manifest.webmanifest')).text).display === 'standalone');
+const ttsm = await import('../lib/tts.js');
+let ttsCall = null; const tt = ttsm.createTts({ env: { AZURE_SPEECH_KEY: 'k', AZURE_SPEECH_REGION: 'eastus' }, f: async (u, o) => { ttsCall = { u, o }; return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer }; } });
+const t1 = await tt.speak('Hola <b>mundo</b> & "amigos"', 'es'); const t2 = await tt.speak('Hola <b>mundo</b> & "amigos"', 'es');
+t('azure: arma el SSML seguro, usa la llave solo en el servidor y guarda frases repetidas', t1.ok && t2.ok && ttsCall.u === 'https://eastus.tts.speech.microsoft.com/cognitiveservices/v1' && ttsCall.o.headers['Ocp-Apim-Subscription-Key'] === 'k' && /es-US-AlonsoNeural/.test(ttsCall.o.body) && !/<b>/.test(ttsCall.o.body) && /&amp;/.test(ttsCall.o.body));
+t('azure: sin llave o con región rara no se activa; el texto se limita a 400', !ttsm.createTts({ env: {} }).enabled && !ttsm.createTts({ env: { AZURE_SPEECH_KEY: 'k', AZURE_SPEECH_REGION: 'x/../evil' } }).enabled && ttsm.cleanText('a'.repeat(900)).length === 400);
+t('azure: el endpoint exige sesión y sin llave dice que no está configurado', (await client()('POST', '/api/tts', { text: 'hola' })).status === 401 && (await A('POST', '/api/tts', { text: 'hola' })).status === 503 && (await A('GET', '/api/voice/config')).body.azure === false);
+t('voz real: el endpoint de evaluar ahora rechaza dinero real y exige sesión', (await client()('POST', '/api/bot/evaluate-now')).status === 401);
+const vc2 = await import('../public/voicecmd.js');
+t('voz: más preguntas (posiciones, topes, listas) se responden con datos en pantalla', /BTC \$6\.00/.test(vc2.answerFor('holdings', {}, { holdings: [{ symbol: 'BTC-USD', value: 6 }] })) && /\$25\.00 por orden/.test(vc2.answerFor('limits', {}, { limits: { usd: 10, maxOrderUsd: 25, maxDailyUsd: 100, spent24: 5, stopLossPct: 8 } })) && /SOL con confianza 78/.test(vc2.answerFor('ready', { rows: [{ sym: 'SOL', state: 'listo p/comprar', conf: 78 }] })) && vc2.intentOf('compra cuando esté listo') === 'buy' && vc2.intentOf('por qué compraste') === 'why');
 server.close();
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

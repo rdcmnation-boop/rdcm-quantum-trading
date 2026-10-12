@@ -7,6 +7,7 @@ Plataforma SaaS **no-custodial** de bots cripto (Coinbase Advanced y Robinhood C
 |---|---|
 | `DATABASE_URL` | Se conecta sola desde `render.yaml` |
 | `SESSION_SECRET`, `ENCRYPTION_KEY` | Se generan solas. **No las cambies** o se pierden las llaves cifradas de los clientes |
+| `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` | **Opcional (voz natural).** Créalos en Render → Environment (recurso «Speech» de Azure; región p. ej. `eastus`). Sin ellos la app usa la voz del teléfono. La llave nunca llega al navegador |
 | `OWNER_EMAIL`, `OWNER_PASSWORD` | **Tú las pones.** Solo ese correo puede ser dueño. Cambiar la contraseña aquí la rota al reiniciar |
 
 ## Seguridad

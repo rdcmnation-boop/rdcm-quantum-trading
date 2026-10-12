@@ -411,7 +411,7 @@ const vizStream = (d) => d.stream.slice(0, 14).map((x) => { const [tg, c] = tagO
 const TH_TAG = { pass: 'TRASPASO', buy: 'COMPRA', sell: 'VENTA', risk: 'FRENO', hold: 'VIGILA' };
 const vizWhy = (d) => (d.thoughts || []).map((x) => `<div class="w ${x.k}"><b>${x.big ? 'COMPRA GRANDE' : TH_TAG[x.k] || 'NOTA'}</b> ${esc(x.text)}</div>`).join('');
 const briefBtn = (d) => (d.city && voice.supported ? '<button type="button" class="bbrief">🎙 Informe del Cerebro</button>' : '');
-const micBtn = (d) => ((d.octopus || d.ufo) && voice.supported && (window.SpeechRecognition || window.webkitSpeechRecognition) ? '<button type="button" class="bmic" aria-label="Preguntar por voz">🎤 Pregúntale</button>' : '');
+const micBtn = (d) => ((d.octopus || d.ufo) && voice.supported && (window.SpeechRecognition || window.webkitSpeechRecognition) ? '<button type="button" class="bmic" aria-label="Preguntar por voz">🎤 Hablar con el Cerebro</button>' : '');
 const voiceLbl = () => (voice.on ? '🔊 Voz activa' : '🔈 Toca para oírlo');
 function vizHtml(d, id) {
   return `<div class="bviz" id="${id}"><canvas aria-label="${esc(d.caption)}"></canvas><span class="bcap">${esc(d.caption)}</span>${briefBtn(d)}${micBtn(d)}${(d.octopus || d.city || d.ufo) && voice.supported ? `<button type="button" class="bvoice${voice.on ? ' on' : ''}" aria-pressed="${voice.on}">${voiceLbl()}</button>` : ''}
@@ -523,7 +523,7 @@ async function mountCity(r, d) {
 let vizCtl = null; let vizMode = '';
 // Con el bot en AUTO el Cerebro es un OVNI con IA en 3D que recorre el mapa de criptos; si no, la red de nodos. Si el 3D falla, cae a la red.
 async function mountViz(bn) {
-  const r = $('#bz_v'); if (!r) return; const d = botViz(bn); lastD = d;
+  const r = $('#bz_v'); if (!r) return; const d = botViz(bn); lastD = d; lastBn = bn;
   if (d.octopus || d.ufo) { try { const m = await import('/octo3d.js'); if (!document.body.contains(r)) return; vizCtl = m.createOcto3D($('canvas', r), d, { onSay: (t, hi) => voice.say(t, hi) }); bindVoice(r, d); vizMode = '3d'; r.dataset.on = '1'; r.classList.add('is3d'); return; } catch { /* usa la red */ } }
   vizCtl = brainViz(r, d); vizMode = '2d'; r.dataset.on = '1'; r.classList.remove('is3d');
 }
@@ -533,13 +533,45 @@ function bindVoice(r, d) {
   if (!thoughtSeen && d.ot) thoughtSeen = d.ot;
   const b = $('.bvoice', r); if (!b || b.dataset.b) return; b.dataset.b = '1';
   b.onclick = () => { if (voice.on && Date.now() - lastSpoke < 25000) autoPace.muted(); voice.set(!voice.on); b.classList.toggle('on', voice.on); b.setAttribute('aria-pressed', String(voice.on)); b.textContent = voiceLbl(); startAuto(); };
-  const m = $('.bmic', r); if (m && !m.dataset.b) { m.dataset.b = '1'; m.onclick = () => {
-    if (!voice.on) { voice.set(true); b.classList.add('on'); b.textContent = voiceLbl(); }
-    m.classList.add('on'); m.textContent = '🎤 Escuchando…';
-    const ok = listenOnce(lang(), (txt) => { const it = intentOf(txt); if (it === 'mute') { voice.set(false); b.classList.remove('on'); b.textContent = voiceLbl(); autoPace.muted(); return; } voice.say(answerFor(it, lastD || {}), true); }, () => { m.classList.remove('on'); m.textContent = '🎤 Pregúntale'; });
-    if (!ok) { m.classList.remove('on'); m.textContent = '🎤 Pregúntale'; voice.say('Tu navegador no deja escuchar por voz aquí.', true); }
-  }; }
+  const m = $('.bmic', r); if (m && !m.dataset.b) { m.dataset.b = '1'; m.onclick = () => { if (convoOn) stopConvo(m); else startConvo(m, b); }; }
   startAuto();
+}
+
+// ---- Conversación por voz en vivo: escucha, responde hablando y vuelve a escuchar hasta que digas "basta" o haya silencio. ----
+let convoOn = false; let convoMiss = 0; let convoUnsub = null; let convoListening = false; let lastBn = null;
+const micLbl = (on) => (on ? '🎤 Escuchando… (toca para parar)' : '🎤 Hablar con el Cerebro');
+function stopConvo(m) { convoOn = false; convoListening = false; if (convoUnsub) { convoUnsub(); convoUnsub = null; } if (m) { m.classList.remove('on'); m.textContent = micLbl(false); } }
+// Pedirle al Cerebro que compre cuando esté listo: SOLO en papel. Con dinero real no se opera por voz (cualquiera cerca del micrófono podría hablar): el Cerebro real ya compra solo con tus topes.
+async function voiceBuy() {
+  const bn = lastBn || {}; const d = lastD || {};
+  if (bn.mode === 'live') return 'Con dinero real no compro por voz. El Cerebro real ya compra solo, con tus topes, apenas algo cumple todas las reglas. Para cambiar algo, tócalo en pantalla.';
+  try {
+    if (!bn.enabled) { await api('PUT', '/api/bot', AUTO_PRESET); return 'Listo: encendí el Cerebro en modo papel. Compraré apenas algo cumpla todas las reglas, y te cuento por qué.'; }
+    await api('POST', '/api/bot/evaluate-now'); const r = (d.rows || []).find((x) => /listo/i.test(x.state || ''));
+    return r ? `Revisé ahora. ${r.sym} está lista${r.conf ? ` con confianza ${r.conf} por ciento` : ''}; compro si cumple tus topes.` : 'Revisé ahora. Todavía ninguna cripto cumple todas las reglas; compro apenas una cumpla.';
+  } catch (e) { return `No pude hacerlo: ${e.message}`; }
+}
+async function answerVoice(txt) {
+  const it = intentOf(txt); if (it === 'mute' || it === 'none') return it;
+  if (it === 'buy') return voiceBuy();
+  const pf = $('#pf_c'); const profit = pf ? pf.innerText.replace(/\s+/g, ' ').trim().slice(0, 180) : '';
+  return answerFor(it, lastD || {}, lastBn || {}, { profit });
+}
+function listenLoop(m, b) {
+  if (!convoOn || convoListening) return; convoListening = true; let got = false;
+  const ok = listenOnce(lang(), async (txt) => {
+    got = true; convoMiss = 0; const out = await answerVoice(txt);
+    if (out === 'mute') { stopConvo(m); if (b) { voice.set(false); b.classList.remove('on'); b.textContent = voiceLbl(); } autoPace.muted(); return; }
+    if (out !== 'none') voice.say(out, true);
+  }, () => { convoListening = false; if (!convoOn) return; if (!got && ++convoMiss >= 3) { stopConvo(m); return; } if (!got) setTimeout(() => listenLoop(m, b), 400); });
+  if (!ok) { convoListening = false; stopConvo(m); voice.say('Tu navegador no deja escuchar por voz aquí.', true); }
+}
+function startConvo(m, b) {
+  if (!voice.on) { voice.set(true); if (b) { b.classList.add('on'); b.textContent = voiceLbl(); } }
+  convoOn = true; convoMiss = 0; m.classList.add('on'); m.textContent = micLbl(true);
+  // Mientras el Cerebro habla no se escucha (evita oírse a sí mismo); al terminar vuelve a escuchar.
+  convoUnsub = voice.subscribe((s) => { if (convoOn && !s.speaking && !convoListening) setTimeout(() => { if (convoOn && !voice.speakingNow) listenLoop(m, b); }, 500); });
+  voice.say(lang() === 'en' ? 'I am listening. Ask me anything about what I am doing.' : 'Te escucho. Pregúntame lo que quieras sobre lo que hago.', true);
 }
 // Narración automática: cada cierto rato el Cerebro cuenta qué hace, noticias y por qué compra. El ritmo se ajusta solo (autoPace).
 let lastD = null; let lastSpoke = 0; let autoT = null; let autoRound = 0;
@@ -559,7 +591,7 @@ function narrate(d) {
 }
 // Actualiza SIN recrear: el pulpo sigue nadando y las islas se reacomodan según lo que el bot decide.
 function updateViz(bn) {
-  const r = $('#bz_v'); if (!r) return; const d = botViz(bn);
+  const r = $('#bz_v'); if (!r) return; const d = botViz(bn); lastBn = bn; lastD = d;
   if (vizCtl && r.dataset.on === '1' && vizMode === ((d.octopus || d.ufo) ? '3d' : '2d')) { vizCtl.update(d); vizFill(r, d); narrate(d); return; }
   const c = $('canvas', r); if (c) c.replaceWith(c.cloneNode(false)); r.dataset.on = ''; vizFill(r, d); mountViz(bn);
 }
@@ -1334,7 +1366,7 @@ function stopNewsWatch() { if (nwTimer) clearInterval(nwTimer); nwTimer = null; 
 
 function render() {
   if (!state.user) { stopNewsWatch(); return viewAuth(); }
-  startNewsWatch();
+  startNewsWatch(); voice.refresh();
   shell();
   loadTab();
 }
