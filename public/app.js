@@ -1091,6 +1091,8 @@ async function loadPlanCard() {
   const box = $('#planb'); if (!box) return;
   let b; try { b = await api('GET', '/api/billing'); } catch (e) { box.textContent = e.message; return; }
   const c = b.current; box.className = '';
+  // Modo gratis: sin límites de plan activados y sin cobro configurado → todo es gratis y no se muestran precios.
+  if (!b.enforced && !b.checkout_available) { box.innerHTML = '<p><b class="pos">Todo gratis por ahora</b></p><p class="muted" style="font-size:13px">Todas las funciones están abiertas sin costo y sin tarjeta. Tus topes de riesgo siguen siendo los que tú definas.</p>'; return; }
   const date = (t) => (t ? new Date(t).toLocaleDateString() : '—');
   box.innerHTML = `
     <p><b>${esc((b.plans.find((p) => p.id === c.plan) || {}).label || c.plan)}</b> · ${esc(STATUS_ES[c.status] || c.status)}${c.period_end ? ` · hasta ${esc(date(c.period_end))}` : ''}${c.cancel_at_period_end ? ' · no se renovará' : ''}</p>

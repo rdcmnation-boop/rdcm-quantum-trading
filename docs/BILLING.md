@@ -33,3 +33,6 @@ La prueba dura 14 días desde el registro. Los topes nunca superan los de la pla
 
 ## Soporte
 `GET /api/owner/users/:id/support` devuelve un resumen operativo **sin llaves ni credenciales** y deja rastro (`support_view`). `POST /api/owner/users/:id/plan` concede un plan a mano (pilotos) y queda auditado.
+
+## Modo gratis (por defecto)
+Mientras `billing_enforce` esté apagado y no haya claves de Stripe, **todo es gratis**: sin límites de plan, sin precios en pantalla y sin cobro. Para cobrar más adelante basta configurar Stripe y activar `billing_enforce`. Los costos de infraestructura (Render, dominio, y APIs opcionales como Azure TTS o IA) siguen existiendo aunque el cliente no pague.
