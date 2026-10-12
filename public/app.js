@@ -1268,6 +1268,24 @@ async function tabSeguridad(main) {
   <details class="card acc"><summary><h2>Registro de auditoría</h2></summary><div class="accb scroll"><table><thead><tr><th>Cuándo</th><th>Acción</th><th>Usuario</th><th>IP</th><th>Detalle</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
 }
 
+async function loadRiskCard() {
+  const box = $('#riskb'); if (!box) return;
+  try {
+    const r = await api('GET', '/api/owner/risk'); if (!box.isConnected) return; const em = r.emergency; const p = r.platform;
+    const sm = box.parentElement && box.parentElement.querySelector('summary h2'); if (sm && em.on) sm.textContent = 'Riesgo y parada de emergencia · ACTIVA'; if (em.on && box.parentElement) box.parentElement.open = true;
+    box.innerHTML = `<div class="banner" style="${em.on ? '' : 'display:none'}"><b>PARADA DE EMERGENCIA ACTIVA.</b> No sale ninguna orden real nueva. ${esc(em.reason || '')}</div>
+      <p class="muted" style="font-size:12px">${esc(r.policy)}</p>
+      ${p ? `<p class="muted" style="font-size:12px">Límites de la plataforma (el menor entre cliente y plataforma manda): orden máx. <b>$${p.maxOrderUsd}</b> · día máx. <b>$${p.maxDailyUsd}</b> · abiertas máx. <b>${p.maxOpenOrders}</b> · órdenes/hora <b>${p.maxOrdersPerHour}</b> · precio máx. <b>${Math.round(p.maxPriceAgeMs / 1000)} s</b> · desvío máx. <b>${p.maxPriceDeviationPct}%</b> · rechazos seguidos <b>${p.maxConsecutiveRejects}</b>.</p>` : `<p class="neg">Los límites no se pueden leer: por seguridad no sale ninguna orden real. (${esc(r.platform_error || '')})</p>`}
+      <label>Motivo (opcional)<input id="em_why" maxlength="120" placeholder="p. ej. comportamiento extraño del exchange"></label>
+      <div class="row" style="margin-top:8px"><button class="btn ${em.on ? 'ghost' : ''}" id="em_btn">${em.on ? 'Levantar la emergencia' : 'ACTIVAR parada de emergencia'}</button></div>
+      <div class="msg" id="em_m"></div>
+      ${(r.recent || []).length ? `<details style="margin-top:8px"><summary class="muted" style="font-size:12px">Últimas decisiones de riesgo (${r.recent.length})</summary><div class="scroll"><table><tbody>${r.recent.map((a) => `<tr><td>${esc(ago(a.created_at))}</td><td>${a.action === 'risk_block' ? '<span class="neg">bloqueó</span>' : '<span class="pos">permitió</span>'}</td><td class="muted runs">${esc(a.detail)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`;
+    box.querySelector('#em_btn').addEventListener('click', async () => {
+      try { await api('POST', '/api/owner/emergency', { on: !em.on, reason: box.querySelector('#em_why').value }); loadRiskCard(); } catch (e) { setMsg(box.querySelector('#em_m'), e.message); }
+    });
+  } catch (e) { if (!box.isConnected) return; box.innerHTML = `<p class="neg">${esc(e.message || 'error')}</p>`; }
+}
+
 async function tabAjustes(main) {
   let s = null;
   try { s = await api('GET', '/api/owner/settings'); } catch (e) { if (!(e.data && e.data.need_2fa_setup)) throw e; }
@@ -1279,12 +1297,14 @@ async function tabAjustes(main) {
     <label class="check" style="margin-top:10px"><input type="checkbox" id="s_reg" ${s.registration_open ? 'checked' : ''}><span><b>Registro abierto</b> (nuevos clientes pueden crear cuenta).</span></label>
     <div class="row" style="margin-top:12px"><button class="btn" id="s_save">Guardar</button></div><div class="msg" id="sm"></div>
   </div>` : ''}
+  ${s ? '<details class="card acc" id="riskc"><summary><h2>Riesgo y parada de emergencia</h2></summary><div class="accb" id="riskb"><p class="muted">Cargando…</p></div></details>' : ''}
   <details class="card acc" id="expo"><summary><h2>Exportar Cerebro y app</h2></summary><div class="accb" id="expo_b"><p class="muted">Toca para cargar…</p></div></details>
   <div class="card"><h2>Verificación en dos pasos (2FA) para tu cuenta de dueño</h2>
     <p class="muted" style="font-size:13px">Estado: ${state.user.totp ? '<b class="pos">activada</b>' : '<b class="neg">desactivada</b>'}. Recomendado: actívala. Usa Google Authenticator, Authy o 1Password.</p>
     <div class="row"><button class="btn ghost" id="t_setup">${state.user.totp ? 'Cambiar 2FA' : 'Activar 2FA'}</button></div>
     <div id="t_box"></div>
   </div>`;
+  if (s) loadRiskCard();
   $('#expo').addEventListener('toggle', async () => { if ($('#expo').open && !$('#expo').dataset.l) { $('#expo').dataset.l = '1'; try { await tabExport($('#expo_b')); } catch (err) { $('#expo_b').textContent = err.message; } } });
   if (s) $('#s_save').addEventListener('click', async () => {
     try { await api('PUT', '/api/owner/settings', { live_scope: $('#s_scope').value, registration_open: $('#s_reg').checked }); setMsg($('#sm'), 'Guardado.', true); state.me = await api('GET', '/api/me'); } catch (err) { setMsg($('#sm'), err.message); }

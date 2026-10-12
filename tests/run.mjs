@@ -183,6 +183,8 @@ const risky = { ...good, name: 'robinhood', check: async () => ({ ok: true, canT
 const adapters = { coinbase: good, robinhood: risky };
 const feed = { getPrice: async () => 50000, getCloses: async () => Array.from({ length: 100 }, (_, i) => 100 + i),
   getHistory: async (sym, n) => (sym === 'BTC-USD' ? series(n, 0.6, 7) : series(n, 0, 11)) };
+const LOOSE = JSON.stringify({ maxPriceDeviationPct: 1e9, maxOpenOrders: 1000, maxOrdersPerHour: 1000 }); // el simulador de precios de las pruebas no es coherente con sus velas
+await store.setSetting('risk:platform', LOOSE);
 const engine = createEngine({ store, adapters, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
 const fakeMarket = async () => ({ t: Date.now(), regime: { code: 'range', label: 'Lateral' }, sources: { coingecko: true, coinbase_exchange: true },
   gecko: { ok: true, errors: [], global: { mcap: 2.1e12, vol24: 8e10, btcDom: 54.2, ethDom: 12.1, mcap24: 0.8 }, coins: [{ symbol: 'BTC-USD', price: 50000, ch24: 1.2, ch7: 2.5, ch30: 4.1, vol24: 2e10, mcap: 1e12, athChg: -20 }], trending: [{ name: 'Solana', symbol: 'SOL' }] },
@@ -1053,6 +1055,16 @@ t('Mejora de UI y landing: audita con datos reales y solo propone', Array.isArra
 const sstore = memoryStore(); await sstore.addOrder({ user_id: 'u1', status: 'error', note: 'Your asset quantity has too much precision. Please round it to nearest 0.01', created_at: Date.now() }); await sstore.addOrder({ user_id: 'u2', status: 'error', note: 'insufficient buying power', created_at: Date.now() });
 const sp = await AG2.client_support.run({ store: sstore, now: Date.now() + 1000 });
 t('Soporte al cliente: agrupa errores reales y deja respuestas sugeridas (no envía nada)', sp.proposals.length === 2 && sp.proposals.some((p) => /redondear/.test(p.detail.text)) && sp.proposals.some((p) => /saldo/.test(p.detail.text)) && sp.proposals.every((p) => p.kind === 'insight' && p.touches.length === 0));
+console.log('Fase 2: rutas de riesgo y emergencia');
+{
+  // Rutas del dueño
+  t('cliente no puede tocar riesgo ni emergencia', (await A('GET', '/api/owner/risk')).status === 403 && (await A('POST', '/api/owner/emergency', { on: true })).status === 403 && (await A('PUT', '/api/owner/risk', { maxOrderUsd: 1e9 })).status === 403);
+  const rg = await O2('PUT', '/api/owner/risk', { maxOrderUsd: 500 }); const bad = await O2('PUT', '/api/owner/risk', { maxDailyUsd: 'x' });
+  t('dueño ajusta límites (validados)', rg.status === 200 && rg.body.platform.maxOrderUsd === 500 && bad.status === 400);
+  const em = await O2('POST', '/api/owner/emergency', { on: true, reason: 'prueba' }); const ov = await O2('GET', '/api/owner/risk');
+  t('dueño activa la emergencia: queda registrada, auditada y con la política documentada', em.status === 200 && ov.body.emergency.on === true && /NO cancela/.test(ov.body.policy) && (await store.listAudit(20)).some((a) => a.action === 'emergency_stop_on'));
+  await O2('POST', '/api/owner/emergency', { on: false }); await O2('PUT', '/api/owner/risk', { maxOrderUsd: 1000 });
+}
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');
@@ -1098,7 +1110,7 @@ console.log('Fase 1: libro de órdenes, ciclo de vida e idempotencia');
   const run = async (adapterFn) => {
     const s2 = memoryStore(); const us = await s2.createUser({ email: `f1${Math.random()}@demo.com`, pass_hash: 'x' });
     const cn = await s2.addConnection({ user_id: us.id, exchange: 'coinbase', label: 'cb', key_id: 'k', secret_enc: sec.encrypt(env.ENCRYPTION_KEY, 's'), can_trade: true, can_transfer: false });
-    await s2.setSetting('live_trading', 'on');
+    await s2.setSetting('live_trading', 'on'); await s2.setSetting('risk:platform', LOOSE);
     const calls = []; const ad = { coinbase: { ...good, name: 'coinbase', balances: async () => [{ asset: 'USD', available: 500, hold: 0 }], marketBuy: async (_c, a) => { calls.push(a); return adapterFn(a, calls.length); } }, robinhood: good };
     const eng = createEngine({ store: s2, adapters: ad, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
     await s2.saveBot(us.id, { autoMode: 'active', symbol: 'BTC-USD', strategy: 'dca', intervalMin: 15, usd: 10, mode: 'live', enabled: true, liveAck: true, connectionId: cn.id, maxOrderUsd: 25, maxDailyUsd: 100 });
@@ -1121,6 +1133,64 @@ console.log('Fase 1: libro de órdenes, ciclo de vida e idempotencia');
     t('motor: timeout (resultado ambiguo) queda «unknown», sigue reservando cupo y NO se reintenta a ciegas', o && o.lifecycle === 'unknown' && (await s2.liveUsdSince(us.id, 0)) >= 10 && calls.length === 1);
     await eng.runBot({ ...(await s2.getBot(us.id)), last_run: 0 }, TT + 5000);
     t('motor: tras un «unknown» no se vuelve a enviar la misma orden', calls.length === 1); }
+}
+
+console.log('Fase 2: puerta de riesgo central');
+{
+  const R = await import('../lib/risk.js'); const { riskBlock } = await import('../lib/store.js');
+  const mem = memoryStore();
+  t('riesgo: sin ajustes usa valores por defecto conservadores', (await R.loadPlatform(mem)).maxOpenOrders === 3);
+  await mem.setSetting('risk:platform', '{no es json'); t('riesgo: ajuste ilegible falla cerrado (error, no valores permisivos)', !!(await R.loadPlatform(mem)).error);
+  await mem.setSetting('risk:platform', JSON.stringify({ maxOrderUsd: -5 })); t('riesgo: valor inválido falla cerrado', !!(await R.loadPlatform(mem)).error);
+  await mem.setSetting('risk:emergency', 'basura'); t('emergencia: estado ilegible se trata como ACTIVA (falla cerrado)', (await R.getEmergency(mem)).on === true);
+  const P = { ...R.DEFAULT_PLATFORM }; const cfg = { maxOrderUsd: 25, maxDailyUsd: 100 }; const ok = { price: 100, usd: 10, side: 'buy' };
+  const pc = (o = {}) => R.preCheck({ cfg, platform: P, emergency: { on: false }, order: ok, ageMs: 1000, refPrice: 100, ...o });
+  t('pre-chequeo: orden normal pasa y los límites son el MENOR entre cliente y plataforma', pc().ok && R.effectiveLimits({ maxOrderUsd: 5000, maxDailyUsd: 9e9 }, P).maxNotional === 1000 && R.effectiveLimits({ maxOrderUsd: 5000, maxDailyUsd: 9e9 }, P).maxDaily === 5000);
+  t('pre-chequeo: emergencia, falta de límites, precio viejo/inválido, desviación y tope por orden bloquean',
+    pc({ emergency: { on: true } }).code === 'emergency_stop' && pc({ cfg: {} }).code === 'risk_config_missing' && pc({ cfg: { maxOrderUsd: 25 } }).code === 'risk_config_missing' && pc({ ageMs: 120000 }).code === 'stale_price' && pc({ ageMs: NaN }).code === 'stale_price'
+    && pc({ order: { ...ok, price: NaN } }).code === 'invalid_price' && pc({ order: { ...ok, usd: 0 } }).code === 'invalid_amount' && pc({ refPrice: 50 }).code === 'price_deviation' && pc({ order: { ...ok, usd: 30 } }).code === 'max_order' && pc({ platform: { error: 'x' } }).code === 'risk_config_missing');
+  t('pre-chequeo: una VENTA no se frena por desviación de precio (stop-loss en caída)', pc({ order: { ...ok, side: 'sell' }, refPrice: 50 }).ok);
+
+  const L = { maxDaily: 100, maxOpen: 3, maxPerHour: 12, maxRejects: 3 };
+  const st = memoryStore(); const u = await st.createUser({ email: 'f2@demo.com', pass_hash: 'x' });
+  const mk = (n, usd = 30, side = 'buy') => st.reserveOrder({ user_id: u.id, mode: 'live', exchange: 'coinbase', symbol: 'BTC-USD', side, usd, qty: 1, price: 1, client_order_id: `K${n}` }, L);
+  const res = await Promise.all(Array.from({ length: 10 }, (_, i) => mk(i)));
+  const made = res.filter((r) => r.created).length;
+  t('atómico: 10 señales simultáneas de $30 con tope diario $100 y 3 abiertas máx. crean como mucho 3 (nunca pasan el tope)', made === 3 && res.filter((r) => r.blocked).length === 7 && (await st.liveUsdSince(u.id, 0)) <= 100);
+  t('el motivo del bloqueo queda explicado', ['daily_cap', 'open_orders'].includes(res.find((r) => r.blocked).blocked) && res.find((r) => r.blocked).reason.length > 10);
+  const st2 = memoryStore(); const u2 = await st2.createUser({ email: 'f2b@demo.com', pass_hash: 'x' });
+  const m2 = (n, usd) => st2.reserveOrder({ user_id: u2.id, mode: 'live', symbol: 'BTC-USD', side: 'buy', usd, client_order_id: `D${n}` }, { ...L, maxOpen: 99 });
+  const a = await m2(1, 60); const b = await m2(2, 60);
+  t('tope diario: la segunda compra que lo supera se bloquea (daily_cap) y no se crea', a.created && !b.created && b.blocked === 'daily_cap' && (await st2.listOrders(u2.id)).length === 1);
+  const sell = await st2.reserveOrder({ user_id: u2.id, mode: 'live', symbol: 'BTC-USD', side: 'sell', usd: 500, client_order_id: 'D3' }, { ...L, maxOpen: 99 });
+  t('una venta no se bloquea por el tope diario de compras', sell.created);
+  const st3 = memoryStore(); const u3 = await st3.createUser({ email: 'f2c@demo.com', pass_hash: 'x' });
+  for (let i = 0; i < 3; i++) { const r = await st3.reserveOrder({ user_id: u3.id, mode: 'live', symbol: 'BTC-USD', side: 'buy', usd: 1, client_order_id: `Z${i}` }, { ...L, maxOpen: 99, maxPerHour: 99 }); await st3.transitionOrder(u3.id, r.order.id, 'rejected'); }
+  const rr = await st3.reserveOrder({ user_id: u3.id, mode: 'live', symbol: 'BTC-USD', side: 'buy', usd: 1, client_order_id: 'Z9' }, { ...L, maxOpen: 99, maxPerHour: 99 });
+  t('3 rechazos seguidos del broker bloquean nuevas compras', rr.blocked === 'repeated_rejections');
+  t('frecuencia: más órdenes por hora que el máximo se bloquean', riskBlock(Array.from({ length: 12 }, (_, i) => ({ side: 'sell', lifecycle: 'filled', created_at: Date.now() - i * 1000 })), { side: 'sell', usd: 1 }, { ...L }).code === 'frequency');
+
+  // Motor: lo bloqueado NUNCA llega al broker
+  const eng = async (platform, adapterOver = {}, feedOver = feed) => {
+    const s2 = memoryStore(); const us = await s2.createUser({ email: `f2${Math.random()}@demo.com`, pass_hash: 'x' });
+    const cn = await s2.addConnection({ user_id: us.id, exchange: 'coinbase', label: 'cb', key_id: 'k', secret_enc: sec.encrypt(env.ENCRYPTION_KEY, 's'), can_trade: true, can_transfer: false });
+    await s2.setSetting('live_trading', 'on'); if (platform !== undefined) await s2.setSetting('risk:platform', platform);
+    const calls = []; const ad = { coinbase: { ...good, name: 'coinbase', balances: async () => [{ asset: 'USD', available: 500, hold: 0 }], marketBuy: async (_c, x) => { calls.push(x); return { ok: true, id: 'B' }; }, ...adapterOver }, robinhood: good };
+    const e = createEngine({ store: s2, adapters: ad, feed: feedOver, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
+    await s2.saveBot(us.id, { autoMode: 'active', symbol: 'BTC-USD', strategy: 'dca', intervalMin: 15, usd: 10, mode: 'live', enabled: true, liveAck: true, connectionId: cn.id, maxOrderUsd: 25, maxDailyUsd: 100 });
+    return { s2, us, e, calls, go: async () => e.runBot({ ...(await s2.getBot(us.id)), last_run: 0 }, Date.now() + 5e8) };
+  };
+  const audits = async (s2) => (await s2.listAudit(100)).filter((a) => a.actor === 'risk');
+  { const x = await eng('{roto'); await x.go(); t('fail-closed: límites de plataforma ilegibles => ninguna orden llega al broker y queda registrado', x.calls.length === 0 && (await x.s2.listOrders(x.us.id)).length === 0 && (await audits(x.s2)).some((a) => a.action === 'risk_block' && /risk_config_missing/.test(a.detail))); }
+  { const x = await eng(JSON.stringify({ maxPriceDeviationPct: 1e9 })); await R.setEmergency(x.s2, { on: true, by: 'o', reason: 'prueba' }); await x.go(); t('emergencia: el bot real no envía nada al broker', x.calls.length === 0 && (await x.s2.listOrders(x.us.id)).length === 0);
+    await R.setEmergency(x.s2, { on: false }); await x.go(); t('al levantar la emergencia el bot vuelve a operar (con límites)', x.calls.length === 1); }
+  { const slow = { ...feed, getPrice: async () => { await new Promise((r) => setTimeout(r, 40)); return 50000; } };
+    const x = await eng(JSON.stringify({ maxPriceDeviationPct: 1e9, maxPriceAgeMs: 5 }), {}, slow); await x.go(); t('precio viejo: orden bloqueada, no llega al broker, motivo registrado', x.calls.length === 0 && (await audits(x.s2)).some((a) => /stale_price/.test(a.detail))); }
+  { const x = await eng(JSON.stringify({ maxPriceDeviationPct: 1e9, maxDailyUsd: 5 })); await x.go(); t('límite de plataforma menor que el del cliente manda (diario $5 < compra $10): bloqueada y sin broker', x.calls.length === 0); }
+  { const x = await eng(JSON.stringify({ maxPriceDeviationPct: 1e9 })); const TR = Math.floor((Date.now() + 5e8) / 60000) * 60000 + 100; await x.e.runBot({ ...(await x.s2.getBot(x.us.id)), last_run: 0 }, TR);
+    const e2 = createEngine({ store: x.s2, adapters: { coinbase: { ...good, balances: async () => [{ asset: 'USD', available: 500, hold: 0 }], marketBuy: async (_c, q) => { x.calls.push(q); return { ok: true, id: 'B2' }; } }, robinhood: good }, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
+    await e2.runBot({ ...(await x.s2.getBot(x.us.id)), last_run: 0 }, TR + 2000);
+    t('reinicio: una instancia nueva ve lo ya enviado y no repite (los límites viven en la base de datos, no en memoria)', x.calls.length === 1 && (await x.s2.liveUsdSince(x.us.id, 0)) === 10); }
 }
 
 console.log(`\n${pass} ok, ${fail} fallos`);
