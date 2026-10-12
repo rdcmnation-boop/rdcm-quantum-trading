@@ -775,7 +775,7 @@ async function tabExchanges(main) {
   const { connections } = await api('GET', '/api/connections');
   const rows = connections.map((c) => `<div class="step-row ok"><span class="dot">✓</span><div class="grow"><b>${esc(EXCH[c.exchange] ? EXCH[c.exchange].name : c.exchange)}</b> <span class="muted">${esc(c.label)}</span>
     <div class="row" style="margin-top:4px"><span class="chip paper">🔒 cifrada</span><span class="chip">${c.can_transfer ? 'retiros ON' : 'solo trading'}</span></div></div>
-    <button class="btn ghost small" data-bal="${esc(c.id)}">Saldos</button><button class="btn danger small" data-del="${esc(c.id)}">Quitar</button></div>`).join('');
+    <button class="btn ghost small" data-test="${esc(c.id)}">Probar</button><button class="btn ghost small" data-bal="${esc(c.id)}">Saldos</button><button class="btn danger small" data-del="${esc(c.id)}">Quitar</button></div>`).join('');
   main.innerHTML = `
   <div class="card" data-open><h2>Mis conexiones (${connections.length})</h2>${rows || '<p class="muted">Aún no conectas ningún exchange. Es opcional: puedes usar el modo papel sin conectar nada.</p>'}<div id="bal" class="msg"></div></div>
   <div class="card" data-open><h2>Conectar un exchange</h2>
@@ -836,6 +836,14 @@ async function tabExchanges(main) {
   document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
     if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '¿Seguro?'; return; }
     try { await api('DELETE', `/api/connections/${b.dataset.del}`); await loadTab(); } catch (err) { setMsg($('#bal'), err.message); }
+  }));
+  document.querySelectorAll('[data-test]').forEach((b) => b.addEventListener('click', async () => {
+    setMsg($('#bal'), 'Probando (solo lectura, sin órdenes)…', true);
+    try {
+      const r = await api('POST', `/api/connections/${b.dataset.test}/test`, {});
+      $('#bal').className = 'msg';
+      $('#bal').innerHTML = `<div class="checks">${r.steps.map((x) => `<div class="${x.ok ? 'pos' : 'neg'}">${x.ok ? '✓' : '✗'} ${esc(x.label)}${x.detail ? ` — ${esc(x.detail)}` : ''}${x.hint ? `<div class="muted">${esc(x.hint)}</div>` : ''}</div>`).join('')}<div class="${r.ok ? 'pos' : 'neg'}"><b>${r.ok ? 'Conexión lista' : 'Hay algo que arreglar'}</b></div><div class="muted">${esc(r.note || '')}</div></div>`;
+    } catch (err) { setMsg($('#bal'), err.message); }
   }));
   document.querySelectorAll('[data-bal]').forEach((b) => b.addEventListener('click', async () => {
     setMsg($('#bal'), 'Consultando…', true);

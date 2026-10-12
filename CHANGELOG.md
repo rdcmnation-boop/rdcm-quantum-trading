@@ -1,5 +1,10 @@
 # Notas de versión
 
+## 19.39 — Probar conexión, contrato de Coinbase y rastros del Director
+- Botón «Probar» en cada conexión: revisa llave, permisos (sin retiros), lectura de saldos y precio. Solo lectura: no envía ninguna orden.
+- 24 pruebas de contrato del conector de Coinbase (firma JWT, forma de pedidos, errores). Usan un servidor falso con las reglas documentadas; no sustituyen una orden mínima real.
+- El Director guarda un rastro por corrida (versión de cada agente, propuestas y resultado) y el dueño puede reproducir un agente en seco (`/api/owner/director/traces`, `/replay`).
+
 ## 19.38 — Alertas críticas
 Aviso push (si activaste avisos) cuando tu bot se apaga o una orden queda sin confirmar. Máximo uno por motivo cada 10 min; el aviso no lleva datos sensibles. Si no activaste avisos, nada cambia: el bot sigue igual.
 

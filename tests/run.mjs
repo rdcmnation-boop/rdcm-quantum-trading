@@ -1472,6 +1472,55 @@ console.log('Alertas críticas (push)');
   t('engine: acepta el gancho de alerta', typeof eng.tick === 'function' && got.length === 0 && r3.status < 300);
 }
 
+console.log('Probar conexión y rastros del Director');
+{
+  const c = client(); await c('POST', '/api/auth/register', { email: 'ct1@x.com', password: pw, acceptTos: true });
+  const conn = await c('POST', '/api/connections', { exchange: 'coinbase', keyId: 'organizations/o/apiKeys/ct', secret: secretPem });
+  const cid = conn.body.connection.id;
+  let sent = 0; const spy = adapters.coinbase.marketBuy; adapters.coinbase.marketBuy = async (...a) => { sent++; return spy(...a); };
+  const r = await c('POST', `/api/connections/${cid}/test`, {});
+  adapters.coinbase.marketBuy = spy;
+  t('probar conexión: pasos de solo lectura y todo en verde', r.status === 200 && r.body.ok === true && ['open', 'valid', 'trade', 'nowithdraw', 'balances', 'price'].every((id) => r.body.steps.some((x) => x.id === id && x.ok)));
+  t('probar conexión: no envía ninguna orden', sent === 0 && r.body.orders_sent === 0);
+  t('probar conexión: queda en la auditoría', (await store.listAudit(100)).some((a) => a.action === 'connection_test'));
+  const other = client(); await other('POST', '/api/auth/register', { email: 'ct2@x.com', password: pw, acceptTos: true });
+  t('probar conexión: otro usuario no puede probar una conexión ajena (404)', (await other('POST', `/api/connections/${cid}/test`, {})).status === 404);
+  t('probar conexión: exige sesión', (await nobody('POST', `/api/connections/${cid}/test`, {})).status === 401);
+  const okCheck = good.check; good.check = async () => ({ ok: false, error: 'Coinbase rechazó la llave (HTTP 401)' });
+  const bad = await c('POST', `/api/connections/${cid}/test`, {}); good.check = okCheck;
+  t('probar conexión: llave revocada → falla con motivo y consejo, sin pedir saldos', bad.body.ok === false && bad.body.steps.find((x) => x.id === 'valid').ok === false && /401/.test(bad.body.steps.find((x) => x.id === 'valid').detail) && !!bad.body.steps.find((x) => x.id === 'valid').hint && !bad.body.steps.some((x) => x.id === 'balances'));
+  const okBal = good.balances; good.balances = async () => { throw new Error('Coinbase: no se pudo leer el saldo (HTTP 403)'); };
+  const nb = await c('POST', `/api/connections/${cid}/test`, {}); good.balances = okBal;
+  t('probar conexión: sin permiso de ver saldos lo dice', nb.body.ok === false && nb.body.steps.find((x) => x.id === 'balances').ok === false);
+  // Rastros del Director
+  const AG = await import('../lib/agents.js');
+  let calls = 0;
+  const fake = { label: 'f', available: true, description: '', version: 'v1', async run({ now }) { calls++; return { notes: ['n'], proposals: [{ kind: 'insight', key: `k-${now % 2}`, title: 'Hallazgo', detail: {}, touches: [] }] }; } };
+  const st = memoryStore(); const dir = createDirector({ store: st, feed, agents: { fake } });
+  await dir.run({ now: 1000, trigger: 'test' });
+  const trs = await dir.traces();
+  t('director: cada corrida deja un rastro con versión, propuestas y resultado', trs.length === 1 && trs[0].agents[0].version === 'v1' && trs[0].agents[0].proposals[0].outcome && trs[0].agents[0].proposals[0].key === 'k-0');
+  const before = calls;
+  const rp = await dir.replay(trs[0].id, 'fake');
+  t('director: la reproducción es en seco (no crea propuestas) y coincide si nada cambió', rp.dry_run === true && rp.same === true && rp.same_version === true && (await st.listProposals('pending', 50)).length === 0 && calls === before + 1);
+  fake.version = 'v2';
+  const rp2 = await dir.replay(trs[0].id, 'fake');
+  t('director: si el agente cambió de versión, la reproducción lo avisa', rp2.same_version === false && rp2.recorded_version === 'v1' && rp2.current_version === 'v2');
+  t('director: rastro o agente inexistente → 404', await dir.replay('nope', 'fake').then(() => false, (e) => e.status === 404));
+  t('versión de agente sin declarar = huella estable del código', AG.agentVersion({ run: () => 1 }) === AG.agentVersion({ run: () => 1 }) && AG.agentVersion({ run: () => 1 }) !== AG.agentVersion({ run: () => 2 }));
+  const boom = createDirector({ store: memoryStore(), feed, agents: { b: { label: 'b', available: true, description: '', async run() { throw new Error('falló'); } } } });
+  await boom.run({ now: 5 });
+  t('director: un agente que falla queda en el rastro con el error', (await boom.traces())[0].agents[0].error === 'falló');
+  const tr = await O('GET', '/api/owner/director/traces');
+  t('API: el dueño ve los rastros y las versiones; un cliente no', tr.status === 200 && Array.isArray(tr.body.traces) && (await A('GET', '/api/owner/director/traces')).status === 403);
+  await O('POST', '/api/owner/brain/run', {});
+  const tr2 = (await O('GET', '/api/owner/director/traces')).body.traces;
+  const any = tr2[0].agents.find((x) => x.agent);
+  const rpApi = await O('POST', '/api/owner/director/replay', { trace: tr2[0].id, agent: any.agent });
+  t('API: el dueño reproduce un agente en seco', rpApi.status === 200 && rpApi.body.dry_run === true);
+  t('API: un cliente no puede reproducir', (await A('POST', '/api/owner/director/replay', { trace: tr2[0].id, agent: any.agent })).status === 403);
+}
+
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');
