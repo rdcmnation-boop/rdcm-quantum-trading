@@ -1283,16 +1283,34 @@ function newsCardHtml(nw) {
     <div class="nctl"><button type="button" class="btn small ${radioOn ? '' : 'ghost'}" id="nws_radio" aria-pressed="${radioOn}">${radioOn ? '⏹ Parar radio' : '📻 Radio en vivo'}</button>
     <button type="button" class="btn small ${notifState() === 'on' ? '' : 'ghost'}" id="nws_notif">${notifState() === 'on' ? '🔔 Avisos activados' : '🔔 Avisarme'}</button></div>
     <div class="msg" id="nws_m"></div><div id="nws_list">${newsListHtml(nwItems)}</div>
-    <p class="muted" style="font-size:11px;margin:6px 0 0">Titulares públicos (CoinDesk, Cointelegraph, Decrypt, Bitcoin Magazine), en inglés; se actualizan cada 5 min. ▼ negativa, ▲ positiva. Solo informan y frenan compras ante noticias negativas; no predicen precios. Los avisos llegan mientras la app esté abierta.</p></div>`;
+    <p class="muted" style="font-size:11px;margin:6px 0 0">Titulares públicos (CoinDesk, Cointelegraph, Decrypt, Bitcoin Magazine), en inglés; se actualizan cada 5 min. ▼ negativa, ▲ positiva. Solo informan y frenan compras ante noticias negativas; no predicen precios. Los avisos llegan también con la app cerrada si tu navegador lo permite (en iPhone, añade la app a la pantalla de inicio).</p></div>`;
 }
 function readNews(list) { for (const i of list) { voice.radio(introFor(i, lang() === 'en')); voice.radio(i.title, 'en'); } }
 function bindNewsCard() {
   const rb = $('#nws_radio'); const nb = $('#nws_notif'); const m = $('#nws_m'); if (!rb || rb.dataset.b) return; rb.dataset.b = '1';
   rb.onclick = () => { if (!voice.supported) { m.textContent = 'Tu navegador no tiene voz para leer noticias.'; return; } radioOn = !radioOn; if (radioOn) { readNews(nwItems.slice(0, 4)); m.textContent = ''; } else voice.stopRadio(); rb.textContent = radioOn ? '⏹ Parar radio' : '📻 Radio en vivo'; rb.classList.toggle('ghost', !radioOn); rb.setAttribute('aria-pressed', String(radioOn)); };
   nb.onclick = async () => {
+    const canPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     if (!('Notification' in window)) { m.textContent = 'Este navegador no permite avisos. Verás las noticias nuevas dentro de la app mientras esté abierta. (En iPhone: añade la app a la pantalla de inicio.)'; return; }
-    if (notifState() === 'on') { nstore.set('notif', false); } else { let p = Notification.permission; if (p === 'default') { try { p = await Notification.requestPermission(); } catch { p = 'denied'; } } if (p === 'granted') { nstore.set('notif', true); try { new Notification('🔔 Avisos activados', { body: 'Te avisaré de las noticias nuevas de trading.', tag: 'qt-news' }); } catch { /* ignora */ } } else m.textContent = 'El permiso de avisos está bloqueado en tu navegador. Actívalo en los ajustes del sitio.'; }
-    nb.textContent = notifState() === 'on' ? '🔔 Avisos activados' : '🔔 Avisarme'; nb.classList.toggle('ghost', notifState() !== 'on');
+    const refresh = () => { nb.textContent = notifState() === 'on' ? '🔔 Avisos activados' : '🔔 Avisarme'; nb.classList.toggle('ghost', notifState() !== 'on'); };
+    if (notifState() === 'on') {
+      nstore.set('notif', false);
+      if (canPush) { try { const reg = await navigator.serviceWorker.getRegistration('/'); const sub = reg && await reg.pushManager.getSubscription(); if (sub) { await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }); await sub.unsubscribe(); } } catch { /* ignora */ } }
+      m.textContent = ''; refresh(); return;
+    }
+    let p = Notification.permission; if (p === 'default') { try { p = await Notification.requestPermission(); } catch { p = 'denied'; } }
+    if (p !== 'granted') { m.textContent = 'El permiso de avisos está bloqueado en tu navegador. Actívalo en los ajustes del sitio.'; refresh(); return; }
+    nstore.set('notif', true); m.textContent = '';
+    if (canPush) {
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' }); await navigator.serviceWorker.ready;
+        const { key } = await api('GET', '/api/push/key'); const pad = '='.repeat((4 - (key.length % 4)) % 4); const raw = atob((key + pad).replace(/-/g, '+').replace(/_/g, '/')); const k = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+        const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: k });
+        await api('POST', '/api/push/subscribe', { endpoint: sub.endpoint }); m.textContent = 'Listo: te avisaré aunque cierres la app.';
+      } catch { m.textContent = 'Avisos activados mientras la app esté abierta. Tu navegador no completó los avisos con la app cerrada (en iPhone hay que añadir la app a la pantalla de inicio).'; }
+    }
+    try { new Notification('🔔 Avisos activados', { body: 'Te avisaré de las noticias nuevas de trading.', tag: 'qt-news' }); } catch { /* ignora */ }
+    refresh();
   };
 }
 function newsToast(note) {

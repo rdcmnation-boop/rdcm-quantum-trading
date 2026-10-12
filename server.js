@@ -7,6 +7,7 @@ import { createDirector, getGuardrails } from './lib/agents.js';
 import { memoryStore, pgStore } from './lib/store.js';
 import { runScanner, getScanner } from './lib/scanner.js';
 import { fetchNews } from './lib/news.js';
+import { notifyNews } from './lib/push.js';
 import { ADAPTERS, getPrice, getCloses, getHistory } from './lib/exchanges.js';
 
 const env = { ...process.env };
@@ -58,7 +59,7 @@ const scan = async () => {
 };
 setTimeout(scan, 15000);
 // Noticias: titulares públicos cada 5 min; solo sirven de freno de riesgo para el modo Pro.
-const newsRun = async () => { try { const n = await fetchNews(); if (n.sources) await store.setSetting('news:latest', JSON.stringify(n)); } catch (e) { console.error('noticias', e.message); } };
+const newsRun = async () => { try { const n = await fetchNews(); if (n.sources) { await store.setSetting('news:latest', JSON.stringify(n)); await notifyNews(store, n, { subject: env.PUSH_SUBJECT || env.RENDER_EXTERNAL_URL || 'https://quantum-trading.invalid' }); } } catch (e) { console.error('noticias', e.message); } };
 setTimeout(newsRun, 20000);
 const newsTimer = setInterval(newsRun, 5 * 60000);
 // Plan gratis de Render: se duerme sin visitas y el bot se detendría. Un ping propio al dominio público lo mantiene despierto.
