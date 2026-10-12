@@ -8,5 +8,6 @@ document.querySelectorAll('.c').forEach((c) => c.addEventListener('pointermove',
 // Precio: solo se muestra si el dueño lo fijó; si no, sigue diciendo "beta gratis".
 fetch('/api/public/plan').then((r) => r.json()).then((p) => {
   const el = document.getElementById('priceline');
+  const bl = document.getElementById('betaline'); if (bl && p && p.beta_users) { bl.textContent = `${p.beta_users} personas ya están probando la beta`; bl.hidden = false; }
   if (el && p && p.price) el.textContent = `Desde $${p.price} al mes, suscripción fija. Sin porcentaje de tus ganancias. Cancela cuando quieras.`;
 }).catch(() => {});

@@ -84,3 +84,14 @@ h2{font-weight:900;letter-spacing:-.04em}
 .panel{border-color:#ffd60a44;box-shadow:0 30px 140px -30px #ffd60a77,inset 0 0 60px #ffd60a0d}
 .logo i{width:22px;height:22px;border-radius:6px;box-shadow:0 0 24px var(--c1);flex:none}
 .proof span{border-color:#ffd60a33;color:#e8e4cf}
+
+.beta{font-size:13px;color:var(--c3);font-weight:700;letter-spacing:.04em}
+.demo{border:1px solid #ffd60a44;border-radius:20px;background:linear-gradient(160deg,rgba(28,24,6,.9),rgba(10,10,13,.9));padding:16px;margin:18px 0 22px;box-shadow:0 30px 120px -40px #ffd60a77;max-width:760px}
+.demo-top{display:flex;gap:8px;align-items:center;font:800 12px ui-monospace,Menlo,monospace;letter-spacing:.12em;color:var(--c1);flex-wrap:wrap}
+.demo-top .dot{width:9px;height:9px;border-radius:50%;background:#4ade80;box-shadow:0 0 12px #4ade80;animation:float 2.4s ease-in-out infinite}
+.demo-top em{margin-left:auto;font-style:normal;font-size:10px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:2px 8px;letter-spacing:.04em}
+.demo-chart{width:100%;height:auto;display:block;margin:8px 0}
+.demo-rows{display:grid;gap:8px;font-size:14px;color:#dcd8c4}.demo-rows b{color:var(--c1)}
+.demo-rows .conf{color:#4ade80;font-weight:700}.cbar{display:block;height:4px;border-radius:4px;background:#ffffff14;margin-top:5px;max-width:260px;overflow:hidden}.cbar u{display:block;height:100%;background:#4ade80}
+.demo-note{margin:12px 0 0;font-size:12px;color:var(--mut)}
+.grid.agents{margin-top:6px}

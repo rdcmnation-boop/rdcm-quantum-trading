@@ -963,7 +963,7 @@ t('la auditoría se conserva sin identificar al usuario borrado', (await store.l
 
 console.log('Landing');
 const land = await (await fetch(base + '/')).text();
-t('"/" sirve la landing', /Crear cuenta gratis/.test(land) && /Beta gratuita/.test(land));
+t('"/" sirve la landing', /Probar en papel ahora/.test(land) && /Beta gratuita/.test(land));
 t('la landing no inventa rendimiento, testimonios ni cifras', !/%\s*(anual|mensual|de retorno)|testimonio|garantizad[oa]s? (ganancias|rendimiento)/i.test(land.replace(/no garantizamos ganancias/gi, '')));
 t('"/app" sirve la aplicación', /\/app\.js/.test(await (await fetch(base + '/app')).text()));
 
@@ -1004,6 +1004,10 @@ const nr = await import('../public/newsradio.js');
 const nws = (await import('../lib/news.js')).analyze((await import('../lib/news.js')).parseRss('<rss><channel><item><title>Bitcoin ETF approved, price surges</title><link>https://www.coindesk.com/x</link><pubDate>' + new Date().toUTCString() + '</pubDate></item><item><title>Exchange hacked, funds stolen</title><link>javascript:alert(1)</link><pubDate>' + new Date().toUTCString() + '</pubDate></item></channel></rss>'));
 t('noticias: positiva/negativa, enlace https y fuente; enlaces raros se descartan', nws.items.some((i) => i.pos && i.link === 'https://www.coindesk.com/x' && i.src === 'coindesk.com' && i.coins.includes('BTC')) && nws.items.some((i) => i.neg && i.link === null));
 t('noticias: lo nuevo se detecta una sola vez y el aviso prioriza lo negativo', nr.freshItems(nws.items, new Set([nr.keyOf(nws.items[0])])).length === 1 && /negativa/.test(nr.notifyFor(nws.items).title) && /negativa/.test(nr.introFor({ neg: true, coins: ['BTC'], src: 'decrypt.co' })) && /negative news about BTC/.test(nr.introFor({ neg: true, coins: ['BTC'] }, true)));
+const pro2 = await import('../lib/pro.js');
+const sg2 = pro2.entrySignal({ s10: 105, s30: 103, s50: 102, px: 106, roc6: 0.012, roc24: 0.03, rsi: 58, offHigh: -0.01, vol: 0.01, atr: 1 }, { rtPct: 0.6, regime: 'range', risk: 'normal' });
+t('decisión con confianza y evidencia (no solo "comprar")', !sg2.ok || (sg2.conf >= 5 && sg2.conf <= 95 && sg2.ev.length >= 4 && sg2.ev.some((x) => /RSI/.test(x)) && sg2.ev.some((x) => /costo/.test(x))));
+t('la confianza sube con la ventaja y nunca pasa de 95', pro2.confidenceOf(3, 1.05) > pro2.confidenceOf(1.2, 1.05) && pro2.confidenceOf(99, 1) === 95 && pro2.confidenceOf(0, 1) >= 5 && pro2.confidenceOf(-50, 1) === 5);
 server.close();
 console.log(`\n${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

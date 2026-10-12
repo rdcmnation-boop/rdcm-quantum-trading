@@ -451,7 +451,7 @@ function botViz(bn) {
       { name: 'MOVIMIENTOS', col: '#4ade80', val: top ? `${base(top.symbol)} ${top.score ? top.score.toFixed(1) : ''}` : 'escaneando…' },
       { name: 'RIESGO', col: '#ff9f6b', val: octo && octo.risk ? String(octo.risk) : 'normal' },
       { name: 'COSTOS', col: '#ffd60a', val: `${q} validadas` }]; })();
-  const rows = octo ? octo.items.map((it) => ({ sym: base(it.symbol), state: (OSTATE[it.state] || [0, it.state])[1], kind: (OSTATE[it.state] || ['idle'])[0], score: it.score, why: it.why || '', note: it.held ? `${it.gain_pct >= 0 ? '+' : ''}${(it.gain_pct || 0).toFixed(2)} %` : it.edge ? `${it.edge.toFixed(1)}× costo` : '' })) : null;
+  const rows = octo ? octo.items.map((it) => ({ sym: base(it.symbol), state: (OSTATE[it.state] || [0, it.state])[1], kind: (OSTATE[it.state] || ['idle'])[0], score: it.score, why: it.why || '', conf: it.conf, ev: it.ev || [], note: it.held ? `${it.gain_pct >= 0 ? '+' : ''}${(it.gain_pct || 0).toFixed(2)} %` : it.edge ? `${it.edge.toFixed(1)}× costo` : '' })) : null;
   return { center: 'IA', ufo: true, scouts, nodes, stream, rows, thoughts: octo ? (octo.thoughts || []) : [], ot: octo ? octo.t : 0, live: bn.enabled, octopus: !!octo, caption: bn.enabled ? 'Superintelligence · en vivo' : 'Cerebro · apagado',
     stats: [['posiciones', held.length], ['validadas', ok.length], ['mercado', rg || '—'], ['revisó', agoS(bn.last_run)]],
     approval: 'Tú mandas: topes por orden y por día, botón de apagado y trading real solo con tu confirmación.' };
@@ -563,8 +563,34 @@ function updateViz(bn) {
   if (vizCtl && r.dataset.on === '1' && vizMode === ((d.octopus || d.ufo) ? '3d' : '2d')) { vizCtl.update(d); vizFill(r, d); narrate(d); return; }
   const c = $('canvas', r); if (c) c.replaceWith(c.cloneNode(false)); r.dataset.on = ''; vizFill(r, d); mountViz(bn);
 }
-const myBotCards = (bn) => `<div class="card" data-open id="bz"><h2>Cerebro en vivo</h2><div id="bz_b">${vizHtml(botViz(bn), 'bz_v')}</div></div>
-  <div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
+
+// ---- Controles de riesgo visibles, estado de los agentes y evidencia con confianza ----
+const confCls = (c) => (c >= 70 ? 'hi' : c >= 50 ? 'mid' : 'lo');
+function riskBarHtml(bn, d) {
+  const live = bn.mode === 'live'; const L = bn.limits || {}; const sp = L.spent24 || 0; const mx = L.maxDailyUsd || 0; const pctD = mx ? Math.min(100, Math.round((sp / mx) * 100)) : 0;
+  const sc = (n) => ((d.scouts || []).find((s) => s.name === n) || {}).val || '…';
+  const last = bn.recent && bn.recent[0] ? `${bn.recent[0].side === 'buy' ? 'compra' : 'venta'} ${String(bn.recent[0].symbol).replace('-USD', '')} ${money(bn.recent[0].usd)}` : 'sin órdenes aún';
+  return `<div class="rkbar ${live ? 'live' : 'paper'}"><div class="rkhead"><span class="rkmode">${live ? '● DINERO REAL' : '● PAPEL · simulado, sin dinero'}</span><span class="rkst ${bn.enabled ? 'on' : ''}">${bn.enabled ? 'Cerebro activo' : 'Cerebro apagado'}</span></div>
+    <div class="rkgrid"><div><small>Por compra</small><b>${money(L.usd, 0)}</b></div><div><small>Tope por orden</small><b>${money(L.maxOrderUsd, 0)}</b></div><div><small>Stop bajo costo</small><b>${L.stopLossPct ? `${L.stopLossPct} %` : '—'}</b></div><div><small>Tope diario${live ? '' : ' (real)'}</small><b>${money(sp, 0)} / ${money(mx, 0)}</b><i class="rkmeter"><u style="width:${pctD}%"></u></i></div></div>
+    <div class="rkag"><span>🧭 Mercado: <b>${esc(sc('MERCADO'))}</b></span><span>📰 Noticias: <b>${esc(sc('NOTICIAS'))}</b></span><span>🛡 Riesgo: <b>${esc(sc('RIESGO'))}</b></span><span>⚡ Ejecución: <b>${esc(last)}</b></span></div>
+    <div class="rkfoot"><span class="muted">Nada se opera sin tus topes. El modo real solo opera con tu confirmación.</span>${bn.enabled ? '<button type="button" class="btn danger small" id="rk_kill">⏻ Kill switch</button>' : ''}</div></div>`;
+}
+function evidenceHtml(d) {
+  const rows = (d.rows || []).filter((r) => r.conf !== undefined || (r.ev && r.ev.length)).slice(0, 4);
+  if (!rows.length) return '<p class="muted" style="margin:0">Todavía ninguna cripto cumple todas las reglas. Cuando una cumpla, aquí verás su confianza y los datos que la respaldan.</p>';
+  return rows.map((r) => `<div class="evr"><div class="evh"><b>${esc(r.sym)}</b><span class="evs">${esc(r.state)}</span><span class="evc ${confCls(r.conf || 0)}">Confianza ${r.conf ?? '—'}%</span></div><i class="evbar"><u class="${confCls(r.conf || 0)}" style="width:${r.conf || 0}%"></u></i>${r.why ? `<div class="evw">${esc(r.why)}</div>` : ''}<ul class="evl">${(r.ev || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('') + '<p class="muted" style="font-size:11px;margin:6px 0 0">La confianza es un puntaje (0–100) de qué tan por encima del costo real está la ventaja esperada; no es una probabilidad de ganar.</p>';
+}
+function refreshRisk(bn) {
+  const d = botViz(bn); const r = $('#rk_b'); if (r) { r.innerHTML = riskBarHtml(bn, d); bindKill(); }
+  const e = $('#evd_b'); if (e) e.innerHTML = evidenceHtml(d);
+}
+function bindKill() {
+  const k = $('#rk_kill'); if (!k || k.dataset.b) return; k.dataset.b = '1';
+  k.onclick = async () => { k.disabled = true; try { await api('POST', '/api/bot/kill'); const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { el.innerHTML = botNowHtml(b); bindBotNow(); } updateViz(b); refreshRisk(b); } catch { k.disabled = false; } };
+}
+
+const myBotCards = (bn) => `<div class="card" data-open id="rk"><h2>Controles de riesgo</h2><div id="rk_b">${riskBarHtml(bn, botViz(bn))}</div></div>\n  <div class="card" data-open id="bz"><h2>Cerebro en vivo</h2><div id="bz_b">${vizHtml(botViz(bn), 'bz_v')}</div></div>
+  <div class="card" data-open id="evd"><h2>Por qué y con qué confianza</h2><div id="evd_b">${evidenceHtml(botViz(bn))}</div></div>\n  <div class="card" data-open id="pf"><h2>Ganado desde que se encendió el bot</h2><div id="pf_c" class="muted">Calculando…</div></div>
   <div class="card" data-open id="dash"><h2>Tablero · dinero real primero</h2><div id="dash_b" class="muted">Cargando…</div></div>
   <div class="card" id="res"><h2>Resultados por periodo</h2><div id="res_b" class="muted">Calculando…</div></div>
   <div class="card" id="ver"><h2>Verificación con tu exchange</h2><div id="ver_b"><p class="muted" style="margin:0 0 8px">Compara lo que el bot anotó con lo que reporta tu exchange: saldos y órdenes.</p><button class="btn small" id="ver_go" type="button">Verificar ahora</button></div></div>
@@ -572,13 +598,13 @@ const myBotCards = (bn) => `<div class="card" data-open id="bz"><h2>Cerebro en v
   <div class="card" id="pc"><h2>Gráfico de precio</h2><div id="pc_c">${priceCardHtml(bn)}</div></div>
   <div class="card"><h2>Mis exchanges en vivo <button class="btn ghost small" id="live_r" type="button" style="margin-left:8px">↻</button></h2><div id="live_b" class="muted">Leyendo tu exchange…</div></div>`;
 function startMyBot(bn) {
-  bindBotNow(); refreshLive(); refreshDash(); loadProfit(bn.mode); loadResults(); bindVerify(); bindPrice(); mountViz(bn);
+  bindBotNow(); bindKill(); refreshLive(); refreshDash(); loadProfit(bn.mode); loadResults(); bindVerify(); bindPrice(); mountViz(bn);
   const lr = $('#live_r'); if (lr) lr.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); refreshLive(true); });
   let n = 0; let waiting = bn.enabled && !bn.last; let on = bn.enabled;
   tabTimer = setInterval(async () => {
     n++; if (n % 8 === 0) { refreshLive(); refreshDash(); loadProfit(bn.mode); loadResults(); }
     if (!(waiting || (on && n % 2 === 0) || n % 8 === 0)) return; // con el bot encendido, el pulpo se actualiza cada ~8 s
-    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { if (!el.contains(document.activeElement)) { el.innerHTML = botNowHtml(b); bindBotNow(); } updateViz(b); } waiting = b.enabled && !b.last; on = b.enabled; } catch { /* reintenta en el próximo ciclo */ }
+    try { const b = await api('GET', '/api/bot/status'); const el = $('#botnow_b'); if (el) { if (!el.contains(document.activeElement)) { el.innerHTML = botNowHtml(b); bindBotNow(); } updateViz(b); refreshRisk(b); } waiting = b.enabled && !b.last; on = b.enabled; } catch { /* reintenta en el próximo ciclo */ }
   }, 4000);
 }
 
