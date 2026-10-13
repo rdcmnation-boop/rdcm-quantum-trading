@@ -1,5 +1,8 @@
 # Notas de versión
 
+## 19.43 — Aviso de caída al stop
+Además del aviso de subida, ahora llega un push si una posición (real o simulada) cae hasta su stop: «conviene vender para limitar la pérdida». Un aviso por posición cada 6 h; se rearma al recuperarse. Solo avisa, no vende.
+
 ## 19.42 — Recomendación al tocar Comprar/Vender y aviso de subida
 - Al tocar Comprar o Vender por primera vez, la app muestra lo recomendado (comprar, esperar, no comprar, vender un % o mantener) con el porqué, usando las reglas del bot. El segundo toque ejecuta. Solo informa.
 - Aviso push cuando una posición (real o simulada) sube hasta que la ganancia NETA de costos alcanza tu meta (la del bot, o 2 % si no hay). Un aviso por posición cada 6 h, o antes si gana 2 puntos más. Solo quienes activaron los avisos.

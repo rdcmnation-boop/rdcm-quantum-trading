@@ -44,3 +44,4 @@ Walk-forward sin mirar el futuro de la lógica Pro: elige parámetros con entren
 - `GET /api/trade/advice` (usado por los botones Comprar/Vender): compra = señal Pro + ventaja multi-timeframe + filtro «¿operar hoy?» + tamaño dinámico; venta = salida Pro + ganancia neta vs meta. Veredictos: comprar / esperar / evitar / vender (con %) / mantener / sin posición. Solo informa.
 - `engine.sellWatch()` corre cada 5 min (una instancia a la vez): para quienes activaron avisos, si la ganancia **neta de costos** de una posición llega a la meta (`takeProfitPct` o 2 %), manda push; no repite en 6 h salvo que gane 2 puntos más; se rearma si cae 1 punto bajo la meta.
 - No puede vender solo desde ese aviso: el aviso te lleva a la app, donde tú decides.
+- Protección (v19.43): si una posición en pérdida llega a su stop dinámico o stop-loss, `sellWatch` manda un push «cayó −X %: conviene vender para limitar la pérdida» (un aviso por posición cada 6 h; se rearma al recuperarse).
