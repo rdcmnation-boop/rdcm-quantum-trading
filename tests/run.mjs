@@ -830,6 +830,7 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   let cl = up; const feedP = { getPrice: async () => cl.at(-1), getCloses: async () => cl, getHistory: async () => cl };
   const engP = createEngine({ store, adapters, feed: feedP, encKey: env.ENCRYPTION_KEY, log: { error() {} } });
   await store.setSetting('scanner:latest', JSON.stringify({ t: Date.now(), scanned: 1, universe: 4, items: [{ symbol: 'ADA-USD', label: 'x', qualified: false, cheaper: 'coinbase', gap_pct: 0, mcap: 1e10, cfg: { strategy: 'sma', fast: 5, slow: 20, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: -1, bh: 1, drag: 1 }, robinhood: { ret: -1, bh: 1, drag: 1 } }] }));
+  await store.setSetting('universe:first_seen', JSON.stringify(Object.fromEntries(['BTC','ETH','SOL','LTC','DOGE','AVAX','LINK','ADA','USDT'].map((x) => [x + '-USD', 0]))));
   await store.setSetting('news:latest', JSON.stringify({ t: Date.now(), items: [], risk: {}, global_neg: 0, risk_off: false }));
   const P = client();
   await P('POST', '/api/auth/register', { email: 'p-pro@x.com', password: 'Clave-De-Pro-12345', acceptTos: true });
@@ -1815,6 +1816,35 @@ console.log('Motor: filtro de ventaja, tamaño dinámico y bitácora');
   t('aviso de compra: no avisa de criptos que ya tienes', !gb6.some((x) => x[0] === held.id && /^buy:/.test(x[1].kind)));
   const nosubsAlerts = (await mkEng(feedS, []).buyWatch(Date.now())).alerts >= 0;
   t('aviso de compra: solo a quienes activaron avisos (sin suscripción no hay nada que enviar)', nosubsAlerts);
+}
+
+console.log('Radar: alcistas, en tendencia y nuevas');
+{
+  const { trackFirstSeen, newListings, resetUniverseCache } = await import('../lib/universe.js');
+  const { buildRadar, runScanner } = await import('../lib/scanner.js');
+  const ms = memoryStore(); const T0 = Date.now();
+  const m1 = await trackFirstSeen(ms, ['BTC-USD', 'ETH-USD'], T0);
+  t('radar: la primera corrida marca lo existente como viejo (no inventa fechas de alta)', m1['BTC-USD'] === 0 && (await newListings(ms, T0)).size === 0);
+  await trackFirstSeen(ms, ['BTC-USD', 'ETH-USD', 'NEWC-USD'], T0 + 1000);
+  const nl = await newListings(ms, T0 + 2 * 86400000);
+  t('radar: un par que aparece después queda como nuevo con sus días', nl.has('NEWC-USD') && nl.get('NEWC-USD') > 1.9 && nl.get('NEWC-USD') < 2.1 && !nl.has('BTC-USD'));
+  t('radar: deja de ser nuevo a los 30 días', !(await newListings(ms, T0 + 31 * 86400000)).has('NEWC-USD'));
+  const meta = new Map([['SOL-USD', { ch7: 12, ch24: 3, vol24: 1e9, mcap: 8e10 }], ['ADA-USD', { ch7: -4, ch24: -1 }], ['DOGE-USD', { ch7: 1, ch24: 1 }]]);
+  const rd = buildRadar({ uni: ['SOL-USD', 'ADA-USD', 'DOGE-USD', 'NEWC-USD', 'USDT-USD', 'PEPE-USD'], first: { 'NEWC-USD': T0, 'SOL-USD': 0 }, meta, trending: ['PEPE'], items: [{ symbol: 'SOL-USD', qualified: true }, { symbol: 'ADA-USD', qualified: false }], now: T0 + 86400000 });
+  const by = Object.fromEntries(rd.map((r) => [r.symbol, r]));
+  t('radar: alcista = sube a 7 d y a 24 h; bajistas y planas no entran', by['SOL-USD']?.tags.includes('alcista') && !by['ADA-USD'] && !by['DOGE-USD']);
+  t('radar: en tendencia y nuevas entran, sin stablecoins', by['PEPE-USD']?.tags.includes('tendencia') && by['NEWC-USD']?.tags.includes('nueva') && !by['USDT-USD']);
+  t('radar: solo lo que pasó la prueba queda validado; lo nuevo avisa que es manual y pequeño', by['SOL-USD'].validated === true && by['NEWC-USD'].validated === false && /Solo manual/.test(by['NEWC-USD'].note));
+  t('radar: lo validado va primero', rd[0].symbol === 'SOL-USD');
+  const j = (o) => ({ ok: true, status: 200, json: async () => o });
+  const fR = async (url) => { if (url.endsWith('/products')) return j(['BTC-USD', 'ETH-USD', 'NEWC-USD'].map((id) => ({ id, quote_currency: 'USD', status: 'online' })));
+    if (url.includes('coins/markets')) return j([{ symbol: 'btc', market_cap: 9e11 }, { symbol: 'eth', market_cap: 4e11 }]); if (url.includes('/book')) return j({ bids: [['100', '5']], asks: [['100.05', '5']] }); throw new Error('x'); };
+  resetUniverseCache();
+  const feedR = { getHistory: async (sym, n) => (sym === 'NEWC-USD' ? series(100, 0.2, 5) : series(n, 0.2, sym.length * 7)) };
+  const sc = await runScanner({ store: ms, feed: feedR, f: fR, now: T0 });
+  await runScanner({ store: ms, feed: feedR, f: fR, now: T0 + 3600000 });
+  t('escáner: guarda el radar y una moneda nueva sin historial NO entra al ranking operable', Array.isArray(sc.radar) && !sc.items.some((i) => i.symbol === 'NEWC-USD'));
+  const api = (await A('GET', '/api/radar')); t('/api/radar responde con aviso de riesgo', api.status === 200 && Array.isArray(api.body.radar) && /no es|no una/i.test(api.body.warning));
 }
 
 server.close();

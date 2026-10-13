@@ -671,6 +671,17 @@ function showCloseResult(r, node) {
   const msg = closeSummary(r);
   if (node) setMsg(node, msg, !(r.failed > 0)); else alert(msg);
 }
+async function bindRadar(main) {
+  const el = $('#rd_list', main); if (!el) return;
+  try {
+    const r = await api('GET', '/api/radar'); const list = r.radar || []; el.className = '';
+    const tg = { alcista: '📈 alcista', tendencia: '🔥 tendencia', nueva: '🆕 nueva' };
+    el.innerHTML = list.length ? list.slice(0, 15).map((i) => `<div class="agrow"><div class="agmain"><b>${esc(i.symbol)}</b> ${i.tags.map((t) => `<span class="chip">${esc(tg[t] || t)}</span>`).join(' ')}${i.validated ? ' <span class="chip">✔ pasó la prueba</span>' : ''}
+      <div class="muted" style="font-size:12px">${i.ch24 != null ? `24 h ${pc(i.ch24)} · ` : ''}${i.ch7 != null ? `7 d ${pc(i.ch7)} · ` : ''}${i.days_listed != null ? `listada hace ${esc(String(i.days_listed))} días · ` : ''}${esc(i.note || '')}</div></div>
+      <button class="btn small" data-rd="${esc(i.symbol)}">Elegir</button></div>`).join('') : '<p class="muted">Sin monedas en el radar todavía; el Cerebro revisa cada hora.</p>';
+    el.querySelectorAll('[data-rd]').forEach((b) => { b.onclick = () => { const f = $('#mt_f', main); if (f) { f.symbol.value = b.dataset.rd; f.scrollIntoView({ behavior: 'smooth' }); setMsg($('#mt_m', main), `Elegiste ${b.dataset.rd}. Es más arriesgada: usa un monto pequeño y toca Comprar dos veces.`, true); } }; });
+  } catch (e) { el.textContent = e.message; }
+}
 async function bindPicks(main) {
   const el = $('#pk_list', main); if (!el) return;
   try {
@@ -881,6 +892,10 @@ async function tabBot(main) {
     <p class="muted" style="font-size:13px;margin:0 0 8px">Las criptos que hoy pasan la prueba del Cerebro (historial con costos reales de Coinbase y Robinhood), de mejor a peor. <b>Es una selección por historial, no una promesa de ganancia</b>: el precio puede bajar.</p>
     <div id="pk_list" class="muted">Cargando…</div>
   </div>
+  <div class="card" data-open id="rd_box"><h2>Radar: alcistas, en tendencia y nuevas</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">Monedas que suben, que están en tendencia o que Coinbase acaba de listar. <b>Son más arriesgadas</b>: se mueven mucho, pueden tener poca liquidez y caer igual de rápido. Es una lista para vigilar, no una promesa de ganancia. El bot solo compra por su cuenta las que pasan la prueba; las nuevas, a la mitad del monto.</p>
+    <div id="rd_list" class="muted">Cargando…</div>
+  </div>
   <div class="card" data-open id="mt_box"><h2>Comprar / Vender a mano</h2>
     <p class="muted" style="font-size:13px;margin:0 0 8px">Cada botón pide un segundo toque para confirmar. En <b>real</b>, comprar respeta tus topes, tu plan y la parada de emergencia; <b>vender</b> siempre se permite (solo reduce riesgo). Las órdenes reales quedan pendientes hasta que el exchange las confirme.</p>
     <form id="mt_f" class="form">
@@ -1031,7 +1046,7 @@ async function tabBot(main) {
         <p class="muted" style="font-size:12px">Capital virtual ${money(r.capital, 0)} (sin dinero real), ${r.candles} velas. Costos: ${esc(r.cost_profile)}. Son estimaciones; verifica tarifas y spreads reales en tu exchange.</p>`;
     } catch (err) { setMsg($('#bt_m'), err.message); }
   });
-  bindManual(main, { connections, live }); bindPicks(main);
+  bindManual(main, { connections, live }); bindPicks(main); bindRadar(main);
   $('#kill').addEventListener('click', async () => {
     if (!confirmTap($('#kill'), 'Toca otra vez: VENDER todo y apagar')) return;
     try { const r = await api('POST', '/api/bot/kill', { closeAll: true }); $('#bf').enabled.checked = false; showCloseResult(r, $('#bm')); showBotState(); $('#kill').textContent = '⏻ Cerrar todo y apagar'; } catch (err) { setMsg($('#bm'), err.message); }

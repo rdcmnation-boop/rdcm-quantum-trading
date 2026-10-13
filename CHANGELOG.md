@@ -1,5 +1,11 @@
 # Notas de versión
 
+## 19.46 — Radar de monedas alcistas, en tendencia y nuevas
+- El escáner ahora mira las 120 mayores por capitalización (antes 60) y revisa hasta 40 (antes 30), empezando por las alcistas y en tendencia. Siguen pasando la MISMA prueba con costos reales: nada entra al modo AUTO solo por estar de moda.
+- Radar nuevo (Panel → «Radar», `GET /api/radar`): alcistas (7 d y 24 h arriba), en tendencia (CoinGecko) y recién listadas por Coinbase (30 días desde que las vimos por primera vez; la primera corrida no inventa fechas).
+- Las nuevas no tienen historial para validarse: solo manual, monto pequeño, y si el bot llega a considerarlas, a la MITAD del monto y sin datos de liquidez no compra. No se agrega apalancamiento ni se sube el tamaño de ninguna orden.
+- Sin promesas: más monedas = más oportunidades y más riesgo; no hay forma de garantizar ganancias ni «duplicar».
+
 ## 19.45 — ¿El filtro de ventaja funciona? Medido con precios reales
 En modo sombra, cada evaluación guarda (sin datos de usuario) el precio y, a las 6 h y 24 h, lo que pasó después. Cerebro → Validación → «Resultados del modo sombra» compara las señales que pasan el filtro contra las vetadas, en bruto y neto de costos, y dice con honestidad si la muestra alcanza (≥ 30 y ≥ 30) y si conviene activarlo. Es también la base de datos para un futuro meta-etiquetador.
 
