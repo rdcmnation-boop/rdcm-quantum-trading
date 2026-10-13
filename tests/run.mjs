@@ -1521,6 +1521,152 @@ console.log('Probar conexión y rastros del Director');
   t('API: un cliente no puede reproducir', (await A('POST', '/api/owner/director/replay', { trace: tr2[0].id, agent: any.agent })).status === 403);
 }
 
+console.log('Ventaja, tamaño dinámico, filtro, deslizamiento y validación');
+{
+  const E = await import('../lib/edge.js'); const SZ = await import('../lib/sizing.js'); const FL = await import('../lib/filter.js'); const SL = await import('../lib/slippage.js'); const VA = await import('../lib/validate.js');
+  const mk = (n, f, step) => Array.from({ length: n }, (_, i) => { const c = f(i); return { t: i * step, o: c, h: c * 1.001, l: c * 0.999, c, v: 10 }; });
+  const strongUp = (i) => 100 * (1 + 0.006 * i + 0.02 * Math.sin(i * 1.3));
+  const h1 = mk(120, strongUp, 3600); const m15 = mk(120, (i) => 100 * (1 + 0.0015 * i + 0.002 * Math.sin(i * 1.1)), 900);
+  h1.forEach((c, i) => { c.v = i >= 117 ? 25 : 10; });
+  const good = E.evaluateEdge({ m15, h1 }, { rtPct: 0.3, regime: 'bull' });
+  t('edge: tendencia fuerte en 15m/1h/4h con volumen creciente y costo bajo es operable (score ≥ 70, valor esperado ≥ 1.5× costo)', good.tradeable === true && good.edge_score >= 70 && good.ev_gross_pct >= 1.5 * good.cost_pct, JSON.stringify(good.reasons));
+  t('edge: cada filtro queda registrado con su detalle', ['mtf', 'relvol', 'rsi', 'ev', 'score'].every((id) => good.checks.some((c) => c.id === id && typeof c.detail === 'string')));
+  const down15 = mk(120, (i) => 100 * (1 - 0.0015 * i + 0.002 * Math.sin(i * 1.1)), 900);
+  const noMtf = E.evaluateEdge({ m15: down15, h1 }, { rtPct: 0.3, regime: 'bull' });
+  t('edge: si 15m no coincide con 1h/4h NO es operable (confluencia)', noMtf.tradeable === false && noMtf.checks.find((c) => c.id === 'mtf').ok === false);
+  const lowVol = h1.map((c, i) => ({ ...c, v: i >= 117 ? 2 : 10 }));
+  t('edge: volumen por debajo del promedio no es operable', E.evaluateEdge({ m15, h1: lowVol }, { rtPct: 0.3, regime: 'bull' }).checks.find((c) => c.id === 'relvol').ok === false);
+  t('edge: con costo alto (1.6 %) el movimiento esperado no alcanza 1.5× → no operable', E.evaluateEdge({ m15, h1 }, { rtPct: 4, regime: 'bull' }).tradeable === false);
+  const slipped = E.evaluateEdge({ m15, h1 }, { rtPct: 0.3, regime: 'bull', slipExtraPct: 1 });
+  t('edge: el deslizamiento real medido se resta (2 veces, entrada y salida) del valor esperado', slipped.cost_pct > good.cost_pct + 1.9 && slipped.ev_net_pct < good.ev_net_pct);
+  t('edge: sin velas suficientes no inventa nada (no operable, motivo claro)', E.evaluateEdge({ m15: m15.slice(0, 5), h1: h1.slice(0, 5) }, { rtPct: 0.3 }).insufficient === true);
+  t('edge: agregar 1h→4h agrupa de a 4 y conserva volumen total', (() => { const a = E.aggregate(mk(8, (i) => 100 + i, 3600), 4); return a.length === 2 && a[0].v === 40 && a[1].c === 107; })());
+  t('edge: el score nunca pasa de 100 ni baja de 0', good.edge_score <= 100 && E.evaluateEdge({ m15: down15, h1: lowVol }, { rtPct: 9 }).edge_score >= 0);
+
+  // Tamaño dinámico
+  const base = { configuredUsd: 50, equityUsd: 1000, openExposureUsd: 0, candidateRets: Array.from({ length: 48 }, (_, i) => (i % 2 ? 0.004 : -0.004)), heldRets: [], closedPnlPcts: [], equityCurve: [1000], pnl24hUsd: 0, regime: 'bull', edgeScore: 85, killSwitch: false };
+  const a1 = SZ.sizeDecision(base);
+  t('tamaño: nunca supera lo pedido, el 5 % del capital ni el objetivo de volatilidad', a1.approved && a1.usd <= 50 && a1.usd <= 0.05 * 1000 + 1e-9, JSON.stringify(a1.log.steps.map((x) => x.text)));
+  t('tamaño: más volatilidad → posición más chica (objetivo de volatilidad)', SZ.sizeDecision({ ...base, candidateRets: base.candidateRets.map((x) => x * 10) }).usd < a1.usd || SZ.sizeDecision({ ...base, candidateRets: base.candidateRets.map((x) => x * 10) }).approved === false);
+  t('tamaño: apagado de emergencia veta siempre', SZ.sizeDecision({ ...base, killSwitch: true }).approved === false);
+  t('tamaño: caída ≥ 10 % desde el máximo pausa las compras', /Pausa por caída máxima/.test(SZ.sizeDecision({ ...base, equityCurve: [1000, 1100, 980] }).reason));
+  t('tamaño: pérdida de 24 h ≥ 3 % del capital pausa las compras', /pérdida diaria/i.test(SZ.sizeDecision({ ...base, pnl24hUsd: -35 }).reason));
+  const losing = Array.from({ length: 25 }, (_, i) => (i % 4 === 0 ? 1 : -1.5));
+  t('tamaño: Kelly ≤ 0 con historial suficiente veta (sin ventaja demostrada)', /Kelly ≤ 0/.test(SZ.sizeDecision({ ...base, closedPnlPcts: losing }).reason));
+  t('tamaño: con pocas operaciones NO usa Kelly (no inventa estadística)', SZ.sizeDecision({ ...base, closedPnlPcts: [1, -1, 1] }).log.steps.some((s) => s.id === 'kelly' && /faltan/.test(s.text)));
+  const kel = SZ.kellyFromTrades([...Array(14).fill(2), ...Array(6).fill(-1)], { kellyMult: 0.35, kellyMinTrades: 20 });
+  t('tamaño: Kelly fraccional = f* × 0.35 (p=0.7, b=2 → f*=0.55)', Math.abs(kel.full - 0.55) < 1e-9 && Math.abs(kel.fraction - 0.1925) < 1e-9);
+  const same = Array.from({ length: 48 }, (_, i) => Math.sin(i / 3) * 0.01);
+  t('tamaño: candidato casi idéntico a lo que ya tienes (correlación ≥ 0.85) se veta', /correlación/.test(SZ.sizeDecision({ ...base, candidateRets: same, heldRets: [{ sym: 'ETH-USD', rets: same.map((x) => x * 1.1) }] }).reason));
+  const some = SZ.sizeDecision({ ...base, candidateRets: same, heldRets: [{ sym: 'ETH-USD', rets: same.map((x, i) => x * 0.8 + Math.cos(i / 2) * 0.004) }] });
+  t('tamaño: correlación alta pero no extrema reduce a la mitad (o veta), nunca aumenta', !some.approved || some.usd <= SZ.sizeDecision({ ...base, candidateRets: same }).usd);
+  t('tamaño: exposición total al tope veta', /Exposición total/.test(SZ.sizeDecision({ ...base, openExposureUsd: 400 }).reason));
+  t('tamaño: régimen volátil/bajista y edge_score bajo reducen el tamaño', SZ.sizeDecision({ ...base, regime: 'volatile', edgeScore: 72 }).usd < a1.usd);
+  t('tamaño: por debajo del mínimo ($10) no abre órdenes diminutas', SZ.sizeDecision({ ...base, configuredUsd: 5 }).approved === false);
+  t('tamaño: sin capital de riesgo no dimensiona (falla cerrado)', SZ.sizeDecision({ ...base, equityUsd: 0 }).approved === false);
+  t('tamaño: cada decisión deja el detalle paso a paso', a1.log.steps.length >= 5 && a1.log.steps.every((s) => s.id && s.text));
+  t('tamaño: la curva de capital y los % salen de operaciones cerradas', (() => { const r = SZ.curveFromClosed([{ pnl: -10, pct: -5 }, { pnl: 4, pct: 2 }], 100); return r.curve.join() === '100,90,94' && r.pcts.join() === '-5,2'; })());
+
+  // Filtro
+  const calm = Array.from({ length: 200 }, (_, i) => 100 + Math.sin(i / 10));
+  const fOk = FL.tradeFilter({ base: 'BTC', news: { risk_off: false, risk: {} }, hourlyCloses: calm, volume24Usd: 5e7, recentPct: [1, 0.5, -0.2, 0.8, 0.3, 0.2, 0.1, 0.4, 0.6, 0.2] });
+  t('filtro: condiciones normales → GO, con cada chequeo visible', fOk.go === true && fOk.checks.length >= 5 && /^GO/.test(fOk.summary));
+  t('filtro: noticias negativas de esa cripto o del mercado vetan', FL.tradeFilter({ base: 'SOL', news: { risk_off: false, risk: { SOL: 1 } } }).go === false && FL.tradeFilter({ base: 'BTC', news: { risk_off: true, risk: {} } }).go === false);
+  const wild = Array.from({ length: 200 }, (_, i) => (i < 176 ? 100 + Math.sin(i) * 0.1 : 100 * (1 + (i % 2 ? 0.05 : -0.05))));
+  t('filtro: volatilidad que se dispara vs la semana previa veta', FL.tradeFilter({ base: 'BTC', hourlyCloses: wild }).reasons.some((x) => /Volatilidad/.test(x)));
+  t('filtro: expectativa reciente colapsada (últimas 10) veta; con pocas operaciones no evalúa', FL.tradeFilter({ base: 'BTC', recentPct: Array(10).fill(-1) }).go === false && FL.tradeFilter({ base: 'BTC', recentPct: [-5, -5] }).go === true);
+  t('filtro: poca liquidez veta', FL.tradeFilter({ base: 'BTC', volume24Usd: 1e5 }).go === false);
+  t('filtro: funding sin fuente de datos queda «no evaluado» y NO bloquea ni se inventa', (() => { const f = FL.tradeFilter({ base: 'BTC' }).checks.find((c) => c.id === 'funding'); return f.evaluated === false && f.ok === true; })() && FL.tradeFilter({ base: 'BTC', fundingPct: 0.5 }).go === false);
+
+  // Deslizamiento real
+  const st = memoryStore();
+  t('deslizamiento: compra que pagó más y venta que cobró menos son adversos (positivo)', Math.abs(SL.adversePct('buy', 100, 100.2) - 0.2) < 1e-9 && Math.abs(SL.adversePct('sell', 100, 99.8) - 0.2) < 1e-9 && SL.adversePct('buy', 100, 99.9) < 0);
+  for (let i = 0; i < 12; i++) await SL.recordFill(st, { userId: 'u', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', decisionPrice: 100, fillPrice: 100.5, modelPct: 0.1, usd: 50, cid: `c${i}`, now: Date.now() });
+  const dup = await SL.recordFill(st, { userId: 'u', exchange: 'coinbase', symbol: 'BTC-USD', side: 'buy', decisionPrice: 100, fillPrice: 100.5, modelPct: 0.1, usd: 50, cid: 'c0' });
+  const sum = SL.summarize(await SL.loadLog(st), { exchange: 'coinbase' });
+  t('deslizamiento: el mismo fill no se registra dos veces; con ≥10 fills resume real vs modelo', dup === null && sum.enough && Math.abs(sum.medianRealPct - 0.5) < 1e-6 && Math.abs(sum.extraPct - 0.4) < 1e-6);
+  t('deslizamiento: con pocos fills no hay corrección (no se infiere de 3 datos)', SL.summarize((await SL.loadLog(st)).slice(0, 3), { minN: 10 }).extraPct === 0);
+  t('deslizamiento: datos absurdos (> 25 %) se descartan', (await SL.recordFill(st, { userId: 'u', exchange: 'coinbase', symbol: 'X', side: 'buy', decisionPrice: 1, fillPrice: 2, modelPct: 0, usd: 1, cid: 'z' })) === null);
+
+  // Validación walk-forward
+  let sd = 7; const rnd = () => { sd = (sd * 1664525 + 1013904223) % 4294967296; return sd / 4294967296; };
+  const gs = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+  const walk = (n, drift, vol) => { const a = [100]; for (let i = 1; i < n; i++) a.push(a[i - 1] * (1 + drift + vol * gs())); return a; };
+  const coin = walk(1400, 0.0001, 0.008); const btc = walk(1400, 0.00005, 0.006);
+  const wf = VA.walkForward(coin, { symbol: 'ETH-USD' }, btc);
+  t('validación: ventanas sin solaparse con el entrenamiento (embargo) y todas dentro de los datos', wf.windows.length >= 3 && wf.windows.every((w) => w.teStart >= 500 + 24 && w.teEnd <= 1400));
+  t('validación: informe con comprar-y-mantener de la cripto y de BTC, regímenes y estrés', Number.isFinite(wf.oos.coinHoldPct) && Number.isFinite(wf.oos.btcHoldPct) && ['bull', 'bear', 'sideways', 'volatile'].every((k) => k in wf.regimes) && wf.stress.length === 3);
+  t('validación: sobre datos aleatorios (sin ventaja posible) NO declara «evidencia razonable»', !/EVIDENCIA RAZONABLE/.test(wf.verdict));
+  const coin2 = coin.slice(0, 1100).concat(walk(300, -0.002, 0.02).map((x) => x * coin[1099] / 100));
+  const wf2 = VA.walkForward(coin2, { symbol: 'ETH-USD' }, btc);
+  t('validación: SIN mirar el futuro — cambiar datos posteriores no altera las ventanas anteriores', wf.windows.slice(0, 2).every((w, i) => w.testReturnPct === wf2.windows[i].testReturnPct && JSON.stringify(w.params) === JSON.stringify(wf2.windows[i].params)));
+  t('validación: deslizamiento ×3 nunca rinde más que ×1', wf.stress[2].returnPct <= wf.stress[0].returnPct + 1e-9);
+  const rb = VA.walkForward(coin, { symbol: 'ETH-USD', exchange: 'robinhood' }, btc);
+  t('validación: Coinbase y Robinhood usan costos distintos (resultados distintos)', rb.oos.returnPct !== wf.oos.returnPct || rb.oos.feesUsd !== wf.oos.feesUsd);
+  const md = VA.formatReport(wf);
+  t('validación: el informe en texto incluye veredicto, regímenes, estrés y límites', /Veredicto/.test(md) && /Por régimen/.test(md) && /Estrés de deslizamiento/.test(md) && /Resultados pasados no garantizan/.test(md));
+  t('validación: pocas velas → error claro', (() => { try { VA.walkForward(coin.slice(0, 300), {}); return false; } catch (e) { return /Pocas velas/.test(e.message); } })());
+  t('validación: el régimen de cada vela solo usa datos anteriores', VA.regimeAt(coin, 400) === VA.regimeAt(coin.slice(0, 401).concat(Array(500).fill(1)), 400));
+}
+
+console.log('Motor: filtro de ventaja, tamaño dinámico y bitácora');
+{
+  const mkS = (a, b, d, n = 120) => Array.from({ length: n }, (_, i) => 100 * (1 + d * i) * (1 + a * Math.sin(i / b)));
+  const up = mkS(0.02, 2, 0.002);
+  const candles = (cl, vol) => cl.map((c, i) => ({ t: i * 3600, o: c, h: c, l: c, c, v: vol }));
+  const feedE = { getPrice: async () => up.at(-1), getCloses: async () => up, getHistory: async () => up, getCandles: async () => candles(up, 10) };
+  const mkUser = async (email, cfgExtra) => {
+    const U = client(); await U('POST', '/api/auth/register', { email, password: 'Clave-De-Pro-12345', acceptTos: true });
+    const id = (await U('GET', '/api/me')).body.user.id;
+    const put = await U('PUT', '/api/bot', { autoMode: 'pro', symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'best', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100, maxPositions: 3, ...cfgExtra });
+    await store.patchBot(id, { cfg: { ...(await store.getBot(id)).cfg, enabled: true } });
+    return { U, id, put };
+  };
+  const run = async (id, feed = feedE) => { const e = createEngine({ store, adapters, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} } }); await e.runBot({ ...(await store.getBot(id)), last_run: 0 }, Date.now() + 1000); };
+  const logOf = async (id) => JSON.parse(await store.getSetting(`edge:log:${id}`, '[]'));
+  const buys = async (id) => (await store.listOrders(id)).filter((o) => o.status === 'ok' && o.side === 'buy');
+  t('config: edgeGate, dynamicSizing y riskCapitalUsd se validan', (await (client())('GET', '/api/health')).status === 200 && (await import('../lib/strategy.js')).validateCfg({ edgeGate: 'zzz', riskCapitalUsd: -1 }).ok === false && (await import('../lib/strategy.js')).validateCfg({ edgeGate: 'zzz' }).ok === true && (await import('../lib/strategy.js')).validateCfg({ edgeGate: 'zzz' }).cfg.edgeGate === 'shadow');
+
+  const s = await mkUser('edge-shadow@x.com', { edgeGate: 'shadow' });
+  t('config: el cliente puede guardar el filtro de ventaja y el capital de riesgo', s.put.status === 200 && s.put.body.cfg.edgeGate === 'shadow' && s.put.body.cfg.riskCapitalUsd === 0);
+  const off = await mkUser('edge-off@x.com', { edgeGate: 'off' });
+  await run(off.id); const baseline = (await buys(off.id)).length;
+  await run(s.id);
+  const sl = await logOf(s.id);
+  t('modo sombra: registra la evaluación (edge_score, filtro, costos) SIN cambiar la compra', baseline >= 1 && (await buys(s.id)).length === baseline && sl.length >= 1 && typeof sl[0].edge_score === 'number' && sl[0].gate === 'shadow' && sl[0].vetoed === false);
+  t('modo sombra: marca que habría vetado cuando no hay ventaja multi-timeframe', sl[0].would_veto === true && sl[0].reasons.length > 0);
+
+  const on = await mkUser('edge-on@x.com', { edgeGate: 'on' });
+  await run(on.id);
+  t('modo activo: sin ventaja suficiente NO compra y deja el motivo', (await buys(on.id)).length === 0 && (await logOf(on.id)).some((x) => x.vetoed === true));
+  t('modo apagado: compra como antes y no registra evaluación', (await buys(off.id)).length === baseline && (await logOf(off.id)).length === 0);
+  const nofeed = await mkUser('edge-nofeed@x.com', { edgeGate: 'on' });
+  await run(nofeed.id, { getPrice: feedE.getPrice, getCloses: feedE.getCloses, getHistory: feedE.getHistory });
+  t('sin velas de 15 min/volumen (feed sin getCandles) el filtro no inventa nada ni bloquea', (await buys(nofeed.id)).length === baseline);
+
+  const small = await mkUser('size-small@x.com', { riskCapitalUsd: 100 });
+  await run(small.id);
+  t('tamaño dinámico: capital de riesgo $100 → 5 % = $5 < mínimo $10: no abre y lo audita', (await buys(small.id)).length === 0 && (await store.listAudit(500)).some((a) => a.user_id === small.id && a.action === 'sizing_veto'));
+  const big = await mkUser('size-big@x.com', { riskCapitalUsd: 1000, edgeGate: 'off' });
+  await run(big.id);
+  const bo = await buys(big.id);
+  t('tamaño dinámico: capital $1000 → compra, y NUNCA más de lo configurado ($10)', bo.length === baseline && bo.every((o) => o.usd <= 10.5), JSON.stringify(bo.map((o) => o.usd)));
+  t('tamaño dinámico: cada decisión de tamaño queda en la bitácora con sus pasos', (await logOf(big.id)).some((x) => x.kind === 'size' && x.approved === true && x.steps.length >= 3));
+  const dd = await mkUser('size-dd@x.com', { riskCapitalUsd: 100, edgeGate: 'off', usd: 10 });
+  const t0 = Date.now() - 86400000 * 3;
+  for (let i = 0; i < 3; i++) { await store.addOrder({ user_id: dd.id, mode: 'paper', exchange: 'coinbase', symbol: 'ZZ-USD', side: 'buy', usd: 50, qty: 50, price: 1, status: 'ok', created_at: t0 + i * 2000 }); await store.addOrder({ user_id: dd.id, mode: 'paper', exchange: 'coinbase', symbol: 'ZZ-USD', side: 'sell', usd: 46, qty: 50, price: 0.92, status: 'ok', created_at: t0 + i * 2000 + 1000 }); }
+  await run(dd.id);
+  t('tamaño dinámico: tras una caída ≥ 10 % del capital de riesgo pausa las compras', (await store.listAudit(500)).some((a) => a.user_id === dd.id && a.action === 'sizing_veto' && /caída máxima/i.test(a.detail)) && (await buys(dd.id)).filter((o) => o.symbol !== 'ZZ-USD').length === 0);
+  const vr = await O('POST', '/api/owner/validation', { symbol: 'ETH-USD', exchange: 'coinbase' });
+  t('API: el dueño corre la validación walk-forward y recibe informe + texto', vr.status === 200 && vr.body.report.windows.length >= 1 && /Veredicto/.test(vr.body.markdown) && Number.isFinite(vr.body.report.oos.btcHoldPct), JSON.stringify(vr.body).slice(0, 200));
+  t('API: validación — un cliente no puede, símbolo inválido se rechaza', (await A('POST', '/api/owner/validation', { symbol: 'ETH-USD' })).status === 403 && (await O('POST', '/api/owner/validation', { symbol: 'HACK-USD' })).status === 400);
+  const el = await dd.U('GET', '/api/bot/edge-log');
+  t('API: el cliente ve su propia bitácora y el resumen; otro cliente no ve la de ella', el.status === 200 && el.body.summary.size_vetoes >= 1 && (await nobody('GET', '/api/bot/edge-log')).status === 401 && (await big.U('GET', '/api/bot/edge-log')).body.log.every((x) => x.sym !== 'ZZ-USD'));
+  const nocap = await mkUser('size-none@x.com', { edgeGate: 'off' });
+  await run(nocap.id);
+  t('sin capital de riesgo declarado el tamaño dinámico no interfiere (comportamiento anterior)', (await buys(nocap.id)).length === baseline);
+}
+
 server.close();
 { // Explicador IA: sin llave no hace nada; con llave redacta, limita por día y solo propone.
   const { createExplainer, clean } = await import('../lib/llm.js'); const { AGENTS } = await import('../lib/agents.js');

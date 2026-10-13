@@ -1,5 +1,10 @@
 # Notas de versión
 
+## 19.41 — Ventaja, tamaño dinámico, filtro y validación
+- Filtro de ventaja multi-timeframe (15m/1h/4h) con volumen relativo y valor esperado neto de costos y deslizamiento. Arranca en modo «sombra» (solo registra).
+- Tamaño dinámico: objetivo de volatilidad, Kelly fraccional, correlación, pausa por caída máxima y pérdida diaria. Solo reduce o veta; requiere declarar el capital de riesgo.
+- Filtro «¿operar hoy?», deslizamiento real medido, bitácora de decisiones y validación walk-forward por régimen con estrés de deslizamiento. Ver docs/EDGE-AND-RISK.md.
+
 ## 19.40 — Pantalla de rastros y guía de lanzamiento
 Cerebro → «Rastros y reproducción»: ver qué versión de cada agente corrió y reproducirlo en seco. Nueva guía `docs/GO-LIVE-STEPS.md` con los pasos que solo puede hacer el dueño.
 

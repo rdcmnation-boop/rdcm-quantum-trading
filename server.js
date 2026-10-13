@@ -9,7 +9,7 @@ import { runScanner, getScanner } from './lib/scanner.js';
 import { fetchNews } from './lib/news.js';
 import { notifyNews, notifyUser } from './lib/push.js';
 import { reconcileAll } from './lib/reconcile.js';
-import { ADAPTERS, getPrice, getCloses, getHistory } from './lib/exchanges.js';
+import { ADAPTERS, getPrice, getCloses, getHistory, getCandles } from './lib/exchanges.js';
 
 const env = { ...process.env };
 const prod = env.NODE_ENV === 'production';
@@ -34,7 +34,7 @@ if (env.DATABASE_URL) {
   store = memoryStore();
 }
 
-const feed = { getPrice, getCloses, getHistory };
+const feed = { getPrice, getCloses, getHistory, getCandles };
 const engine = createEngine({ store, adapters: ADAPTERS, feed, encKey: env.ENCRYPTION_KEY, alert: (uid, a) => notifyUser(store, uid, a, { subject: env.PUSH_SUBJECT || env.RENDER_EXTERNAL_URL || 'https://quantum-trading.invalid' }) });
 const director = createDirector({ store, feed });
 const app = createApp({ store, env, adapters: ADAPTERS, feed, engine, director });

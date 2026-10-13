@@ -907,6 +907,8 @@ async function tabBot(main) {
       <label class="rsi">RSI compra bajo<input name="rsiBuy" type="number" min="5" max="50" value="${esc(cfg.rsiBuy ?? 30)}"></label>
       <label class="rsi">RSI venta sobre<input name="rsiSell" type="number" min="50" max="95" value="${esc(cfg.rsiSell ?? 60)}"></label>
       <label class="nodca">Meta de ganancia % (0 = sin meta; en AUTO es neta de costos)<input name="takeProfitPct" type="number" min="0" max="100" step="any" value="${esc(cfg.takeProfitPct ?? 0)}"></label>
+      <label class="nodca">Capital de riesgo USD (0 = tamaño dinámico apagado)<input name="riskCapitalUsd" type="number" min="0" step="any" value="${esc(cfg.riskCapitalUsd ?? 0)}"></label>
+      <label class="nodca">Filtro de ventaja (multi-timeframe + volumen + costos)<select name="edgeGate"><option value="shadow" ${(cfg.edgeGate || 'shadow') === 'shadow' ? 'selected' : ''}>Sombra: solo registra, no veta</option><option value="on" ${cfg.edgeGate === 'on' ? 'selected' : ''}>Activo: veta compras sin ventaja</option><option value="off" ${cfg.edgeGate === 'off' ? 'selected' : ''}>Apagado</option></select></label>
       <label class="nodca">Stop-loss % (0 = sin stop)<input name="stopLossPct" type="number" min="0" max="50" step="any" value="${esc(cfg.stopLossPct ?? 8)}"></label>
       <label>Modo<select name="mode">${opt('paper', cfg.mode, 'Papel (simulado, sin dinero)')}${opt('live', cfg.mode, live ? 'REAL (dinero real)' : 'REAL (no habilitado todavía)')}</select></label>
       <label class="real">Conexión para operar<select name="connectionId"><option value="">— elegir —</option>${connections.map((c) => opt(c.id, cfg.connectionId, `${c.exchange} · ${c.label}`)).join('')}</select></label>
@@ -966,7 +968,7 @@ async function tabBot(main) {
     e.preventDefault();
     const f = e.target;
     const body = { symbol: f.symbol.value.trim().toUpperCase(), autoMode: f.autoMode.value, paperExchange: f.paperExchange.value, maxPositions: f.maxPositions.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
-      slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, takeProfitPct: f.takeProfitPct.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
+      slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, takeProfitPct: f.takeProfitPct.value, riskCapitalUsd: f.riskCapitalUsd.value, edgeGate: f.edgeGate.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
       maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, sizing: f.sizing.checked ? 'balance' : 'fixed', enabled: f.enabled.checked };
     try { await api('PUT', '/api/bot', body); setMsg($('#bm'), 'Guardado.', true); } catch (err) { setMsg($('#bm'), err.message); }
   });
@@ -1033,6 +1035,16 @@ async function tabBot(main) {
     try { const b = await api('GET', '/api/bot/status'); await api('POST', b.lifecycle && b.lifecycle.state === 'PAUSED' ? '/api/bot/resume' : '/api/bot/pause'); await showBotState(); } catch (err) { setMsg($('#bm'), err.message); }
   });
   showBotState();
+  main.insertAdjacentHTML('beforeend', `<details class="card" id="el_card"><summary><h2 style="display:inline">Bitácora de ventaja y tamaño</h2></summary><p class="muted" style="font-size:12px">Cada compra candidata: puntaje de ventaja (0–100), si el filtro la habría vetado y con qué tamaño. En modo «sombra» solo se registra, no se veta.</p><div id="el_box" class="muted">Abre para cargar…</div></details>`);
+  { let loaded = false; $('#el_card').addEventListener('toggle', async (ev) => {
+    if (!ev.target.open || loaded) return; loaded = true;
+    try {
+      const r = await api('GET', '/api/bot/edge-log'); const sm = r.summary;
+      const sl = ['coinbase', 'robinhood'].filter((x) => r.slippage[x] && r.slippage[x].enough).map((x) => `${x}: deslizamiento real mediano ${r.slippage[x].medianRealPct.toFixed(2)} % (${r.slippage[x].n} órdenes)`).join(' · ');
+      $('#el_box').innerHTML = `<div>${sm.evaluated} evaluadas · ${sm.would_veto} habrían sido vetadas · ${sm.vetoed} vetadas · ${sm.size_vetoes} frenadas por tamaño/riesgo</div><div class="muted">${esc(sl || 'Aún no hay suficientes órdenes reales para medir el deslizamiento.')}</div>`
+        + (r.log.length ? r.log.slice(0, 12).map((x) => x.kind === 'size' ? `<div class="muted runs">${esc(ago(x.t))} · ${esc(x.sym)} · tamaño ${x.approved ? `$${x.usd} (pedido $${x.wanted})` : `<span class="neg">frenado</span>: ${esc(x.reason || '')}`}</div>` : `<div class="muted runs">${esc(ago(x.t))} · ${esc(x.sym)} · ventaja ${x.edge_score}/100 · ${x.would_veto ? '<span class="neg">no cumple</span>' : '<span class="pos">cumple</span>'}${x.vetoed ? ' (vetada)' : x.would_veto ? ' (sombra)' : ''}${x.reasons && x.reasons[0] ? ` · ${esc(x.reasons[0])}` : ''}</div>`).join('') : '<p class="muted">Aún no hay evaluaciones.</p>');
+    } catch (err) { $('#el_box').textContent = err.message; }
+  }); }
 }
 
 async function tabOrdenes(main) {
@@ -1251,6 +1263,8 @@ async function tabCerebro(main) {
   <div class="card" ${b.pending.length ? "data-open" : ""}><h2>Por decidir (${b.pending.length})</h2>${pend || '<p class="muted">Nada pendiente.</p>'}<div class="msg" id="pr_m"></div></div>
   <div class="card"><h2>Agentes</h2><div class="aglist">${agents}</div><div class="msg" id="ag_m"></div></div>
   <div class="card"><h2>Corridas</h2>${runs ? `<div class="aglist">${runs}</div>` : '<p class="muted">Sin corridas.</p>'}</div>
+  <details class="card" id="va_card"><summary><h2 style="display:inline">Validación walk-forward</h2></summary><p class="muted" style="font-size:12px">Prueba la lógica Pro fuera de muestra con costos reales del exchange, por régimen, contra comprar y mantener y con deslizamiento ×2/×3. Un buen resultado no garantiza ganancias; uno malo sí es razón para no arriesgar.</p>
+    <div class="row"><select id="va_sym">${['BTC-USD', 'ETH-USD', 'SOL-USD', 'LTC-USD', 'DOGE-USD', 'AVAX-USD', 'LINK-USD'].map((x) => `<option>${x}</option>`).join('')}</select><select id="va_ex"><option value="coinbase">Coinbase</option><option value="robinhood">Robinhood</option></select><button class="btn small" id="va_run">Validar</button></div><div class="msg" id="va_m"></div><pre id="va_out" style="white-space:pre-wrap;font-size:12px;overflow-x:auto"></pre></details>
   <details class="card" id="tr_card"><summary><h2 style="display:inline">Rastros y reproducción</h2></summary><p class="muted" style="font-size:12px">Cada corrida guarda qué versión de cada agente corrió y qué propuso. «Reproducir» lo vuelve a correr en seco con los datos de hoy: no crea propuestas ni cambia nada.</p><div id="tr_box" class="muted">Abre para cargar…</div><div class="msg" id="tr_m"></div></details>
   <details class="card"><summary><h2 style="display:inline">Modelos ML</h2></summary><div class="scroll"><table><thead><tr><th>Par</th><th>Estado</th><th>Precisión vs base</th></tr></thead><tbody>${models}</tbody></table></div></details>
   <details class="card"><summary><h2 style="display:inline">Historial (${b.history.length})</h2></summary>${hist ? `<div class="scroll"><table><tbody>${hist}</tbody></table></div>` : '<p class="muted">Vacío.</p>'}</details>
@@ -1261,6 +1275,11 @@ async function tabCerebro(main) {
       <label class="full">Tipos permitidos<span class="row">${Object.keys(KIND_LABEL).map((k) => `<label class="check"><input type="checkbox" name="kind_${k}" ${g.allowedKinds.includes(k) ? 'checked' : ''}><span>${esc(KIND_LABEL[k])}</span></label>`).join('')}</span></label>
       <p class="muted full" style="font-size:12px">Protegido: ${g.protectedAreas.map((a) => `<code>${esc(a)}</code>`).join(' ')}</p>
       <button class="btn full" type="submit">Guardar</button><div class="msg full" id="gm"></div></form></details>`;
+  $('#va_run').addEventListener('click', async (e) => {
+    e.target.disabled = true; setMsg($('#va_m'), 'Descargando historial y probando (puede tardar ~20 s)…', true); $('#va_out').textContent = '';
+    try { const r = await api('POST', '/api/owner/validation', { symbol: $('#va_sym').value, exchange: $('#va_ex').value }); $('#va_m').className = 'msg ok'; $('#va_m').textContent = r.report.verdict; $('#va_out').textContent = r.markdown; }
+    catch (err) { setMsg($('#va_m'), err.message); } finally { e.target.disabled = false; }
+  });
   { let loaded = false; $('#tr_card').addEventListener('toggle', async (ev) => {
     if (!ev.target.open || loaded) return; loaded = true;
     try {
