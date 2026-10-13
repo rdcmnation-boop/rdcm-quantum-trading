@@ -64,7 +64,7 @@ const recTimer = setInterval(async () => {
 }, 60000);
 // Aviso de «subió, conviene vender»: cada 5 min revisa las posiciones de quienes activaron avisos (una sola instancia a la vez).
 const sellTimer = setInterval(async () => {
-  try { if (!(await leader('sellwatch', 4 * 60000))) return; await engine.sellWatch(); } catch (e) { console.error('sellwatch', e.message); }
+  try { if (!(await leader('sellwatch', 4 * 60000))) return; await engine.sellWatch(); await engine.resolveEdgeOutcomes(); } catch (e) { console.error('sellwatch', e.message); }
 }, 5 * 60000);
 // Aviso de oportunidad de compra (solo si cumple todos los filtros): cada 10 min, una sola instancia a la vez.
 const buyTimer = setInterval(async () => {

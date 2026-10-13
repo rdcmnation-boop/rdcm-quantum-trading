@@ -1,5 +1,8 @@
 # Notas de versión
 
+## 19.45 — ¿El filtro de ventaja funciona? Medido con precios reales
+En modo sombra, cada evaluación guarda (sin datos de usuario) el precio y, a las 6 h y 24 h, lo que pasó después. Cerebro → Validación → «Resultados del modo sombra» compara las señales que pasan el filtro contra las vetadas, en bruto y neto de costos, y dice con honestidad si la muestra alcanza (≥ 30 y ≥ 30) y si conviene activarlo. Es también la base de datos para un futuro meta-etiquetador.
+
 ## 19.44 — Avisos de compra, de venta y de lo que hizo el bot
 - 🤖 Cuando el bot compra o vende solo, te llega un push («🤖 Compré X ~$Y: motivo»). El bot ya operaba solo; ahora te enteras al instante.
 - 🟢 Aviso de oportunidad de compra para quien lo decide a mano (bot apagado): solo si cumple TODOS los filtros con datos de 15 min y volumen y hay liquidez; máximo 3 por día, una vez por cripto cada 12 h, nunca de lo que ya tienes. No compra solo.

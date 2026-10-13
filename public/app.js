@@ -1278,7 +1278,7 @@ async function tabCerebro(main) {
   <div class="card"><h2>Agentes</h2><div class="aglist">${agents}</div><div class="msg" id="ag_m"></div></div>
   <div class="card"><h2>Corridas</h2>${runs ? `<div class="aglist">${runs}</div>` : '<p class="muted">Sin corridas.</p>'}</div>
   <details class="card" id="va_card"><summary><h2 style="display:inline">Validación walk-forward</h2></summary><p class="muted" style="font-size:12px">Prueba la lógica Pro fuera de muestra con costos reales del exchange, por régimen, contra comprar y mantener y con deslizamiento ×2/×3. Un buen resultado no garantiza ganancias; uno malo sí es razón para no arriesgar.</p>
-    <div class="row"><select id="va_sym">${['BTC-USD', 'ETH-USD', 'SOL-USD', 'LTC-USD', 'DOGE-USD', 'AVAX-USD', 'LINK-USD'].map((x) => `<option>${x}</option>`).join('')}</select><select id="va_ex"><option value="coinbase">Coinbase</option><option value="robinhood">Robinhood</option></select><button class="btn small" id="va_run">Validar</button></div><div class="msg" id="va_m"></div><pre id="va_out" style="white-space:pre-wrap;font-size:12px;overflow-x:auto"></pre></details>
+    <div class="row"><select id="va_sym">${['BTC-USD', 'ETH-USD', 'SOL-USD', 'LTC-USD', 'DOGE-USD', 'AVAX-USD', 'LINK-USD'].map((x) => `<option>${x}</option>`).join('')}</select><select id="va_ex"><option value="coinbase">Coinbase</option><option value="robinhood">Robinhood</option></select><button class="btn small" id="va_run">Validar</button><button class="btn ghost small" id="va_shadow">Resultados del modo sombra</button></div><div class="msg" id="va_m"></div><pre id="va_out" style="white-space:pre-wrap;font-size:12px;overflow-x:auto"></pre></details>
   <details class="card" id="tr_card"><summary><h2 style="display:inline">Rastros y reproducción</h2></summary><p class="muted" style="font-size:12px">Cada corrida guarda qué versión de cada agente corrió y qué propuso. «Reproducir» lo vuelve a correr en seco con los datos de hoy: no crea propuestas ni cambia nada.</p><div id="tr_box" class="muted">Abre para cargar…</div><div class="msg" id="tr_m"></div></details>
   <details class="card"><summary><h2 style="display:inline">Modelos ML</h2></summary><div class="scroll"><table><thead><tr><th>Par</th><th>Estado</th><th>Precisión vs base</th></tr></thead><tbody>${models}</tbody></table></div></details>
   <details class="card"><summary><h2 style="display:inline">Historial (${b.history.length})</h2></summary>${hist ? `<div class="scroll"><table><tbody>${hist}</tbody></table></div>` : '<p class="muted">Vacío.</p>'}</details>
@@ -1289,6 +1289,14 @@ async function tabCerebro(main) {
       <label class="full">Tipos permitidos<span class="row">${Object.keys(KIND_LABEL).map((k) => `<label class="check"><input type="checkbox" name="kind_${k}" ${g.allowedKinds.includes(k) ? 'checked' : ''}><span>${esc(KIND_LABEL[k])}</span></label>`).join('')}</span></label>
       <p class="muted full" style="font-size:12px">Protegido: ${g.protectedAreas.map((a) => `<code>${esc(a)}</code>`).join(' ')}</p>
       <button class="btn full" type="submit">Guardar</button><div class="msg full" id="gm"></div></form></details>`;
+  $('#va_shadow').addEventListener('click', async () => {
+    setMsg($('#va_m'), 'Calculando…', true); $('#va_out').textContent = '';
+    try {
+      const r = await api('GET', '/api/owner/edge-report'); const f = (g) => (g.n ? `${g.n} señales · bruto ${g.avgPct.toFixed(2)} % · neto ${g.avgNetPct.toFixed(2)} % · suben ${g.upPct.toFixed(0)} % (netas ${g.upNetPct.toFixed(0)} %)` : 'sin datos aún');
+      $('#va_m').className = 'msg ok'; $('#va_m').textContent = r.verdict;
+      $('#va_out').textContent = `Evaluadas ${r.evaluated} (pasan ${r.passed}, vetadas ${r.would_veto})\n\nA 6 h\n  Pasan:   ${f(r.h6.pass)}\n  Vetadas: ${f(r.h6.veto)}\n\nA 24 h\n  Pasan:   ${f(r.h24.pass)}\n  Vetadas: ${f(r.h24.veto)}\n\n${r.note}`;
+    } catch (err) { setMsg($('#va_m'), err.message); }
+  });
   $('#va_run').addEventListener('click', async (e) => {
     e.target.disabled = true; setMsg($('#va_m'), 'Descargando historial y probando (puede tardar ~20 s)…', true); $('#va_out').textContent = '';
     try { const r = await api('POST', '/api/owner/validation', { symbol: $('#va_sym').value, exchange: $('#va_ex').value }); $('#va_m').className = 'msg ok'; $('#va_m').textContent = r.report.verdict; $('#va_out').textContent = r.markdown; }
