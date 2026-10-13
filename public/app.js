@@ -922,6 +922,7 @@ async function tabBot(main) {
       <label class="nodca">Meta de ganancia % (0 = sin meta; en AUTO es neta de costos)<input name="takeProfitPct" type="number" min="0" max="100" step="any" value="${esc(cfg.takeProfitPct ?? 0)}"></label>
       <label class="nodca">Capital de riesgo USD (0 = tamaño dinámico apagado)<input name="riskCapitalUsd" type="number" min="0" step="any" value="${esc(cfg.riskCapitalUsd ?? 0)}"></label>
       <label class="nodca">Filtro de ventaja (multi-timeframe + volumen + costos)<select name="edgeGate"><option value="shadow" ${(cfg.edgeGate || 'shadow') === 'shadow' ? 'selected' : ''}>Sombra: solo registra, no veta</option><option value="on" ${cfg.edgeGate === 'on' ? 'selected' : ''}>Activo: veta compras sin ventaja</option><option value="off" ${cfg.edgeGate === 'off' ? 'selected' : ''}>Apagado</option></select></label>
+      <label class="check full"><input type="checkbox" name="buyAlerts" ${cfg.buyAlerts !== false ? 'checked' : ''}><span>Avisarme (push) oportunidades de compra que cumplan todos los filtros, y cuándo vender. Nunca compra ni vende solo por el aviso.</span></label>
       <label class="nodca">Stop-loss % (0 = sin stop)<input name="stopLossPct" type="number" min="0" max="50" step="any" value="${esc(cfg.stopLossPct ?? 8)}"></label>
       <label>Modo<select name="mode">${opt('paper', cfg.mode, 'Papel (simulado, sin dinero)')}${opt('live', cfg.mode, live ? 'REAL (dinero real)' : 'REAL (no habilitado todavía)')}</select></label>
       <label class="real">Conexión para operar<select name="connectionId"><option value="">— elegir —</option>${connections.map((c) => opt(c.id, cfg.connectionId, `${c.exchange} · ${c.label}`)).join('')}</select></label>
@@ -982,7 +983,7 @@ async function tabBot(main) {
     const f = e.target;
     const body = { symbol: f.symbol.value.trim().toUpperCase(), autoMode: f.autoMode.value, paperExchange: f.paperExchange.value, maxPositions: f.maxPositions.value, strategy: f.strategy.value, usd: f.usd.value, intervalMin: f.intervalMin.value, fast: f.fast.value,
       slow: f.slow.value, rsiBuy: f.rsiBuy.value, rsiSell: f.rsiSell.value, stopLossPct: f.stopLossPct.value, takeProfitPct: f.takeProfitPct.value, riskCapitalUsd: f.riskCapitalUsd.value, edgeGate: f.edgeGate.value, mode: f.mode.value, connectionId: f.connectionId.value || null, maxOrderUsd: f.maxOrderUsd.value,
-      maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, sizing: f.sizing.checked ? 'balance' : 'fixed', enabled: f.enabled.checked };
+      maxDailyUsd: f.maxDailyUsd.value, liveAck: f.liveAck.checked, buyAlerts: f.buyAlerts.checked, sizing: f.sizing.checked ? 'balance' : 'fixed', enabled: f.enabled.checked };
     try { await api('PUT', '/api/bot', body); setMsg($('#bm'), 'Guardado.', true); } catch (err) { setMsg($('#bm'), err.message); }
   });
   $('#sg_run').addEventListener('click', async () => {

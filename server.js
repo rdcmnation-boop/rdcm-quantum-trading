@@ -66,6 +66,10 @@ const recTimer = setInterval(async () => {
 const sellTimer = setInterval(async () => {
   try { if (!(await leader('sellwatch', 4 * 60000))) return; await engine.sellWatch(); } catch (e) { console.error('sellwatch', e.message); }
 }, 5 * 60000);
+// Aviso de oportunidad de compra (solo si cumple todos los filtros): cada 10 min, una sola instancia a la vez.
+const buyTimer = setInterval(async () => {
+  try { if (!(await leader('buywatch', 9 * 60000))) return; await engine.buyWatch(); } catch (e) { console.error('buywatch', e.message); }
+}, 10 * 60000);
 // El escáner de criptos (alimenta el modo AUTO) corre al arrancar y se refresca cada 6 h, sin esperar al Director.
 const scan = async () => {
   try { if (!(await leader('scanner', 5 * 60000))) return; const sc = await getScanner(store); if (!sc || Date.now() - sc.t > 6 * 3600000) await runScanner({ store, feed }); } catch (e) { console.error('escáner', e.message); }
@@ -85,7 +89,7 @@ async function shutdown(sig) {
   if (shuttingDown) return; shuttingDown = true;
   console.log(JSON.stringify({ level: 'info', msg: `señal ${sig}: apagado ordenado` }));
   const force = setTimeout(() => { console.error('apagado forzado por tiempo'); process.exit(1); }, 25000); force.unref();
-  for (const t of [timer, recTimer, autoTimer, scanTimer, newsTimer, keepTimer, sellTimer]) if (t) clearInterval(t);
+  for (const t of [timer, recTimer, autoTimer, scanTimer, newsTimer, keepTimer, sellTimer, buyTimer]) if (t) clearInterval(t);
   server.close();
   try { const idle = await engine.stop(20000); if (!idle) console.error('el ciclo del motor no terminó a tiempo'); } catch (e) { console.error('engine.stop', e.message); }
   try { await store.close(); } catch (e) { console.error('store.close', e.message); }

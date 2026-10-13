@@ -1,5 +1,10 @@
 # Notas de versión
 
+## 19.44 — Avisos de compra, de venta y de lo que hizo el bot
+- 🤖 Cuando el bot compra o vende solo, te llega un push («🤖 Compré X ~$Y: motivo»). El bot ya operaba solo; ahora te enteras al instante.
+- 🟢 Aviso de oportunidad de compra para quien lo decide a mano (bot apagado): solo si cumple TODOS los filtros con datos de 15 min y volumen y hay liquidez; máximo 3 por día, una vez por cripto cada 12 h, nunca de lo que ya tienes. No compra solo.
+- 📉 Aviso de venta también cuando la tendencia se rompe o se debilita, además de subida a la meta y caída al stop. Opción «Avisarme» en la configuración del bot.
+
 ## 19.43 — Aviso de caída al stop
 Además del aviso de subida, ahora llega un push si una posición (real o simulada) cae hasta su stop: «conviene vender para limitar la pérdida». Un aviso por posición cada 6 h; se rearma al recuperarse. Solo avisa, no vende.
 

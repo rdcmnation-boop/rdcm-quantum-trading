@@ -1726,10 +1726,63 @@ console.log('Motor: filtro de ventaja, tamaño dinámico y bitácora');
   t('aviso de caída: no repite el aviso en 6 h', gd.filter((x) => x[0] === dn.id).length === 1 && d2.alerts >= 0);
   const gOk = []; const dOk = await mkEng({ getPrice: async () => 130, getCloses: async () => Array.from({ length: 120 }, (_, i) => 100 + i * 0.25), getHistory: async () => up }, gOk).sellWatch();
   t('aviso de caída: una posición en ganancia nunca dispara el aviso de stop', !gOk.some((x) => /cayó/.test(x[1].title)));
+  // Debilitamiento (tendencia rota) también avisa
+  const wk = await mkUser('weakwatch1@x.com', { edgeGate: 'off', stopLossPct: 40 });
+  await wk.U('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/weakwatch1' });
+  await store.addOrder({ user_id: wk.id, mode: 'paper', exchange: 'coinbase', symbol: 'ADA-USD', side: 'buy', usd: 100, qty: 1, price: 100, status: 'ok', created_at: Date.now() - 5 * 3600000 });
+  const wcl = Array.from({ length: 120 }, (_, i) => (i < 80 ? 100 + i * 0.5 : 140 - (i - 79) * 0.35));
+  const gw = []; await mkEng({ getPrice: async () => wcl.at(-1), getCloses: async () => wcl, getHistory: async () => wcl }, gw).sellWatch();
+  t('aviso de venta: si la tendencia se rompe avisa que conviene vender, con el motivo', gw.some((x) => x[0] === wk.id && /pierde fuerza|retrocedió|cayó/.test(x[1].title) && /vender/i.test(x[1].body)), JSON.stringify(gw.filter((x) => x[0] === wk.id)));
   const noSub = await mkUser('sellwatch2@x.com', { edgeGate: 'off' });
   await store.addOrder({ user_id: noSub.id, mode: 'paper', exchange: 'coinbase', symbol: 'ADA-USD', side: 'buy', usd: 100, qty: 1, price: 100, status: 'ok', created_at: Date.now() - 3600000 });
   const gotNs = []; await mkPx(120, gotNs).sellWatch();
   t('aviso de subida: solo se vigila a quien activó los avisos', !gotNs.some((x) => x[0] === noSub.id));
+
+  // Aviso de oportunidad de compra
+  const strong = Array.from({ length: 120 }, (_, i) => 100 * (1 + 0.01 * i + 0.04 * Math.sin(i * 1.3)));
+  const sCandles = (st) => strong.map((c, i) => ({ t: i * st, o: c, h: c * 1.001, l: c * 0.999, c, v: i >= 117 ? 3e5 : 1e5 }));
+  const feedS = { getPrice: async () => strong.at(-1), getCloses: async () => strong, getHistory: async () => strong, getCandles: async (sym, g) => sCandles(g) };
+  await store.setSetting('scanner:latest', JSON.stringify({ t: Date.now(), scanned: 3, universe: 3, items: ['ADA-USD', 'DOT-USD', 'LTC-USD', 'LINK-USD'].map((symbol, k) => ({ symbol, label: symbol, qualified: false, cheaper: 'coinbase', gap_pct: 0, mcap: 1e10 - k, cfg: { strategy: 'sma', fast: 5, slow: 20, rsiBuy: 30, rsiSell: 60 }, coinbase: { ret: 1, bh: 1, drag: 1 }, robinhood: { ret: 1, bh: 1, drag: 1 } })) }));
+  const bw = await mkUser('buywatch1@x.com', { edgeGate: 'off' });
+  await store.patchBot(bw.id, { cfg: { ...(await store.getBot(bw.id)).cfg, enabled: false } }); // bot apagado: el aviso de compra es para quien decide a mano
+  await bw.U('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/buywatch1' });
+  const gb = []; const mineB = () => gb.filter((x) => x[0] === bw.id && /^buy:/.test(x[1].kind));
+  await mkEng(feedS, gb).buyWatch(Date.now());
+  t('aviso de compra: una oportunidad que cumple TODO manda push con la ventaja y el monto sugerido', mineB().length >= 1 && /Oportunidad/.test(mineB()[0][1].title) && /ventaja \d+\/100/.test(mineB()[0][1].body) && /Comprar/.test(mineB()[0][1].body), JSON.stringify(mineB()));
+  t('aviso de compra: máximo 3 por día por persona', mineB().length <= 3);
+  const n1 = mineB().length; await mkEng(feedS, gb).buyWatch(Date.now() + 60000);
+  t('aviso de compra: no repite la misma cripto ni pasa el tope diario', mineB().length === n1);
+  const gb2 = []; await mkEng(feedS, gb2).buyWatch(Date.now() + 90000000);
+  t('aviso de compra: al día siguiente puede avisar de nuevo (12 h por cripto)', gb2.filter((x) => x[0] === bw.id).length >= 1);
+  const boff = await mkUser('buywatch2@x.com', { edgeGate: 'off', buyAlerts: false });
+  await store.patchBot(boff.id, { cfg: { ...(await store.getBot(boff.id)).cfg, enabled: false } });
+  await boff.U('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/buywatch2' });
+  const gb3 = []; await mkEng(feedS, gb3).buyWatch(Date.now());
+  t('aviso de compra: quien lo apagó no recibe avisos de compra', !gb3.some((x) => x[0] === boff.id));
+  const bn = await mkUser('buywatch3@x.com', { edgeGate: 'off' });
+  await store.patchBot(bn.id, { cfg: { ...(await store.getBot(bn.id)).cfg, enabled: false } });
+  await bn.U('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/buywatch3' });
+  const gb4 = []; await mkEng({ getPrice: feedS.getPrice, getCloses: feedS.getCloses, getHistory: feedS.getHistory }, gb4).buyWatch(Date.now());
+  t('aviso de compra: sin datos de 15 min/volumen NO avisa (no se inventa la ventaja)', !gb4.some((x) => x[0] === bn.id));
+  const gb5 = []; await mkEng({ ...feedS, getCandles: async (s, g) => sCandles(g).map((c) => ({ ...c, v: 1 })) }, gb5).buyWatch(Date.now());
+  t('aviso de compra: con poca liquidez no avisa', !gb5.some((x) => x[0] === bn.id));
+  const on2 = await mkUser('buywatch5@x.com', { edgeGate: 'off' });
+  await on2.U('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/buywatch5' });
+  const gb7 = []; await mkEng(feedS, gb7).buyWatch(Date.now());
+  t('aviso de compra: si el bot ya está encendido en AUTO y compra solo, no manda el aviso redundante', !gb7.some((x) => x[0] === on2.id && /^buy:/.test(x[1].kind)));
+  const bd = []; const engBd = mkEng(feedS, bd);
+  const tb = await mkUser('botdid1@x.com', { edgeGate: 'off' });
+  await engBd.runBot({ ...(await store.getBot(tb.id)), last_run: 0 }, Date.now() + 1000);
+  const didBuy = bd.filter((x) => x[0] === tb.id && /^bot:buy:/.test(x[1].kind));
+  t('el bot avisa lo que hizo: «🤖 Compré X (simulado)» con monto y motivo', didBuy.length >= 1 && /^🤖 Compré [A-Z]+ \(simulado\)$/.test(didBuy[0][1].title) && /~\$\d/.test(didBuy[0][1].body), JSON.stringify(didBuy));
+  const held = await mkUser('buywatch4@x.com', { edgeGate: 'off' });
+  await store.patchBot(held.id, { cfg: { ...(await store.getBot(held.id)).cfg, enabled: false } });
+  await held.U('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/buywatch4' });
+  for (const sy of ['ADA-USD', 'DOT-USD', 'LTC-USD', 'LINK-USD']) await store.addOrder({ user_id: held.id, mode: 'paper', exchange: 'coinbase', symbol: sy, side: 'buy', usd: 10, qty: 1, price: 10, status: 'ok', created_at: Date.now() - 3600000 });
+  const gb6 = []; await mkEng(feedS, gb6).buyWatch(Date.now());
+  t('aviso de compra: no avisa de criptos que ya tienes', !gb6.some((x) => x[0] === held.id && /^buy:/.test(x[1].kind)));
+  const nosubsAlerts = (await mkEng(feedS, []).buyWatch(Date.now())).alerts >= 0;
+  t('aviso de compra: solo a quienes activaron avisos (sin suscripción no hay nada que enviar)', nosubsAlerts);
 }
 
 server.close();
