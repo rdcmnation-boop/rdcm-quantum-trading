@@ -1,5 +1,9 @@
 # Notas de versión
 
+## 19.42 — Recomendación al tocar Comprar/Vender y aviso de subida
+- Al tocar Comprar o Vender por primera vez, la app muestra lo recomendado (comprar, esperar, no comprar, vender un % o mantener) con el porqué, usando las reglas del bot. El segundo toque ejecuta. Solo informa.
+- Aviso push cuando una posición (real o simulada) sube hasta que la ganancia NETA de costos alcanza tu meta (la del bot, o 2 % si no hay). Un aviso por posición cada 6 h, o antes si gana 2 puntos más. Solo quienes activaron los avisos.
+
 ## 19.41 — Ventaja, tamaño dinámico, filtro y validación
 - Filtro de ventaja multi-timeframe (15m/1h/4h) con volumen relativo y valor esperado neto de costos y deslizamiento. Arranca en modo «sombra» (solo registra).
 - Tamaño dinámico: objetivo de volatilidad, Kelly fraccional, correlación, pausa por caída máxima y pérdida diaria. Solo reduce o veta; requiere declarar el capital de riesgo.

@@ -39,3 +39,8 @@ Walk-forward sin mirar el futuro de la lógica Pro: elige parámetros con entren
 - **Meta-etiquetador ML y agente de sentimiento/on-chain:** el filtro de noticias existente cubre sentimiento básico; un meta-etiquetador necesita cientos de señales con resultado, que la bitácora en modo sombra empezará a acumular.
 - **Validación de las capas de volumen y 15 min:** no hay velas históricas con volumen guardadas, así que la validación prueba la lógica Pro base; la capa nueva se valida hacia adelante con el modo sombra.
 - **Validación cruzada «purgada»:** se usa walk-forward con embargo (equivalente para series de tiempo con una sola ventana de prueba por vez).
+
+## 6. Recomendación al tocar y aviso de subida (v19.42)
+- `GET /api/trade/advice` (usado por los botones Comprar/Vender): compra = señal Pro + ventaja multi-timeframe + filtro «¿operar hoy?» + tamaño dinámico; venta = salida Pro + ganancia neta vs meta. Veredictos: comprar / esperar / evitar / vender (con %) / mantener / sin posición. Solo informa.
+- `engine.sellWatch()` corre cada 5 min (una instancia a la vez): para quienes activaron avisos, si la ganancia **neta de costos** de una posición llega a la meta (`takeProfitPct` o 2 %), manda push; no repite en 6 h salvo que gane 2 puntos más; se rearma si cae 1 punto bajo la meta.
+- No puede vender solo desde ese aviso: el aviso te lleva a la app, donde tú decides.

@@ -698,7 +698,19 @@ function bindManual(main, { connections, live }) {
       setMsg(msg, x ? (x.placed ? `${side === 'buy' ? 'Compra' : 'Venta'} enviada${mode === 'live' ? ' (pendiente hasta que el exchange la confirme)' : ' (simulada)'}.` : `No se envió: ${x.reason || 'sin motivo'}`) : 'No tienes posición para vender en ese modo.', !!(x && x.placed)); loadPos(); }
     catch (e) { setMsg(msg, e.message); }
   };
-  const btn = (id, side, frac, txt) => { const b = $(id, main); b.onclick = () => { if (confirmTap(b, `Toca otra vez: ${txt}`)) trade(side, frac); }; };
+  // Al tocar Comprar/Vender por primera vez se muestra lo recomendado (con el porqué); el segundo toque ejecuta.
+  const adv = $('#mt_adv', main);
+  const showAdvice = async (side, frac) => {
+    const f = $('#mt_f', main); const sym = f.symbol.value.trim().toUpperCase();
+    adv.innerHTML = '<div class="msg ok">Preparando recomendación…</div>';
+    try {
+      const a = await api('GET', `/api/trade/advice?side=${side}&mode=${f.mode.value}&symbol=${encodeURIComponent(sym)}${side === 'buy' ? `&usd=${encodeURIComponent(f.usd.value)}` : ''}`);
+      const good = (a.verdict === 'comprar' || a.verdict === 'vender'); const bad = (a.verdict === 'evitar');
+      const mismatch = side === 'sell' && a.verdict === 'mantener' && frac >= 0.5 ? 'Tú elegiste vender más de lo recomendado.' : side === 'sell' && a.verdict === 'vender' && a.suggestedFraction && frac < a.suggestedFraction ? `Se recomienda vender ${Math.round(a.suggestedFraction * 100)} %.` : side === 'buy' && a.verdict !== 'comprar' ? 'Tú decides: si igual compras, toca otra vez.' : '';
+      adv.innerHTML = `<div class="advice ${good ? 'pos' : bad ? 'neg' : ''}" style="border:1px solid var(--line,#333);border-radius:12px;padding:10px;margin-top:8px"><b>${esc(a.headline)}</b>${(a.reasons || []).length ? `<ul class="lessons">${a.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}${mismatch ? `<div class="muted">${esc(mismatch)}</div>` : ''}<div class="muted" style="font-size:11px">${esc(a.disclaimer || '')}</div></div>`;
+    } catch (e) { adv.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
+  };
+  const btn = (id, side, frac, txt) => { const b = $(id, main); b.onclick = () => { if (confirmTap(b, `Toca otra vez: ${txt}`)) { adv.innerHTML = ''; trade(side, frac); } else showAdvice(side, frac); }; };
   btn('#mt_buy', 'buy', 1, 'COMPRAR'); btn('#mt_s25', 'sell', 0.25, 'VENDER 25%'); btn('#mt_s50', 'sell', 0.5, 'VENDER 50%'); btn('#mt_s100', 'sell', 1, 'VENDER 100%');
 }
 
@@ -878,6 +890,7 @@ async function tabBot(main) {
       <label>USD por compra<input name="usd" type="number" min="1" step="any" value="10"></label>
       <label class="check full"><input type="checkbox" name="ack"><span>Si elegí REAL: entiendo que es dinero real y que puedo perder lo que invierta.</span></label>
       <div class="full row"><button class="btn" type="button" id="mt_buy">Comprar</button><button class="btn danger" type="button" id="mt_s25">Vender 25%</button><button class="btn danger" type="button" id="mt_s50">Vender 50%</button><button class="btn danger" type="button" id="mt_s100">Vender 100%</button></div>
+      <div class="full" id="mt_adv"></div>
       <div class="msg full" id="mt_m"></div>
     </form>
     <h3 style="margin-top:12px">Mis posiciones abiertas</h3><div id="mt_pos" class="muted">Cargando…</div>

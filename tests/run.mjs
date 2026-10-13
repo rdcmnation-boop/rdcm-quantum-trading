@@ -1665,6 +1665,59 @@ console.log('Motor: filtro de ventaja, tamaño dinámico y bitácora');
   const nocap = await mkUser('size-none@x.com', { edgeGate: 'off' });
   await run(nocap.id);
   t('sin capital de riesgo declarado el tamaño dinámico no interfiere (comportamiento anterior)', (await buys(nocap.id)).length === baseline);
+
+  // Recomendación al tocar Comprar/Vender y aviso cuando una posición sube
+  const feedNo = { getPrice: feedE.getPrice, getCloses: feedE.getCloses, getHistory: feedE.getHistory };
+  const mkEng = (feed, got = []) => createEngine({ store, adapters, feed, encKey: env.ENCRYPTION_KEY, log: { error() {} }, alert: async (u, x) => { got.push([u, x]); } });
+  const adv = await mkUser('adv1@x.com', { edgeGate: 'off' });
+  const e1 = mkEng(feedNo);
+  const noPos = await e1.advise(adv.id, { side: 'sell', symbol: 'ADA-USD', mode: 'paper' });
+  t('recomendación venta: sin posición lo dice claro', noPos.verdict === 'sin_posicion' && /No tienes/.test(noPos.headline));
+  await store.addOrder({ user_id: adv.id, mode: 'paper', exchange: 'coinbase', symbol: 'ADA-USD', side: 'buy', usd: 100, qty: 1, price: 100, status: 'ok', created_at: Date.now() - 5 * 3600000 });
+  const sellBig = await e1.advise(adv.id, { side: 'sell', symbol: 'ADA-USD', mode: 'paper' });
+  t('recomendación venta: con buena ganancia neta recomienda vender (con porcentaje) y explica el costo', sellBig.verdict === 'vender' && sellBig.suggestedFraction > 0 && /VENDER/.test(sellBig.headline) && sellBig.net_pct < sellBig.gain_pct && sellBig.reasons.length >= 2 && /no es asesoría/.test(sellBig.disclaimer), JSON.stringify(sellBig).slice(0, 300));
+  const adv2 = await mkUser('adv2@x.com', { edgeGate: 'off' });
+  await store.addOrder({ user_id: adv2.id, mode: 'paper', exchange: 'coinbase', symbol: 'ADA-USD', side: 'buy', usd: 123, qty: 1, price: 123, status: 'ok', created_at: Date.now() - 2 * 3600000 });
+  const hold = await e1.advise(adv2.id, { side: 'sell', symbol: 'ADA-USD', mode: 'paper' });
+  t('recomendación venta: con ganancia que no cubre costos y meta recomienda mantener', hold.verdict === 'mantener' && /MANTENER/.test(hold.headline) && hold.suggestedFraction === 0, JSON.stringify(hold).slice(0, 300));
+  const buyOk = await e1.advise(adv.id, { side: 'buy', symbol: 'ADA-USD', mode: 'paper', usd: 10 });
+  t('recomendación compra: con señal limpia recomienda comprar con monto y razones', buyOk.verdict === 'comprar' && buyOk.suggestedUsd > 0 && buyOk.suggestedUsd <= 10 && /COMPRAR/.test(buyOk.headline) && buyOk.reasons.length >= 2, JSON.stringify(buyOk).slice(0, 300));
+  const buyEdge = await mkEng({ ...feedE, getCandles: async () => candles(up, 1e5) }).advise(adv.id, { side: 'buy', symbol: 'ADA-USD', mode: 'paper', usd: 10 });
+  t('recomendación compra: si el filtro multi-timeframe/volumen no ve ventaja, recomienda esperar y dice por qué', buyEdge.verdict === 'esperar' && /ESPERAR/.test(buyEdge.headline) && typeof buyEdge.edge_score === 'number', JSON.stringify(buyEdge).slice(0, 400));
+  await store.setSetting('news:latest', JSON.stringify({ t: Date.now(), items: [], risk: { ADA: 1 }, global_neg: 1, risk_off: false }));
+  const buyNews = await mkEng(feedNo).advise(adv.id, { side: 'buy', symbol: 'ADA-USD', mode: 'paper', usd: 10 });
+  await store.setSetting('news:latest', JSON.stringify({ t: Date.now(), items: [], risk: {}, global_neg: 0, risk_off: false }));
+  t('recomendación compra: noticia negativa de esa cripto → no comprar ahora', buyNews.verdict === 'evitar' && /NO comprar/.test(buyNews.headline));
+  const flatC = Array.from({ length: 120 }, (_, i) => 100 + (i % 2));
+  const buyFlat = await mkEng({ ...feedNo, getCloses: async () => flatC, getPrice: async () => flatC.at(-1) }).advise(adv.id, { side: 'buy', symbol: 'ADA-USD', mode: 'paper', usd: 10 });
+  t('recomendación compra: sin tendencia → esperar', buyFlat.verdict === 'esperar');
+  const noPrice = await mkEng({ getPrice: async () => { throw new Error('x'); }, getCloses: async () => up, getHistory: async () => up }).advise(adv.id, { side: 'buy', symbol: 'ETH-USD', mode: 'paper' });
+  t('recomendación: si no hay precio no inventa nada', noPrice.verdict === 'sin_datos');
+  const advApi = await A('GET', '/api/trade/advice?side=buy&mode=paper&symbol=BTC-USD&usd=10');
+  t('API recomendación: devuelve titular, veredicto y aviso legal', advApi.status === 200 && !!advApi.body.headline && !!advApi.body.verdict && /no es asesoría/.test(advApi.body.disclaimer), JSON.stringify(advApi.body).slice(0, 200));
+  t('API recomendación: exige sesión y valida los datos', (await nobody('GET', '/api/trade/advice?side=buy&symbol=BTC-USD')).status === 401 && (await A('GET', '/api/trade/advice?side=hack&symbol=BTC-USD')).status === 400 && (await A('GET', '/api/trade/advice?side=buy&symbol=HACK-USD')).status === 400);
+
+  // Aviso de «subió, conviene vender»
+  const sw = await mkUser('sellwatch1@x.com', { edgeGate: 'off' });
+  await sw.U('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/sellwatch1' });
+  await store.addOrder({ user_id: sw.id, mode: 'paper', exchange: 'coinbase', symbol: 'ADA-USD', side: 'buy', usd: 100, qty: 1, price: 100, status: 'ok', created_at: Date.now() - 3600000 });
+  const mkPx = (px, got) => mkEng({ getPrice: async () => px, getCloses: async () => up, getHistory: async () => up }, got);
+  let got = [];
+  const r1 = await mkPx(110, got).sellWatch();
+  t('aviso de subida: una posición con ganancia neta sobre la meta manda push con el porcentaje', r1.alerts === 1 && got.length === 1 && got[0][0] === sw.id && /subió \+10\.0 %/.test(got[0][1].title) && /Vender/.test(got[0][1].body), JSON.stringify(got));
+  const r2 = await mkPx(110.5, got).sellWatch();
+  t('aviso de subida: no repite el mismo aviso (sin spam)', r2.alerts === 0 && got.length === 1);
+  const r3 = await mkPx(116, got).sellWatch();
+  t('aviso de subida: si gana 2 puntos más, avisa de nuevo', r3.alerts === 1 && got.length === 2);
+  await mkPx(101, got).sellWatch();
+  const r5 = await mkPx(112, got).sellWatch();
+  t('aviso de subida: si cae bajo la meta y vuelve a subir, avisa otra vez', r5.alerts === 1 && got.length === 3);
+  const r6 = await mkPx(101, []).sellWatch();
+  t('aviso de subida: ganancia que no cubre costos y meta NO avisa', r6.alerts === 0);
+  const noSub = await mkUser('sellwatch2@x.com', { edgeGate: 'off' });
+  await store.addOrder({ user_id: noSub.id, mode: 'paper', exchange: 'coinbase', symbol: 'ADA-USD', side: 'buy', usd: 100, qty: 1, price: 100, status: 'ok', created_at: Date.now() - 3600000 });
+  const gotNs = []; await mkPx(120, gotNs).sellWatch();
+  t('aviso de subida: solo se vigila a quien activó los avisos', !gotNs.some((x) => x[0] === noSub.id));
 }
 
 server.close();
