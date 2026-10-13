@@ -840,6 +840,16 @@ console.log('Modo Pro (day trader), noticias y autoajuste de riesgo');
   await engP.runBot({ ...(await store.getBot(pId)), last_run: 0 }, Date.now() + 1000);
   const po = (await store.listOrders(pId)).filter((o) => o.status === 'ok');
   t('pro (papel): compra una cripto en tendencia y explica por qué, en el exchange más barato', po.length === 1 && po[0].side === 'buy' && /^Pro:/.test(po[0].note) && /veces|× el costo/.test(po[0].note), JSON.stringify(po.map((o) => o.note)));
+  { // moneda recién listada y sin datos de liquidez: el bot Pro NO la compra
+    const N = client(); await N('POST', '/api/auth/register', { email: 'p-new@x.com', password: 'Clave-De-Nueva-12345', acceptTos: true });
+    const nId = (await N('GET', '/api/me')).body.user.id;
+    await N('PUT', '/api/bot', { autoMode: 'pro', symbol: 'AUTO', strategy: 'sma', usd: 10, intervalMin: 60, mode: 'paper', paperExchange: 'best', enabled: false, maxOrderUsd: 25, maxDailyUsd: 100, maxPositions: 3 });
+    await store.patchBot(nId, { cfg: { ...(await store.getBot(nId)).cfg, enabled: true } });
+    await store.setSetting('universe:first_seen', JSON.stringify({ 'ADA-USD': Date.now() - 86400000 }));
+    await engP.runBot({ ...(await store.getBot(nId)), last_run: 0 }, Date.now() + 1000);
+    t('pro: una moneda listada hace 1 día y sin datos de liquidez no se compra', (await store.listOrders(nId)).filter((o) => o.status === 'ok').length === 0);
+    await store.setSetting('universe:first_seen', JSON.stringify(Object.fromEntries(['BTC','ETH','SOL','LTC','DOGE','AVAX','LINK','ADA','USDT'].map((x) => [x + '-USD', 0]))));
+  }
   cl = Array.from({ length: 120 }, (_, i) => (i < 100 ? up[i] : up[99] * (1 - 0.01 * (i - 99))));
   const engP2 = createEngine({ store, adapters, feed: feedP, encKey: env.ENCRYPTION_KEY, log: { error() {} } }); // sin caché de precios
   await engP2.runBot({ ...(await store.getBot(pId)), last_run: 0 }, Date.now() + 5000);
